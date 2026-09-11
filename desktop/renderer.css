@@ -122,22 +122,22 @@ button:disabled {
   align-items: center;
   gap: 9px;
   width: 100%;
-  min-height: 42px;
-  margin-top: 22px;
-  padding: 0 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-  color: var(--text);
+  min-height: 38px;
+  margin-top: 21px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 650;
   text-align: left;
-  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+  transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
 }
 
 .new-thread:hover {
-  border-color: #3c424a;
   background: var(--surface-hover);
+  color: var(--text);
 }
 
 .new-thread:active,
@@ -324,14 +324,14 @@ button:disabled {
 .account-menu {
   position: absolute;
   z-index: 20;
-  right: -5px;
-  bottom: 66px;
-  left: -5px;
-  padding: 17px;
+  right: 0;
+  bottom: 61px;
+  left: 0;
+  padding: 14px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: #202328;
-  box-shadow: 0 22px 60px rgb(0 0 0 / 38%);
+  box-shadow: 0 18px 48px rgb(0 0 0 / 38%);
 }
 
 .account-heading {
@@ -374,36 +374,69 @@ button:disabled {
 }
 
 .account-menu p {
-  margin: 15px 0 0;
+  margin: 13px 0 0;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.55;
 }
 
-.account-details {
-  display: grid;
+.account-summary {
+  display: flex;
+  align-items: center;
   gap: 9px;
-  margin: 17px 0;
+  margin-top: 14px;
 }
 
-.account-details div {
-  display: grid;
-  grid-template-columns: 78px minmax(0, 1fr);
-  gap: 8px;
-  font-size: 11px;
-}
-
-.account-details dt {
-  color: var(--subtle);
-}
-
-.account-details dd {
+.account-summary > div {
   min-width: 0;
-  margin: 0;
+}
+
+.account-summary strong,
+.account-summary small {
+  display: block;
   overflow: hidden;
-  color: var(--text);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.account-summary strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.account-summary small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.account-expiry {
+  margin: 12px 0 0 !important;
+  color: var(--subtle) !important;
+  font-size: 10px !important;
+}
+
+.account-expiry span {
+  color: var(--muted);
+}
+
+.account-advanced {
+  margin-top: 13px;
+  border-top: 1px solid var(--line);
+}
+
+.account-advanced summary {
+  min-height: 36px;
+  padding: 9px 0 7px;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+  list-style-position: inside;
+}
+
+.account-advanced summary:hover {
+  color: var(--text);
 }
 
 .account-actions {
@@ -486,45 +519,33 @@ button:disabled {
   z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 18px;
   min-width: 0;
-  padding: 0 30px;
-  border-bottom: 1px solid var(--line);
-  background: rgb(23 25 29 / 94%);
+  padding: 0 28px;
+  border-bottom: 1px solid rgb(48 52 59 / 66%);
+  background: var(--canvas);
 }
 
 .project-entry {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 7px;
   min-width: 0;
-  min-height: 42px;
-  max-width: min(480px, 70%);
-  padding: 5px 9px;
-  border: 1px solid transparent;
-  border-radius: 10px;
+  min-height: 38px;
+  max-width: min(390px, 75%);
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 8px;
   background: transparent;
-  color: var(--text);
+  color: var(--muted);
   text-align: left;
-  transition: background-color 140ms ease, border-color 140ms ease, transform 140ms ease;
+  transition: background-color 140ms ease, color 140ms ease, transform 140ms ease;
 }
 
 .project-entry:hover {
-  border-color: var(--line);
   background: var(--surface-soft);
-}
-
-.project-entry-icon {
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  width: 26px;
-  height: 26px;
-  border-radius: 8px;
-  background: var(--accent-soft);
-  color: #a9ceff;
-  font-size: 14px;
+  color: var(--text);
 }
 
 .project-entry-copy {
@@ -541,7 +562,7 @@ button:disabled {
 }
 
 .project-entry strong {
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 650;
 }
 
@@ -557,42 +578,6 @@ button:disabled {
   font-size: 15px;
 }
 
-.thread-meta {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  min-width: 0;
-  color: var(--muted);
-}
-
-.thread-meta > strong {
-  max-width: 260px;
-  overflow: hidden;
-  color: var(--subtle);
-  font-size: 11px;
-  font-weight: 550;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.running-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  flex: 0 0 auto;
-  color: var(--subtle);
-  font-size: 10px;
-  white-space: nowrap;
-}
-
-.running-state i {
-  display: block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--subtle);
-}
-
 .conversation {
   min-height: 0;
   overflow: auto;
@@ -606,16 +591,8 @@ button:disabled {
   display: grid;
   justify-items: center;
   max-width: 470px;
-  margin: 15vh auto 0;
+  margin: 17vh auto 0;
   text-align: center;
-}
-
-.empty-mark {
-  display: block;
-  width: 46px;
-  height: 46px;
-  border-radius: 13px;
-  object-fit: contain;
 }
 
 .conversation-empty h1 {
@@ -780,10 +757,9 @@ button:disabled {
   display: block;
   max-width: 270px;
   overflow: hidden;
-  padding: 6px 8px;
-  border-radius: 7px;
-  background: var(--surface-soft);
+  padding: 6px 4px;
   color: var(--muted);
+  font-weight: 550;
   font-size: 10px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -791,17 +767,18 @@ button:disabled {
 
 .mode-select select {
   min-height: 32px;
-  padding: 0 26px 0 8px;
-  border: 1px solid var(--line);
+  padding: 0 19px 0 4px;
+  border: 0;
   border-radius: 8px;
   outline: 0;
-  background: var(--surface);
+  background: transparent;
   color: var(--muted);
   font-size: 10px;
 }
 
 .mode-select select:focus-visible {
-  border-color: var(--focus);
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
 }
 
 .send-button,
@@ -858,9 +835,6 @@ button:disabled {
     max-width: 62%;
   }
 
-  .thread-meta > strong {
-    max-width: 160px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
