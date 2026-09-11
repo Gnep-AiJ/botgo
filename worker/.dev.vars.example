@@ -1,0 +1,7 @@
+# Copy this file to worker/.dev.vars for local Worker testing. Do not commit worker/.dev.vars.
+AUTH_SECRET=replace-with-a-long-random-local-secret
+ADMIN_EMAIL=your-admin-email@example.com
+DEV_TEST_MODE=1
+DEV_TEST_EMAIL=dev-test@botgo.local
+DEV_TEST_PASSWORD=choose-a-local-test-password-with-12-or-more-characters
+EMAIL_FROM=verify@your-domain.example

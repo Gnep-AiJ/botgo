@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self';style-src 'self';script-src 'self';img-src 'self' data:;connect-src 'self'"><title>BotGo Desktop</title><link rel="stylesheet" href="renderer.css"></head>
+<body>
+  <main class="desktop-shell" data-page="projects">
+    <aside class="sidebar">
+      <div class="brand"><span class="brand-mark">B</span><span>BotGo<small>DESKTOP</small></span></div>
+      <button class="new-thread" type="button" data-new-thread><span aria-hidden="true">＋</span>新建对话</button>
+      <button class="folder-picker" type="button" data-choose-project><span aria-hidden="true">▱</span><span><strong data-current-project>选择文件夹</strong><small data-current-project-path>打开本地项目</small></span></button>
+      <section class="thread-panel" aria-label="项目对话"><div class="section-label">项目与对话</div><div class="project-list" data-project-list><p class="empty-copy">选择文件夹后开始</p></div></section>
+      <div class="sidebar-account">
+        <section class="account-menu" data-account-menu hidden role="dialog" aria-modal="true" aria-labelledby="account-menu-title">
+          <div class="account-heading"><div><p>BOTGO ACCOUNT</p><h2 id="account-menu-title" data-account-menu-title tabindex="-1">登录 BotGo</h2></div><button class="icon-button" type="button" data-account-close aria-label="关闭账户菜单">×</button></div>
+          <div data-account-guest><p>在浏览器中登录并确认这台设备。</p><button class="primary wide" type="button" data-start-web-authorization>在浏览器中继续</button><button class="secondary wide" type="button" data-cancel-web-authorization hidden>取消等待</button></div>
+          <div data-account-signed hidden><dl class="account-details"><div><dt>邮箱</dt><dd data-account-email>—</dd></div><div><dt>套餐</dt><dd data-account-plan>Free</dd></div><div><dt>剩余额度</dt><dd data-account-credits>—</dd></div><div><dt>到期时间</dt><dd data-account-expiry>—</dd></div></dl><div class="account-actions"><button class="secondary" type="button" data-open-account>管理账户</button><button class="secondary" type="button" data-restore-config>恢复原配置</button><button class="danger" type="button" data-revoke-device>退出此设备</button></div></div>
+          <p class="form-message" data-account-message role="status" aria-live="polite"></p>
+        </section>
+        <button class="account-trigger" type="button" data-account-trigger aria-haspopup="dialog" aria-expanded="false"><span class="avatar" data-account-avatar>BG</span><span><strong data-account-name>登录 BotGo</strong><small data-account-state>同步账户与额度</small></span><span aria-hidden="true">⌃</span></button>
+      </div>
+    </aside>
+
+    <section class="chat-workspace">
+      <header class="chat-header"><div><strong data-thread-title>新对话</strong><span data-running-state>就绪</span></div><button class="secondary folder-action" type="button" data-change-project>更换文件夹</button></header>
+      <section class="conversation" data-conversation aria-live="polite">
+        <div class="conversation-empty" data-conversation-empty><span class="empty-mark">B</span><h1>从你的项目开始</h1><p>选择本地文件夹，描述要完成的工作。BotGo 会在该项目中执行并持续保留对话。</p><button class="primary" type="button" data-empty-choose-project>选择文件夹</button></div>
+      </section>
+      <section class="composer-wrap">
+        <p class="workspace-message" data-workspace-message role="status" aria-live="polite"></p>
+        <form class="composer" data-composer><label class="sr-only" for="task-prompt">输入任务</label><textarea id="task-prompt" data-task-prompt rows="1" placeholder="向 BotGo 发送任务…"></textarea><div class="composer-toolbar"><div class="context-controls"><span class="project-chip" data-project-chip>未选择文件夹</span><label class="mode-select"><span class="sr-only">权限</span><select data-mode><option value="read-only">只读</option><option value="workspace-write" selected>工作区可写</option><option value="full-access">完全访问</option></select></label></div><div><button class="stop-button" type="button" data-stop-task hidden aria-label="停止执行">■</button><button class="send-button" type="submit" data-start-task aria-label="发送任务">↑</button></div></div></form>
+        <p class="composer-note">Enter 发送 · Shift+Enter 换行 · 文件仅保留在本机</p>
+      </section>
+    </section>
+  </main>
+  <script src="renderer.js"></script>
+</body>
+</html>

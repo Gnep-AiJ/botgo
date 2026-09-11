@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#d7efff" />
+    <meta name="description" content="BotGo AI 对话、Agent 安装与教程工作台" />
+    <title>BotGo AI 工作台</title>
+    <link rel="stylesheet" href="./workspace.css" />
+  </head>
+  <body>
+    <div class="workspace-stage">
+      <div class="workspace-scrim" aria-hidden="true"></div>
+      <div class="workspace-shell">
+        <header class="workspace-header">
+          <a class="mobile-brand" href="./index.html" aria-label="返回 BotGo 首页">BotG<span class="brand-bot" aria-hidden="true"><i></i><i></i></span></a>
+          <nav class="workspace-nav" aria-label="工作台内容">
+            <button type="button" data-view-link="chat">对话</button>
+            <button type="button" data-view-link="agents">桌面端</button>
+            <button type="button" data-view-link="tutorials">指南</button>
+          </nav>
+          <div class="auth-actions" id="auth-actions">
+            <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换主题" aria-pressed="false">
+              <svg class="theme-icon theme-icon--sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.5" /><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42" /></svg>
+              <svg class="theme-icon theme-icon--moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.2 15.4A8.5 8.5 0 0 1 8.6 3.8 8.5 8.5 0 1 0 20.2 15.4Z" /></svg>
+            </button>
+            <button id="login-button" type="button" data-auth-mode="login">登录</button>
+            <button id="register-button" type="button" data-auth-mode="register">注册</button>
+            <div class="account-popover" id="account-popover" hidden>
+              <button id="account-button" type="button" aria-expanded="false" aria-controls="account-menu" aria-label="打开账户菜单">
+                <span class="account-avatar" data-account-avatar aria-hidden="true">账</span>
+                <svg class="account-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="m4.5 6.5 3.5 3.5 3.5-3.5" /></svg>
+              </button>
+              <section class="account-menu" id="account-menu" hidden role="dialog" aria-label="账户状态">
+                <div class="account-menu-heading">
+                  <span class="account-avatar account-avatar--large" data-account-avatar aria-hidden="true">账</span>
+                  <div><p class="account-menu-label">BOTGO ACCOUNT</p><p class="account-menu-email" data-account-email></p></div>
+                </div>
+                <p class="account-menu-status" id="account-status" role="status" aria-live="polite" aria-atomic="true"></p>
+                <button class="account-menu-link" type="button" data-open-subscription><span>账户与订阅</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" /></svg></button>
+              </section>
+            </div>
+          </div>
+        </header>
+        <aside class="conversation-sidebar" aria-label="会话列表">
+          <button class="new-chat-button" id="new-chat-button" type="button">新建对话</button>
+          <div class="conversation-history" aria-label="最近对话">
+            <p>最近对话</p>
+            <button type="button" data-history-item>从一个问题开始</button>
+          </div>
+          <a class="back-to-home" href="./index.html"><span aria-hidden="true">←</span> 返回 BotGo 首页</a>
+        </aside>
+
+        <main class="workspace-main">
+          <section class="workspace-view workspace-view--chat" data-view="chat" aria-label="BotGo AI 网页对话">
+            <div class="chat-column">
+              <div class="welcome-view" id="welcome-view">
+                <p class="view-kicker">BOTGO AI</p>
+                <h1>开始工作</h1>
+                <p>说清目标，交给 BotGo。</p>
+              </div>
+              <div class="chat-log" id="chat-log" aria-live="polite" aria-label="对话内容"></div>
+            </div>
+            <form class="chat-composer" id="chat-form">
+              <label class="sr-only" for="chat-input">输入消息</label>
+              <textarea id="chat-input" rows="1" maxlength="12000" placeholder="输入任务…"></textarea>
+              <div class="composer-actions">
+                <span class="model-select" aria-label="当前模型">GPT-5.6</span>
+                <span class="composer-note" id="composer-note">登录后开始对话</span>
+                <button class="send-button" type="submit">发送 <span aria-hidden="true">↗</span></button>
+              </div>
+            </form>
+          </section>
+
+          <section class="workspace-view workspace-view--agents" data-view="agents" hidden aria-label="AI Agent 安装引导">
+            <div class="content-panel agent-panel">
+              <p class="view-kicker">BOTGO DESKTOP</p>
+              <h1>在本地完成任务</h1>
+              <p class="view-lead">选择文件夹后开始。</p>
+              <div class="agent-choices" aria-label="选择本地 Agent">
+                <article class="agent-choice agent-choice--desktop"><p class="agent-label">WINDOWS APP</p><h2>BotGo Desktop</h2><p>账户、项目和任务在一个界面内完成。</p><button type="button" class="setup-primary" data-desktop-open>了解桌面端</button></article>
+              </div>
+            </div>
+          </section>
+
+          <section class="workspace-view workspace-view--tutorials" data-view="tutorials" hidden aria-label="BotGo 教程">
+            <div class="content-panel tutorial-panel">
+              <p class="view-kicker">BOTGO / GUIDE</p>
+              <h1>开始使用</h1>
+              <ol class="tutorial-list">
+                <li><span>01</span><div><h2>登录账户</h2><p>使用邮箱验证码完成验证。</p></div></li>
+                <li><span>02</span><div><h2>开始对话</h2><p>输入目标，开始协作。</p></div></li>
+                <li><span>03</span><div><h2>查看账户</h2><p>在右上角查看计划与剩余额度。</p></div></li>
+              </ol>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <dialog id="desktop-install-dialog" aria-labelledby="desktop-install-title">
+      <div class="agent-dialog-header"><div><p>BOTGO DESKTOP</p><h2 id="desktop-install-title">BotGo Desktop</h2></div><button class="dialog-close" id="desktop-install-close" type="button" aria-label="关闭桌面端说明">关闭</button></div>
+      <section class="desktop-install-body">
+        <p>在 Windows 应用中选择项目后即可开始。本地文件保留在你的设备上。</p>
+        <div id="desktop-release" class="desktop-release" hidden>
+          <a id="desktop-download-link" class="setup-primary desktop-download-link" href="#">下载 BotGo Desktop</a>
+        </div>
+        <button id="desktop-download-login" class="setup-primary desktop-download-link" type="button" hidden>登录后下载</button>
+        <p id="desktop-install-status" class="agent-dialog-status" aria-live="polite"></p>
+      </section>
+    </dialog>
+
+    <dialog id="subscription-dialog" class="subscription-dialog" aria-labelledby="subscription-title">
+      <div class="subscription-dialog-header">
+        <div><p>BOTGO ACCOUNT</p><h2 id="subscription-title">账户与订阅</h2></div>
+        <button class="dialog-close" id="subscription-close" type="button" aria-label="关闭账户与订阅">关闭</button>
+      </div>
+      <section class="subscription-dialog-body">
+        <p class="subscription-email" data-account-email>登录后查看</p>
+        <div class="subscription-summary" aria-label="当前订阅状态">
+          <div><span>当前计划</span><strong data-subscription-plan>Free</strong></div>
+          <div><span>剩余额度</span><strong data-subscription-credits>—</strong></div>
+          <div><span>到期时间</span><strong data-subscription-expiry>—</strong></div>
+        </div>
+        <p class="subscription-status" data-subscription-status>登录后查看。</p>
+        <div class="subscription-upgrade">
+          <div><strong data-pro-name>Pro</strong><p id="subscription-upgrade-note">正在读取套餐…</p></div>
+          <button type="button" data-subscription-upgrade disabled aria-describedby="subscription-upgrade-note">暂不可购买</button>
+        </div>
+      </section>
+    </dialog>
+
+    <dialog id="auth-dialog" aria-labelledby="auth-title">
+      <div class="auth-dialog-header">
+        <div><p id="auth-eyebrow">BOTGO ACCOUNT</p><h2 id="auth-title">登录 BotGo</h2></div>
+        <button class="dialog-close" id="auth-close" type="button" aria-label="关闭登录窗口">关闭</button>
+      </div>
+      <div class="auth-mode-switch" role="tablist" aria-label="账户操作">
+        <button type="button" data-auth-mode="login">登录</button>
+        <button type="button" data-auth-mode="register">注册</button>
+      </div>
+      <form id="login-form" class="auth-form" novalidate>
+        <label for="login-email">邮箱</label><input id="login-email" name="email" type="email" autocomplete="email" required />
+        <p class="form-status" id="login-status" aria-live="polite"></p><button class="primary-auth-button" type="submit">发送登录验证码</button>
+      </form>
+      <form id="register-form" class="auth-form" novalidate hidden>
+        <label for="register-email">邮箱</label><input id="register-email" name="email" type="email" autocomplete="email" required />
+        <label for="invite-code">邀请码</label><input id="invite-code" name="inviteCode" autocomplete="off" required />
+        <p class="form-status" id="register-status" aria-live="polite"></p><button class="primary-auth-button" type="submit">发送验证码</button>
+      </form>
+      <form id="verify-form" class="auth-form" novalidate hidden>
+        <label for="verify-email">邮箱</label><input id="verify-email" name="email" type="email" autocomplete="email" required />
+        <label for="verification-code">验证码</label><input id="verification-code" name="code" inputmode="numeric" pattern="[0-9０-９]{6}" autocomplete="one-time-code" maxlength="6" required />
+        <p class="form-status" id="verify-status" aria-live="polite"></p><button class="primary-auth-button" type="submit">验证邮箱</button>
+      </form>
+    </dialog>
+  <script src="./workspace.js"></script><script src="./workspace-billing.js"></script>
+</body>
+</html>

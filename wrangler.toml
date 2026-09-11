@@ -1,0 +1,8 @@
+# BotGo Pages production configuration. Downloaded dashboard settings were reviewed before this file was introduced.
+name = "botgo"
+compatibility_date = "2026-07-20"
+pages_build_output_dir = "./dist"
+
+[[services]]
+binding = "BOTGO_API"
+service = "botgo-api"

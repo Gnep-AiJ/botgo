@@ -1,0 +1,23 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "botgo-api",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-25",
+  "workers_dev": false,
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "botgo",
+      "database_id": "955ea0bd-0b55-43a5-97e6-ee7a7a5a7104"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "DESKTOP_RELEASES",
+      "bucket_name": "botgo-desktop-releases"
+    }
+  ],
+  "vars": {
+    "UPSTREAM_BASE_URL": "https://www.lvzhouai.cc/v1"
+  }
+}

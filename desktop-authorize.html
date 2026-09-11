@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>授权 BotGo Desktop</title>
+  <link rel="stylesheet" href="./desktop-authorize.css">
+</head>
+<body>
+  <main class="authorization-shell">
+    <section class="authorization-card" aria-labelledby="authorization-title">
+      <p class="eyebrow">BOTGO DESKTOP</p>
+      <h1 id="authorization-title">在浏览器中确认登录</h1>
+      <p class="lead" data-authorization-copy>正在检查授权请求…</p>
+
+      <section class="account-state" data-account-state hidden>
+        <span class="account-avatar" aria-hidden="true">BG</span>
+        <div><strong data-account-email></strong><small>将连接到桌面端</small></div>
+      </section>
+
+      <section class="device-state" data-device-state hidden>
+        <span>此设备</span><strong data-device-label></strong><small>只授权当前设备。</small>
+      </section>
+
+      <div class="actions" data-approval-actions hidden>
+        <button class="primary" type="button" data-approve>授权 BotGo Desktop</button>
+        <p>确认后返回桌面应用。</p>
+      </div>
+
+      <section class="login-panel" data-login-panel hidden aria-labelledby="login-title">
+        <h2 id="login-title">登录 BotGo</h2>
+        <p>使用 BotGo 邮箱继续。</p>
+        <form data-email-form>
+          <label>邮箱<input type="email" name="email" autocomplete="email" required placeholder="you@example.com"></label>
+          <button class="primary" type="submit">发送验证码</button>
+        </form>
+        <form data-code-form hidden>
+          <label>验证码<input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="6 位验证码"></label>
+          <button class="primary" type="submit">登录并继续</button>
+        </form>
+      </section>
+
+      <p class="status" data-status role="status" aria-live="polite"></p>
+    </section>
+  </main>
+  <script src="./desktop-authorize.js"></script>
+</body>
+</html>

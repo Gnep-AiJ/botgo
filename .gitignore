@@ -1,0 +1,25 @@
+dist/
+node_modules/
+.wrangler/
+worker/.dev.vars
+.secrets/
+.DS_Store
+
+# 仅提交网站实际使用的生产图片
+assets/*
+!assets/botgo-city-clean-mobile.webp
+!assets/botgo-city-clean-v2.webp
+!assets/botgo-robot-dynamic-mobile.webp
+!assets/botgo-robot-dynamic-v2.webp
+
+# Local AI/agent skill overlays and reversible cleanup archives
+.codex/
+.agents/
+.claude/
+.skill-archive/
+
+# Local preview logs and temporary diagnostics
+.tmp-*
+tmp-*
+layout-*
+debug-*

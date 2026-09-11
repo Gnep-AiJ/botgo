@@ -1,0 +1,31 @@
+:root { color-scheme: light dark; --ink:#0a2844; --text:#0a2844; --muted:#4b6e89; --error:#b42318; --line:rgb(57 137 193 / 26%); --surface:rgb(255 255 255 / 82%); --input:rgb(255 255 255 / 76%); --blue:#0878f7; --cyan:#18c4ef; font-family: "Avenir Next", "Segoe UI", "Microsoft YaHei", system-ui, sans-serif; background: #d9efff; color: var(--text); }
+* { box-sizing: border-box; }
+body { min-width: 320px; min-height: 100vh; margin: 0; background: linear-gradient(115deg, rgb(234 249 255 / 90%), rgb(202 239 255 / 70%)), url("./assets/botgo-city-clean-v2.webp") center / cover fixed; }
+button, input { font: inherit; }
+button { min-height: 44px; cursor: pointer; }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--blue); outline-offset: 3px; }
+.authorization-shell { display: grid; min-height: 100vh; place-items: center; padding: 24px; background: radial-gradient(circle at 65% 14%, rgb(24 196 239 / 16%), transparent 31%), rgb(4 16 30 / 6%); }
+.authorization-card { width: min(100%, 440px); padding: 34px; border: 1px solid var(--line); border-radius: 18px; background: var(--surface); box-shadow: 0 24px 64px rgb(20 87 127 / 20%), inset 0 1px rgb(255 255 255 / 45%); backdrop-filter:blur(18px); }
+.eyebrow { margin: 0; color: var(--blue); font-size: 11px; font-weight: 800; letter-spacing: .12em; }
+h1 { margin: 10px 0 10px; font-size: clamp(28px, 6vw, 38px); letter-spacing: -.04em; }
+h2 { margin: 26px 0 6px; font-size: 18px; }
+.lead, .login-panel > p, .actions p, .device-state small, .account-state small { color: var(--muted); font-size: 14px; line-height: 1.6; }
+.account-state, .device-state { display: flex; align-items: center; gap: 12px; margin-top: 22px; padding: 13px 0; border-top: 1px solid var(--line); }
+.account-avatar { display: grid; width: 38px; height: 38px; place-items: center; border-radius: 10px; color: #06203c; background: linear-gradient(140deg, #b8f0ff, var(--cyan)); font-size: 11px; font-weight: 900; }
+.account-state strong, .account-state small, .device-state span, .device-state strong, .device-state small { display: block; }
+.account-state strong, .device-state strong { color: var(--text); font-size: 14px; }
+.device-state { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: 5px 12px; }
+.device-state span { color: var(--muted); font-size: 12px; }
+.device-state small { grid-column: 2; margin-top: 1px; font-size: 12px; }
+.actions { margin-top: 22px; }
+.actions p { margin: 10px 0 0; font-size: 12px; }
+.primary { width: 100%; border: 1px solid var(--blue); border-radius: 9px; color: #fff; background: var(--blue); font-weight: 750; }
+.primary:hover { background: #0569d9; }
+.primary:disabled { cursor: wait; opacity: .55; }
+.login-panel form { display: grid; gap: 10px; margin-top: 15px; }
+label { display: grid; gap: 7px; color: var(--text); font-size: 13px; font-weight: 650; }
+input { width: 100%; min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); background: var(--input); }
+.status { min-height: 22px; margin: 18px 0 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.status.error { color: var(--error); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition: none !important; } }
+@media (prefers-color-scheme: dark) { :root { --ink:#07182d; --text:#f3f9ff; --muted:#aacbe1; --error:#ffc1bb; --line:rgb(172 220 252 / 24%); --surface:rgb(7 30 52 / 86%); --input:rgb(1 13 27 / 58%); --blue:#42d5ff; --cyan:#42d5ff; } body { background:linear-gradient(115deg,rgb(4 18 35 / 90%),rgb(8 50 84 / 67%)),url("./assets/botgo-city-clean-v2.webp") center / cover fixed; } .authorization-card { box-shadow:0 24px 64px rgb(0 8 20 / 40%),inset 0 1px rgb(233 250 255 / 8%); } .primary { color:#04203a; background:var(--cyan); border-color:#53d9ff; } .primary:hover { background:#a1efff; } }

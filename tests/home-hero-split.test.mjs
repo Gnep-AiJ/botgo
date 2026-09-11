@@ -1,0 +1,40 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+
+const root = process.cwd();
+const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
+const index = read("index.html");
+const styles = read("styles.css");
+const script = read("app.js");
+
+assert.match(styles, /\.story \{[\s\S]*?pointer-events:\s*none;/, "首屏文案容器不应遮挡右侧入口");
+assert.match(styles, /\.home-workspace-cta \{[\s\S]*?pointer-events:\s*auto;/, "工作台 CTA 必须独立接收点击");
+assert.match(styles, /\.robot-rig \{[\s\S]*?opacity:\s*1;/, "机器人应在首屏直接可见");
+assert.doesNotMatch(styles, /animation:\s*robot-hover[^;]*infinite/, "机器人本体不应持续上下浮动");
+assert.doesNotMatch(styles, /animation:\s*robot-halo-breathe[^;]*infinite/, "机器人光晕不应持续呼吸闪动");
+assert.doesNotMatch(styles, /animation:\s*robot-shadow-breathe[^;]*infinite/, "机器人阴影不应持续缩放");
+assert.match(styles, /\.robot-rig\.is-listening \.robot-float \{ animation: robot-ack/, "机器人仍应保留用户操作后的单次反馈");
+assert.match(styles, /\.bot-services \{[\s\S]*?opacity:\s*1;[\s\S]*?visibility:\s*visible;[\s\S]*?pointer-events:\s*none;/, "功能入口应在首屏直接可见且空白区域不截获点击");
+assert.match(styles, /\.service-chip \{[\s\S]*?opacity:\s*1;[\s\S]*?pointer-events:\s*auto;/, "服务入口按钮必须直接可见且保持可点击");
+assert.match(script, /after\(150, function \(\) \{ body\.classList\.add\("phase-one"\); \}\);/, "左侧应保留第一段动画阶段");
+assert.match(script, /after\(2200, function \(\) \{ body\.classList\.add\("phase-two"\); \}\);/, "左侧应在第一段后转入第二段内容");
+assert.match(styles, /\.copy--past \{ top: 16\.5%; width: min\(58vw, 760px\); height: 520px; \}/, "首段应保留上一版的画布基线");
+assert.match(styles, /\.past-time \{[\s\S]*?font-size: clamp\(15px, 1\.35vw, 20px\);/, "首段应保留上一版的时间标签字号");
+assert.match(styles, /\.past-era \{\s*top: 42px;[\s\S]*?font-size: clamp\(22px, 2\.1vw, 33px\);/, "首段应保留上一版的时代标签层级");
+assert.match(styles, /\.past-speaker \{\s*top: 128px;[\s\S]*?font-size: clamp\(18px, 1\.6vw, 25px\);/, "首段说明行应恢复上一版位置和字号");
+assert.match(styles, /\.past-quote--one \{ top: 207px; left: clamp\(58px, 6vw, 98px\); \}/, "首段主标题应恢复上一版重心");
+assert.match(styles, /\.copy--future \{[\s\S]*?top: 16\.5%;[\s\S]*?width: min\(58vw, 760px\);[\s\S]*?height: 520px;/, "第二段应复用首段画布基线");
+assert.match(styles, /\.future-era \{[\s\S]*?top: 0;[\s\S]*?font-size: clamp\(15px, 1\.35vw, 20px\);/, "第二段首行应对齐首段时间标签");
+assert.match(styles, /\.future-speaker \{[\s\S]*?top: 128px;[\s\S]*?font-size: clamp\(18px, 1\.6vw, 25px\);/, "第二段说明行应对齐首段说明行");
+assert.match(styles, /\.future-own \{[\s\S]*?top: 207px;[\s\S]*?font-size: clamp\(45px, 4\.35vw, 70px\);/, "第二段首个主标题应对齐首段");
+assert.match(styles, /\.digital-team \{[\s\S]*?top: 321px;[\s\S]*?left: clamp\(212px, 17vw, 284px\);[\s\S]*?font-size: clamp\(45px, 4\.35vw, 70px\);/, "第二段第二主标题应沿递进轴继续右移");
+assert.match(styles, /\.home-workspace-cta \{[\s\S]*?top: 458px;[\s\S]*?left: clamp\(276px, 20\.5vw, 336px\);/, "CTA 应向右移动，与第二主标题的递进关系更清晰");
+assert.match(index, /个人订阅 \/ 企业定制/, "联系面板应明确个人与企业服务");
+assert.match(index, /<strong>个人订阅<\/strong>\s*<p>网页对话与 BotGo Desktop<\/p>/, "个人订阅应以统一服务行呈现");
+assert.match(index, /<strong>企业定制<\/strong>\s*<p>Agent、知识库与定制部署<\/p>/, "企业定制应以统一服务行呈现");
+assert.match(styles, /\.contact-service \{[\s\S]*?grid-template-columns: minmax\(76px, auto\) minmax\(0, 1fr\);/, "联系说明应采用标签与描述对齐的双列轨道");
+assert.doesNotMatch(styles, /\.contact-lines span:nth-child\(2\) \{ margin-left:/, "联系说明不应保留错位缩进");
+assert.doesNotMatch(index, /团队：统一中转/, "联系面板不应保留团队中转文案");
+
+console.log("Home split hero contract test passed");
