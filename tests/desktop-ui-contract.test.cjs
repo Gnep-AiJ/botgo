@@ -35,6 +35,12 @@ assert.match(html, /data-account-menu/, "the account entry needs a compact menu"
 assert.match(html, /data-account-plan/, "the desktop account menu should show the active plan");
 assert.match(html, /data-account-credits/, "the desktop account menu should show remaining credits");
 assert.match(html, /data-start-web-authorization/, "guest login must start browser authorization from the account menu");
+assert.match(html, /class="sidebar"[\s\S]*class="brand"[\s\S]*data-new-thread[\s\S]*data-project-list[\s\S]*class="sidebar-account"/, "sidebar must keep the four-level navigation order");
+assert.doesNotMatch(html, /class="folder-picker"/, "project selection must move out of the sidebar card");
+assert.match(html, /class="chat-header"[\s\S]*data-current-project[\s\S]*data-current-project-path/, "header must show the selected project and path");
+assert.match(html, /class="chat-header"[\s\S]*data-change-project/, "header must provide the lightweight project switch action");
+assert.match(html, /class="composer-wrap"[\s\S]*class="composer"[\s\S]*data-mode/, "composer must remain the central task entry");
+assert.match(html, /src="assets\/botgo-desktop\.ico"/, "renderer logo must use the taskbar icon asset");
 assert.doesNotMatch(html, /data-account-login-form/, "desktop must not collect BotGo verification codes in the renderer");
 assert.doesNotMatch(html, /data-nav="account"/, "account must not be a full-page navigation item");
 assert.match(html, /value="read-only"/);
@@ -53,8 +59,11 @@ assert.doesNotMatch(styles, /botgo-city-clean-v2\.webp/, "desktop chat workspace
 assert.match(styles, /#086dff/i, "desktop should use the BotGo blue accent token");
 assert.match(styles, /--line:/, "desktop must centralize borders with semantic tokens");
 assert.match(styles, /--focus:/, "desktop must reserve a visible focus token");
-assert.match(styles, /color-scheme:\s*light dark;/, "desktop should follow the system light and dark theme");
-assert.match(styles, /@media\s*\(prefers-color-scheme:dark\)/, "desktop should provide dark theme token overrides");
+assert.match(styles, /--canvas:\s*#/, "dark renderer theme must expose a canvas token");
+assert.match(styles, /--accent:\s*#/, "dark renderer theme must expose one accent token");
+assert.match(styles, /color-scheme:\s*dark;/, "desktop should default to the requested dark theme");
+assert.match(styles, /\.composer-wrap\s*\{[\s\S]*left:\s*var\(--sidebar-width\)/, "composer must anchor to the post-sidebar workspace");
+assert.match(styles, /@media\s*\(prefers-reduced-motion:\s*reduce\)/, "renderer must honor reduced motion");
 assert.match(authorizationStyles, /color-scheme:\s*light dark;/, "browser authorization should follow the system theme");
 assert.match(authorizationStyles, /@media \(prefers-color-scheme: dark\)/, "browser authorization should provide dark theme token overrides");
 assert.match(authorizationStyles, /botgo-city-clean-v2\.webp/, "browser authorization should retain the BotGo city artwork");
