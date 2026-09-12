@@ -26,10 +26,18 @@ function Expand-VerifiedZip([string]$Archive, [string]$Destination) {
             $target = [IO.Path]::GetFullPath((Join-Path $destinationPath $entry.FullName))
             if (-not $target.StartsWith($destinationPath.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe archive entry.' }
         }
+        foreach ($entry in $zip.Entries) {
+            $target = [IO.Path]::GetFullPath((Join-Path $destinationPath $entry.FullName)).Replace('/', '\')
+            # Extended Windows paths require backslashes even when ZIP names use '/'.
+            $extendedPath = if ($target.StartsWith('\\')) { '\\?\UNC\' + $target.Substring(2) } else { '\\?\' + $target }
+            if ($entry.FullName.EndsWith('/') -or $entry.FullName.EndsWith('\')) {
+                [IO.Directory]::CreateDirectory($extendedPath) | Out-Null
+            } else {
+                [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($extendedPath)) | Out-Null
+                [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $extendedPath)
+            }
+        }
     } finally { $zip.Dispose() }
-    # Windows PowerShell 5.1 otherwise fails on deeply nested npm dependencies.
-    $extendedPath = if ($destinationPath.StartsWith('\\')) { '\\?\UNC\' + $destinationPath.Substring(2) } else { '\\?\' + $destinationPath }
-    [IO.Compression.ZipFile]::ExtractToDirectory($Archive, $extendedPath)
 }
 function Download-Checked([string]$Url, [string]$Output, [string]$Sha256) {
     if (([Uri]$Url).Scheme -ne 'https' -or $Sha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Invalid download metadata.' }
