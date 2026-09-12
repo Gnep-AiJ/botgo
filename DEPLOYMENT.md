@@ -30,7 +30,7 @@ Wrangler 固定使用项目脚本指定的 4.125.0。发布前核对账户/绑�
 
 2026-09-12 只读核查发现生产尚无 upstream_profiles/upstream_routes。首次初始化入口为 `worker/scripts/bootstrap-metering.js`：仅返回维护 503；同时满足维护标记与本轮发布标记时，定时事件才使用现有 Worker 密钥加密导入配置、实际探测六个模型并启用通过者。已有路由直接拒绝，审计主键保证只执行一次。失败会保留审计与禁用状态，不能删审计后盲目重跑。它不是正式 Worker 入口，也不提供公开管理接口。
 
-该入口的生产部署被自动审批拒绝，尚未执行。批准后需明确短暂维护、0013/0014、临时每分钟调度及探测范围。初始化结束后用正常 `worker/wrangler.jsonc` 部署 `BOTGO_MAINTENANCE=0`、`BOTGO_RELEASE_BOOTSTRAP=0`，显式清空 cron 并核验，避免留下临时任务。生产数据已迁移后不得恢复旧元单位代码。
+该入口在用户批准完整升级方案后已执行，0013/0014 已迁移。首次探测因 Worker 不支持 redirect:error 失败，修正为 manual 后通过独立重试锁完成，原审计保留。正式 Worker 已设置 `BOTGO_MAINTENANCE=0`、`BOTGO_RELEASE_BOOTSTRAP=0`、`BOTGO_RELEASE_RETRY=0`，cron 已经 Cloudflare API 回读确认为空。不要重跑首次初始化或删除审计锁；后续上游调整走既有后台。生产数据已迁移后不得恢复旧元单位代码。
 
 保留上一份 CLI manifest、安装目录和桌面发布记录。代码回滚不会回滚 D1，0013 后不能直接恢复使用元单位的旧 Worker；需要对应的兼容版本或按备份受控恢复。
 

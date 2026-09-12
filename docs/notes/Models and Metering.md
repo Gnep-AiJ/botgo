@@ -1,7 +1,7 @@
 ---
 type: module
 updated: 2026-09-12
-status: release-candidate
+status: production
 tags: [botgo, models, billing, agent]
 ---
 # 模型与实际用量计费
@@ -37,4 +37,4 @@ tags: [botgo, models, billing, agent]
 
 `npm test` 的 pretest 用 Node 22 SQLite 执行全部迁移，验证小额/缓存/推理/长上下文、原子预留、幂等、超额和 SSE 中止。真实上游脚本 `scripts/probe-models.mjs` 仅从进程环境读取测试凭据，输出无秘密的能力状态。
 
-当前候选尚未迁移生产 D1 或发布生产 Worker；0013 的元转分与 0014 必须按顺序执行，且需要兼容维护窗口。不要对未迁移数据库直接部署当前 Worker。
+2026-09-12 已顺序迁移生产 0013、0014 并发布兼容 Worker。五个模型（含 GPT-6 Astra）通过当前生产上游探测并启用，5.4 返回 404 保持禁用；详见 [[Release 2026-09-12]]。新环境仍须先迁移再部署。生产已有账务单位不能通过代码回滚恢复为元。
