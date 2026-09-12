@@ -64,7 +64,10 @@ function readInstalledCodexVersion({ packageRoot, fsImpl = fs } = {}) {
 }
 
 function fetchLatestStableVersionViaNpm({ registry = DEFAULT_REGISTRY, platform = process.platform, execPath = process.execPath, fsImpl = fs, spawnSyncImpl = spawnSync, env = process.env } = {}) {
-  const invocation = npmInvocation({ platform, execPath, fsImpl, env, args: ["view", "@openai/codex", "dist-tags.latest", "--json", "--registry", registry] });
+  // fetch reads a package document; npm --registry expects its parent registry.
+  const registryBase = new URL(registry);
+  registryBase.pathname = registryBase.pathname.replace(/\/@openai(?:%2f|\/)codex\/?$/i, "/");
+  const invocation = npmInvocation({ platform, execPath, fsImpl, env, args: ["view", "@openai/codex", "dist-tags.latest", "--json", "--registry", registryBase.href] });
   const result = spawnSyncImpl(invocation.command, invocation.args, {
     env,
     encoding: "utf8",

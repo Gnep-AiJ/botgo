@@ -54,7 +54,7 @@ test("fetchLatestStableVersion falls back to npm when direct fetch is unavailabl
   assert.equal(calls[0].command, "D:\\Environment\\node\\node.exe");
   assert.deepEqual(calls[0].args, [
     "D:\\Environment\\node\\node_modules\\npm\\bin\\npm-cli.js",
-    "view", "@openai/codex", "dist-tags.latest", "--json", "--registry", "https://registry.npmjs.org/@openai%2fcodex"
+    "view", "@openai/codex", "dist-tags.latest", "--json", "--registry", "https://registry.npmjs.org/"
   ]);
   assert.equal(calls[0].options.shell, false);
 });
