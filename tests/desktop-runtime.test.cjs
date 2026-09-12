@@ -3,7 +3,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-const { codexArgumentsFor } = require("../desktop/lib/mode.cjs");
+const { codexArgumentsFor } = require("../agent/lib/codex-runner.cjs");
 const { createLocalStateStore } = require("../desktop/lib/local-state.cjs");
 const { createCredentialStore } = require("../desktop/lib/credential-store.cjs");
 const { prepareBotGoConfig, restoreOriginalConfig } = require("../desktop/lib/codex-config.cjs");
@@ -11,7 +11,7 @@ const { prepareBotGoConfig, restoreOriginalConfig } = require("../desktop/lib/co
 assert.deepEqual(codexArgumentsFor("read-only"), ["exec", "--json", "--sandbox", "read-only"]);
 assert.deepEqual(codexArgumentsFor("workspace-write"), ["exec", "--json", "--sandbox", "workspace-write"]);
 assert.deepEqual(codexArgumentsFor("full-access"), ["exec", "--json", "--sandbox", "danger-full-access"]);
-assert.throws(() => codexArgumentsFor("unknown"), /Unsupported permission mode/);
+assert.throws(() => codexArgumentsFor("unknown"), /Unsupported permission/);
 
 const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "botgo-desktop-test-"));
 const stateFile = path.join(temporaryDirectory, "state.json");

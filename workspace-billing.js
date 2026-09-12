@@ -94,7 +94,9 @@
       amountInput.min = String(recharge.minAmountCents / 100);
       amountInput.max = String(recharge.maxAmountCents / 100);
       note.textContent = `最低 ${formatCny(recharge.minAmountCents)}，最高 ${formatCny(recharge.maxAmountCents)}，支持两位小数。`;
-      paymentAvailable = data.paymentAvailable === true;
+      const rechargeSupported = Number.isInteger(data.recharge?.minAmountCents) && Number.isInteger(data.recharge?.maxAmountCents);
+      paymentAvailable = data.paymentAvailable === true && rechargeSupported;
+      if (data.paymentAvailable && !rechargeSupported) setStatus("充值服务更新中，请稍后重试。", "error");
       syncAmountState();
       button.textContent = paymentAvailable ? "支付宝充值" : "支付未开放";
       if (!paymentAvailable && data.reason === "unsupported_sign_type") setStatus("充值暂不可用，请稍后重试。", "error");

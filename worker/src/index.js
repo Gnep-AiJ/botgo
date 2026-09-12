@@ -649,6 +649,7 @@ import { handleAgentRelease } from "./agent-releases.js";
 
 export default {
   async fetch(request, env) {
+    if (env.BOTGO_MAINTENANCE === "1") return json({ error: "服务更新中，请稍后重试。" }, 503, { "retry-after": "60" });
     if (!env.DB || !env.AUTH_SECRET) return json({ error: "后端绑定尚未配置。" }, 503);
     const path = new URL(request.url).pathname;
     const agentRelease = await handleAgentRelease(request, env, path);

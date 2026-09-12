@@ -31,6 +31,7 @@ function buildTimeApiOrigin() {
 const pagesOrigin = (process.env.BOTGO_API_ORIGIN || buildTimeApiOrigin() || "").replace(/\/$/, "");
 let mainWindow;
 let activeTask;
+let taskStarting = false;
 let activeAuthorization;
 
 function requireApiOrigin() {
@@ -280,10 +281,12 @@ app.whenReady().then(() => {
     return { ok: true };
   });
   ipcMain.handle("task:start", async (_event, task) => {
-    if (activeTask) throw new Error("已有任务正在运行。");
+    if (activeTask || taskStarting) throw new Error("已有任务正在运行。");
     if (!task || typeof task.prompt !== "string" || !task.prompt.trim() || typeof task.projectPath !== "string" || !fs.statSync(task.projectPath).isDirectory()) throw new Error("请选择项目并输入任务。");
     if (!["read-only", "workspace-write", "full-access"].includes(task.mode)) throw new Error("权限模式无效。");
     if (task.mode === "full-access" && !task.confirmedFullAccess) throw new Error("完全访问需要确认。");
+    taskStarting = true;
+    try {
     const current = await credential();
     const account = await apiRequest("/desktop/account", { deviceToken: current.deviceToken });
     if (!Number.isFinite(account.account?.credits) || account.account.credits < 1) throw new Error("额度不足。请前往 BotGo 网站管理账户。");
@@ -331,6 +334,7 @@ app.whenReady().then(() => {
       }
     });
     return { id: entry.id };
+    } finally { taskStarting = false; }
   });
   ipcMain.handle("runtime:open-terminal", async (_event, { projectPath, sessionId }) => {
     if (activeTask) throw new Error("请先停止当前任务。");

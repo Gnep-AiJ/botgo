@@ -28,3 +28,4 @@ assets/*
 tmp-*
 layout-*
 debug-*
+/artifacts/

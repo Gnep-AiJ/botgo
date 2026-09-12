@@ -4,11 +4,15 @@ on:
   push:
     paths:
       - "agent/**"
+      - "install.ps1"
+      - "tests/installer-smoke.ps1"
       - ".github/dependabot.yml"
       - ".github/workflows/agent.yml"
   pull_request:
     paths:
       - "agent/**"
+      - "install.ps1"
+      - "tests/installer-smoke.ps1"
       - ".github/dependabot.yml"
       - ".github/workflows/agent.yml"
 
@@ -39,6 +43,8 @@ jobs:
       - name: Package Windows release
         working-directory: agent
         run: npm run package:win
+      - name: Verify installer and rollback in isolated directory
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File tests/installer-smoke.ps1
       - name: Upload verified package
         uses: actions/upload-artifact@v4
         with:
