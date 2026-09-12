@@ -44,7 +44,7 @@ async function encryptionKey(env) {
   } catch { return null; }
 }
 
-async function encryptSecret(value, env) {
+export async function encryptSecret(value, env) {
   const key = await encryptionKey(env);
   if (!key) throw new Error("UPSTREAM_CONFIG_KEY must be a base64url encoded 32-byte Worker Secret");
   const iv = crypto.getRandomValues(new Uint8Array(12));
@@ -89,7 +89,7 @@ async function fetchWithTimeout(url, options, timeoutMs = 12000) {
   } finally { clearTimeout(timeout); }
 }
 
-async function probeProfile(env, row, channel, modelId) {
+export async function probeProfile(env, row, channel, modelId) {
   const apiKey = await decryptSecret(row.api_key_ciphertext, row.api_key_iv, env);
   const headers = { authorization: `Bearer ${apiKey}`, "content-type": "application/json" };
   let models = { ok: false, status: 0, latencyMs: 0, errorCode: "network_error" };
