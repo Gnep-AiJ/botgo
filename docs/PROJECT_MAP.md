@@ -35,6 +35,8 @@ flowchart LR
   Worker --> Payment[支付宝验签与订单查询]
 ```
 
+后台样式与隔离发布流程：[[notes/Admin UI]]。
+
 ## 代码边界
 
 - 网站：原生 HTML/CSS/JS；不在网页中运行本地任务。安装教程允许展示 CLI 安装命令。
