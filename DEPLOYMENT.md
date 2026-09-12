@@ -19,7 +19,7 @@ Wrangler 固定使用项目脚本指定的 4.125.0。发布前核对账户/绑�
 ## 顺序
 
 1. 提交审查后的源码、测试与文档，验证 GitHub 远端提交。
-2. 备份 D1，再运行 `npm run migrate:worker` 与 `npm run deploy:worker`。
+2. 本轮需要明确批准 main 更新和短暂 API 维护窗口，见当前发布记录。备份 D1 后先部署维护模式（`BOTGO_MAINTENANCE=1`），再运行 `npm run migrate:worker`；部署与分单位余额兼容的最终 Worker 并明确设置 `BOTGO_MAINTENANCE=0`，验证健康和余额契约。不要在旧 Worker 仍接受请求时直接迁移余额单位。
 3. `npm --prefix agent run package:win`；将 zip 上传到 R2 `agent/<version>/botgo-agent-win-x64.zip`。下载校验通过后才更新 `agent/current.json`。
 4. 桌面：设置 `BOTGO_API_ORIGIN=https://botgo.win` 后执行 `npm --prefix desktop run package:win`；签名及干净机器验证完成后计算最终哈希、上传 R2，再登记/激活发布元数据。
 5. `npm run build`、`npm run deploy:pages`；检查健康接口、账户、CLI 安装脚本与版本包、桌面下载、一次真实中转任务和余额。
