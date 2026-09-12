@@ -27,7 +27,9 @@ function Expand-VerifiedZip([string]$Archive, [string]$Destination) {
             if (-not $target.StartsWith($destinationPath.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe archive entry.' }
         }
     } finally { $zip.Dispose() }
-    [IO.Compression.ZipFile]::ExtractToDirectory($Archive, $destinationPath)
+    # Windows PowerShell 5.1 otherwise fails on deeply nested npm dependencies.
+    $extendedPath = if ($destinationPath.StartsWith('\\')) { '\\?\UNC\' + $destinationPath.Substring(2) } else { '\\?\' + $destinationPath }
+    [IO.Compression.ZipFile]::ExtractToDirectory($Archive, $extendedPath)
 }
 function Download-Checked([string]$Url, [string]$Output, [string]$Sha256) {
     if (([Uri]$Url).Scheme -ne 'https' -or $Sha256 -notmatch '^[a-fA-F0-9]{64}$') { throw 'Invalid download metadata.' }

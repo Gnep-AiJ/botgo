@@ -19,6 +19,11 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    # Keep PS 5.1 module discovery consistent with the supported installer shell.
+    shell: powershell
+
 jobs:
   verify:
     runs-on: windows-latest
