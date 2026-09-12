@@ -16,7 +16,7 @@ assert.match(workspace, /data-desktop-open/, "网页应保留独立的桌面端�
 assert.match(workspace, /id="desktop-install-dialog"/, "桌面端说明应使用独立对话框");
 assert.match(client, /desktopInstallDialog\.showModal\(\)/, "客户端应打开桌面端说明对话框");
 assert.doesNotMatch(workspace, /\/downloads\/BotGo-Desktop-Setup\.exe/, "未托管安装包不应在网页提供下载入口");
-assert.doesNotMatch(workspace, /API Key|复制安装命令|Codex CLI|Claude Code|chatgpt\.com\/download/, "网页不应展示凭据、命令、CLI 或第三方官方下载入口");
+assert.doesNotMatch(workspace, /API Key|Codex CLI|Claude Code|chatgpt\.com\/download/, "网页不应展示凭据或第三方下载入口");
 assert.doesNotMatch(client, /bootstrapCommand|\/account\/codex-key|navigator\.clipboard/, "网页脚本不应生成命令或处理凭据复制");
 assert.match(workspaceStyles, /color-scheme:\s*light dark;/, "工作台应跟随系统主题");
 

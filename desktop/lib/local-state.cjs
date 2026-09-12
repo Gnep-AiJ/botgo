@@ -9,6 +9,7 @@ function messageOf(message) {
     id: String(message?.id || crypto.randomUUID()),
     role: ["user", "assistant", "system"].includes(message?.role) ? message.role : "system",
     content: String(message?.content || ""),
+    model: String(message?.model || ''),
     kind: ["message", "progress", "error", "files"].includes(message?.kind) ? message.kind : "message",
     files: Array.isArray(message?.files) ? message.files.filter((file) => typeof file === "string").slice(0, 200) : [],
     createdAt: String(message?.createdAt || now())
@@ -22,6 +23,7 @@ function threadOf(thread) {
     projectPath: String(thread?.projectPath || ""),
     title: String(thread?.title || messages.find((message) => message.role === "user")?.content || "新对话").slice(0, 64),
     sessionId: String(thread?.sessionId || "").slice(0, 200),
+    model: String(thread?.model || ''),
     status: ["idle", "running", "completed", "stopped", "error"].includes(thread?.status) ? thread.status : "idle",
     messages,
     createdAt: String(thread?.createdAt || now()),

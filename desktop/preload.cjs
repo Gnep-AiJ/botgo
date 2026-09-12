@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld("botgo", Object.freeze({
   startWebAuthorization: () => invoke("auth:start-web-authorization"),
   cancelWebAuthorization: () => invoke("auth:cancel-web-authorization"),
   account: () => invoke("account:get"),
+  models: () => invoke('models:get'),
   history: () => invoke("history:get"),
   chooseProject: () => invoke("project:choose"),
   rememberProject: (projectPath) => invoke("project:remember", projectPath),

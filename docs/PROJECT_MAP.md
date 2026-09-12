@@ -14,6 +14,7 @@ tags: [botgo, agent, architecture]
 | 首页 | `index.html`、`styles.css`、`app.js` | 首页契约与浏览器 |
 | 网页工作台与账户面板 | [[notes/UI Workspace]]；`workspace.html/css/js`、`workspace-billing.js` | 响应式、主题、真实对话 |
 | 登录、支付与扣费 | [[notes/Account and Billing]]；`worker/src/index.js`、`desktop-auth.js`、`alipay-*.js` | 授权、验签、幂等、金额单位 |
+| 模型目录与 token 计费 | [[notes/Models and Metering]]；`worker/src/metering.js`、`0014_metered_models.sql`、`admin-metering.js` | 真实用量、原子预留、快照、能力探测 |
 | 桌面界面及本地状态 | [[notes/Desktop and CLI]]；`desktop/main.cjs`、`preload.cjs`、`renderer.js/css` | 原生窗口、任务、停止、恢复 |
 | CLI 与共用运行器 | [[notes/Desktop and CLI]]；`agent/bin/botgo.cjs`、`agent/lib/` | `npm --prefix agent test` |
 | 安装与发布 | `install.ps1`、`agent/scripts/package.ps1`、`DEPLOYMENT.md` | 干净安装、哈希、升级回滚 |

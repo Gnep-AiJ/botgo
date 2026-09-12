@@ -4,7 +4,7 @@
   const allowedViews = new Set(["chat", "agents", "tutorials"]);
   const params = new URLSearchParams(window.location.search);
   const localPreviewHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-  const accountPreview = localPreviewHost && params.get("preview") === "account";
+  const accountPreview = localPreviewHost && ['account','chat'].includes(params.get('preview'));
   const openedFromLegacySubscription = params.get("view") === "subscription";
   const returnedOutTradeNo = params.get("out_trade_no") || "";
   let activeView = allowedViews.has(params.get("view")) ? params.get("view") : "chat";
@@ -30,6 +30,19 @@
   const prefersDarkTheme = window.matchMedia("(prefers-color-scheme: dark)");
   let savedThemePreference = null;
   let chatSending = false;
+  let selectedModel='gpt-5.6-sol', availableModels=[], chatController=null;
+  const modelPicker=document.getElementById('model-picker');
+  const scrollArea=document.querySelector('.chat-column');
+  const latestButton=document.createElement('button');latestButton.type='button';latestButton.className='jump-latest';latestButton.textContent='↓ 回到最新';latestButton.hidden=true;chatForm.before(latestButton);
+  const nearBottom=()=>scrollArea.scrollHeight-scrollArea.scrollTop-scrollArea.clientHeight<100;
+  latestButton.addEventListener('click',()=>{scrollArea.scrollTop=scrollArea.scrollHeight;latestButton.hidden=true;});
+  scrollArea.addEventListener('scroll',()=>{latestButton.hidden=nearBottom();});
+  BotGoUI.menu(modelPicker,()=>availableModels.map(m=>({value:m.id,label:m.name,selected:m.id===selectedModel,disabled:!m.enabled||!m.web})),id=>{selectedModel=id;modelPicker.textContent=`${availableModels.find(m=>m.id===id).name} ⌄`;try{localStorage.setItem('botgo-model',id)}catch{}},{label:'选择模型',up:true});
+  async function loadModels(){try{const data=accountPreview?{defaultModel:'gpt-5.6-sol',models:['gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna','gpt-5.5','gpt-5.4','gpt-6-astra'].map(id=>({id,name:id.replace('gpt-','GPT-'),enabled:id!=='gpt-6-astra',web:true}))}:await api('/models');availableModels=data.models;let saved;try{saved=localStorage.getItem('botgo-model')}catch{}selectedModel=availableModels.some(m=>m.id===saved&&m.enabled&&m.web)?saved:data.defaultModel;const selected=availableModels.find(m=>m.id===selectedModel);modelPicker.textContent=`${selected?.name||'模型暂不可用'} ⌄`;modelPicker.disabled=!availableModels.length;}catch{modelPicker.textContent='模型暂不可用';modelPicker.disabled=true;}}
+  loadModels();
+  document.getElementById('stop-chat').addEventListener('click',()=>chatController?.abort());
+  function syncComposer(){chatInput.style.height='auto';chatInput.style.height=`${Math.min(168,chatInput.scrollHeight)}px`;chatForm.querySelector('[type=submit]').disabled=chatSending||!chatInput.value.trim();}
+  chatInput.addEventListener('input',syncComposer);
 
   function currentTheme() {
     return document.documentElement.dataset.theme || (prefersDarkTheme.matches ? "dark" : "light");
@@ -223,13 +236,14 @@
   function appendMessage(role, content, modifier) {
     const message = document.createElement("article");
     message.className = `chat-message chat-message--${modifier || role}`;
-    message.textContent = content;
-    chatLog.appendChild(message);
-    message.scrollIntoView({ block: "end", behavior: "smooth" });
-    return message;
+    const body=document.createElement('div');body.className='message-body';body.textContent=content;message.append(body);
+    const follow=nearBottom();chatLog.appendChild(message);
+    if(follow)scrollArea.scrollTop=scrollArea.scrollHeight;
+    return body;
   }
 
   function resetConversation() {
+    if(chatSending)return;
     messages = [];
     chatLog.textContent = "";
     welcomeView.hidden = false;
@@ -247,7 +261,7 @@
       try {
         const payload = JSON.parse(data);
         const delta = payload.choices?.[0]?.delta?.content;
-        if (delta) { answer += delta; target.textContent = answer; }
+        if (delta) { const follow=nearBottom();answer += delta;target.textContent = answer;if(follow)scrollArea.scrollTop=scrollArea.scrollHeight;else latestButton.hidden=false; }
       } catch { /* 忽略上游 SSE 保活事件。 */ }
     };
     while (true) {
@@ -268,8 +282,10 @@
     const content = chatInput.value.trim();
     if (!content) return;
     if (!account) { showAuth("login"); return; }
+    if (!availableModels.some(m=>m.id===selectedModel&&m.enabled&&m.web)) return;
     welcomeView.hidden = true;
     chatInput.value = "";
+    const requestIndex=messages.length;
     messages.push({ role: "user", content });
     appendMessage("user", content);
     const responseNode = appendMessage("assistant", "正在连接模型…");
@@ -277,25 +293,30 @@
     chatSending = true;
     sendButton.disabled = true;
     sendButton.setAttribute("aria-busy", "true");
+    const requestModel=selectedModel;modelPicker.disabled=true;sendButton.hidden=true;document.getElementById('stop-chat').hidden=false;chatController=new AbortController();syncComposer();
+    const finishMessage=(answer)=>{BotGoUI.markdown(responseNode,answer);const tools=document.createElement('div');tools.className='message-tools';const copy=document.createElement('button');copy.type='button';copy.className='message-copy';copy.textContent='复制';copy.addEventListener('click',()=>BotGoUI.copyText(answer,copy));const model=document.createElement('span');model.className='message-model';model.textContent=requestModel;tools.append(copy,model);responseNode.after(tools);};
     try {
+      if(accountPreview){const answer='这是本地对话预览。\n\n**模型和菜单**可以直接体验，不会发起真实请求。\n\n```powershell\nbotgo\n```';finishMessage(answer);messages.push({role:'assistant',content:answer,model:requestModel});return;}
       const response = await fetch("/api/chat/stream", {
         method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ model: "gpt-5.6", messages })
+        signal:chatController.signal,
+        body: JSON.stringify({ model: requestModel, messages:messages.map(({role,content})=>({role,content})) })
       });
       if (!response.ok || !response.body) {
         const body = await response.json().catch(() => ({}));
         throw new Error(body.error || "对话请求未完成。");
       }
       const answer = await consumeStream(response, responseNode);
-      if (answer) messages.push({ role: "assistant", content: answer });
+      if (answer) {messages.push({ role: "assistant", content: answer, model:requestModel });finishMessage(answer);}
       else responseNode.textContent = "模型没有返回内容，请重试。";
     } catch (error) {
-      responseNode.textContent = error.message;
-      responseNode.classList.add("chat-message--notice");
+      if(error.name==='AbortError'){const partial=responseNode.textContent;if(partial&&partial!=='正在连接模型…'){messages.push({role:'assistant',content:partial,model:requestModel});finishMessage(partial);}else responseNode.textContent='已停止';}
+      else {responseNode.textContent=error.message;const retry=document.createElement('button');retry.type='button';retry.className='message-retry';retry.textContent='重试';retry.addEventListener('click',()=>{if(chatSending)return;if(messages.length!==requestIndex+1){chatInput.value=content;syncComposer();chatInput.focus();return;}messages.pop();responseNode.parentElement.previousElementSibling?.remove();responseNode.parentElement.remove();chatInput.value=content;syncComposer();chatForm.requestSubmit();});responseNode.after(retry);}
     } finally {
       chatSending = false;
       sendButton.disabled = false;
       sendButton.removeAttribute("aria-busy");
+      sendButton.hidden=false;document.getElementById('stop-chat').hidden=true;modelPicker.disabled=false;chatController=null;syncComposer();window.dispatchEvent(new Event('botgo:account-refresh'));
       chatInput.focus();
     }
   }
@@ -374,7 +395,7 @@
   if (accountPreview) {
     account = { email: "preview@botgo.local", balanceCents: 102000 };
     renderAccountState();
-    openSubscriptionDialog();
+    if(params.get('preview')==='account')openSubscriptionDialog();
   } else if (openedFromLegacySubscription) {
     openSubscriptionDialog();
   }

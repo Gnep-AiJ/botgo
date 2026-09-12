@@ -7,6 +7,7 @@
     <meta name="description" content="BotGo AI 对话、Agent 安装与教程工作台" />
     <title>BotGo AI 工作台</title>
     <link rel="stylesheet" href="./workspace.css" />
+    <link rel="stylesheet" href="./ui-kit.css" />
   </head>
   <body>
     <div class="workspace-stage">
@@ -16,7 +17,7 @@
           <a class="mobile-brand" href="./index.html" aria-label="返回 BotGo 首页">BotG<span class="brand-bot" aria-hidden="true"><i></i><i></i></span></a>
           <nav class="workspace-nav" aria-label="工作台内容">
             <button type="button" data-view-link="chat">对话</button>
-            <button type="button" data-view-link="agents">桌面端</button>
+            <button type="button" data-view-link="agents">应用</button>
             <button type="button" data-view-link="tutorials">指南</button>
           </nav>
           <div class="auth-actions" id="auth-actions">
@@ -63,23 +64,24 @@
             </div>
             <form class="chat-composer" id="chat-form">
               <label class="sr-only" for="chat-input">输入消息</label>
-              <textarea id="chat-input" rows="1" maxlength="12000" placeholder="输入任务…"></textarea>
+              <textarea id="chat-input" rows="1" maxlength="12000" placeholder="向 BotGo 发送消息"></textarea>
               <div class="composer-actions">
-                <span class="model-select" aria-label="当前模型">GPT-5.6</span>
+                <button class="model-picker" id="model-picker" type="button" aria-label="选择模型">选择模型 ⌄</button>
                 <span class="composer-note" id="composer-note">登录后开始对话</span>
-                <button class="send-button" type="submit">发送 <span aria-hidden="true">↗</span></button>
+                <button class="send-button" type="submit" aria-label="发送消息" disabled><span aria-hidden="true">↑</span></button>
+                <button class="send-button" id="stop-chat" type="button" aria-label="停止生成" hidden>■</button>
               </div>
             </form>
           </section>
 
           <section class="workspace-view workspace-view--agents" data-view="agents" hidden aria-label="AI Agent 安装引导">
             <div class="content-panel agent-panel">
-              <p class="view-kicker">BOTGO DESKTOP</p>
-              <h1>在本地完成任务</h1>
-              <p class="view-lead">选择文件夹后开始。</p>
+              <p class="view-kicker">BOTGO APPS</p>
+              <h1>你的工作方式，你来选</h1>
+              <p class="view-lead">桌面应用与命令行，共用一个 BotGo 账户。</p>
               <div class="agent-choices" aria-label="选择本地 Agent">
                 <article class="agent-choice agent-choice--desktop"><p class="agent-label">WINDOWS APP</p><h2>BotGo Desktop</h2><p>账户、项目和任务在一个界面内完成。</p><button type="button" class="setup-primary" data-desktop-open>了解桌面端</button></article>
-                <article class="agent-choice agent-choice--cli"><p class="agent-label">WINDOWS TERMINAL</p><h2>BotGo Agent CLI</h2><p>在 PowerShell 中粘贴，自动准备安装环境。</p><div class="install-command"><code>irm https://botgo.win/install.ps1 | iex</code><button type="button" data-copy-install aria-label="复制 CLI 安装命令">复制</button></div><p class="cli-install-status" role="status" data-install-status></p><details><summary>接下来怎么用</summary><ol><li>运行 <code>botgo auth login</code>，在浏览器登录。</li><li>进入项目目录，运行 <code>botgo codex</code> 开始对话。</li></ol><p>已安装？再次运行安装命令即可更新。</p></details></article>
+                <article class="agent-choice agent-choice--cli"><p class="agent-label">WINDOWS TERMINAL</p><h2>BotGo Agent CLI</h2><p>在你熟悉的终端里，直接开始工作。</p><ol class="install-steps"><li>开始菜单搜索 <strong>PowerShell</strong> 并打开。</li><li>复制并粘贴下方命令，按 Enter。</li><li>输入 <code>botgo</code>，在浏览器完成登录。</li></ol><div class="install-command"><code>irm https://botgo.win/install.ps1 | iex</code><button type="button" data-copy-install aria-label="复制 CLI 安装命令">复制</button></div><p class="cli-install-status" role="status" data-install-status></p><a class="guide-link" href="?view=tutorials&amp;guide=cli">查看命令行指南 →</a></article>
               </div>
             </div>
           </section>
@@ -88,11 +90,12 @@
             <div class="content-panel tutorial-panel">
               <p class="view-kicker">BOTGO / GUIDE</p>
               <h1>开始使用</h1>
-              <ol class="tutorial-list">
-                <li><span>01</span><div><h2>登录账户</h2><p>使用邮箱验证码完成验证。</p></div></li>
-                <li><span>02</span><div><h2>开始对话</h2><p>输入目标，开始协作。</p></div></li>
-                <li><span>03</span><div><h2>管理余额</h2><p>在右上角查看余额并进行充值。</p></div></li>
-              </ol>
+              <p class="view-lead">选一种方式，几步就能开始。</p>
+              <div class="guide-tabs" role="tablist" aria-label="使用方式"><button type="button" role="tab" data-guide="web" aria-selected="true">网页对话</button><button type="button" role="tab" data-guide="desktop" aria-selected="false">桌面应用</button><button type="button" role="tab" data-guide="cli" aria-selected="false">命令行</button></div>
+              <section data-guide-panel="web" role="tabpanel"><h2>从一个问题开始</h2><ol class="install-steps"><li>点击右上角登录，用邮箱验证码验证。</li><li>在输入框下方选择模型，输入你的目标。</li><li>按 Enter 发送；生成时可随时停止。</li></ol><a class="guide-link" href="?view=chat">开始对话 →</a></section>
+              <section data-guide-panel="desktop" role="tabpanel" hidden><h2>让 BotGo 在项目中工作</h2><ol class="install-steps"><li>在应用页下载并安装 BotGo Desktop。</li><li>通过浏览器登录，确认授权当前设备。</li><li>选择文件夹、模型和权限，输入任务。</li></ol><a class="guide-link" href="?view=agents">获取桌面应用 →</a></section>
+              <section data-guide-panel="cli" role="tabpanel" hidden><h2>一个命令，进入工作</h2><ol class="install-steps"><li>打开 PowerShell，粘贴应用页的安装命令。</li><li>切换到项目目录，输入 <code>botgo</code>。</li><li>首次通过浏览器登录，返回终端即可开始。</li></ol><a class="guide-link" href="?view=agents">复制安装命令 →</a></section>
+              <div class="guide-faq"><details><summary>余额如何计费？</summary><p>根据模型返回的实际 token 用量结算。模型菜单展示当前价格；输入、缓存和输出分别计价。停止任务后，以可核验用量为准。</p></details><details><summary>如何选择模型？</summary><p>在输入区打开模型菜单。灰色条目表示暂不可用；切换影响下一次请求，不改变已生成内容。</p></details><details><summary>权限怎么选？</summary><p>只读用于查看和分析；工作区可写用于修改项目；完全访问需要明确确认。</p></details><details><summary>如何更新 CLI？</summary><p>再次执行安装命令更新 BotGo。运行 <code>botgo update</code> 更新底层 Codex。</p></details><details><summary>登录或命令启动失败？</summary><p>请在浏览器完成授权并返回终端。超时后重新运行 <code>botgo</code>；找不到命令时重新打开 PowerShell，或重新执行安装命令。余额不足时在网页账户面板充值。</p></details></div>
             </div>
           </section>
         </main>
@@ -167,6 +170,6 @@
         <p class="form-status" id="verify-status" aria-live="polite"></p><button class="primary-auth-button" type="submit">验证邮箱</button>
       </form>
     </dialog>
-    <script src="./workspace.js"></script><script src="./workspace-billing.js"></script><script src="./agent-install.js"></script>
+    <script src="./ui-kit.js"></script><script src="./workspace.js"></script><script src="./workspace-billing.js"></script><script src="./agent-install.js"></script>
 </body>
 </html>

@@ -1,0 +1,9 @@
+const test=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),{EventEmitter}=require('node:events');
+const {main}=require('../lib/cli.cjs');
+test('bare noninteractive CLI exits without credentials or network',async()=>{const text=[];await main([],{isTTY:false,output:t=>text.push(t),api:{models(){throw Error('unexpected');}}});assert.match(text.join(''),/BotGo Agent CLI/);});
+for(const mode of ['signed','new','expired'])test(`bare interactive CLI ${mode} uses browser login and forwards selected model`,async()=>{
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'botgo-launch-'));let credential=mode==='new'?null:{deviceToken:'bgdt_old'},logged=0,spawned;
+ try{const result=await main(['--model','gpt-5.6-luna'],{isTTY:true,paths:{codexHome:path.join(root,'codex'),stateFile:path.join(root,'state.json'),root},credentialStore:{async load(){return credential;}},api:{origin:'https://botgo.win',async account(){if(mode==='expired')throw Object.assign(Error('expired'),{status:401});return {account:{credits:1}};},async models(){return {defaultModel:'gpt-5.6-sol',models:[{id:'gpt-5.6-luna',enabled:true,agent:true}]};},async issueKey(){return {key:'bgk_test'};}},loginImpl:async()=>{logged++;credential={deviceToken:'bgdt_new'};},spawnImpl:(command,args,options)=>{spawned={command,args,options};const child=new EventEmitter();queueMicrotask(()=>child.emit('close',0));return child;},output(){}});
+ assert.equal(result.exitCode,0);assert.equal(logged,mode==='signed'?0:1);assert.ok(spawned.args.includes('model="gpt-5.6-luna"'));assert.equal(spawned.options.stdio,'inherit');assert.equal(spawned.options.env.BOTGO_CODEX_API_KEY,'bgk_test');assert.equal(spawned.options.env.CODEX_HOME,path.join(root,'codex'));
+ }finally{fs.rmSync(root,{recursive:true,force:true});}
+});

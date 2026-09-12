@@ -37,6 +37,7 @@ function createApiClient({ origin = process.env.BOTGO_API_ORIGIN || DEFAULT_ORIG
   return {
     origin: baseOrigin,
     request,
+    models: () => request('/models'),
     startAuthorization: (body) => request("/desktop/authorize/start", { method: "POST", body }),
     exchangeAuthorization: (body) => request("/desktop/authorize/exchange", { method: "POST", body }),
     cancelAuthorization: (body) => request("/desktop/authorize/cancel", { method: "POST", body }),

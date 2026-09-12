@@ -1,4 +1,8 @@
 :root {
+  --menu-surface:#24262a;
+  --menu-text:#eceff3;
+  --menu-border:#3b414a;
+  --menu-hover:#303844;
   color-scheme: dark;
   --canvas: #1b1c1f;
   --sidebar: #151619;
@@ -832,6 +836,7 @@ svg {
 }
 
 .mode-select::after {
+  display: none;
   position: absolute;
   right: 9px;
   width: 6px;

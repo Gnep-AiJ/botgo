@@ -140,7 +140,7 @@ assert.doesNotMatch(preload, /ipcRenderer\.send\(/, "renderer must not receive g
 assert.match(preload, /startWebAuthorization/, "renderer needs a narrow browser authorization action");
 assert.match(preload, /onAuthorizationEvent/, "renderer needs only safe browser authorization status events");
 assert.doesNotMatch(renderer, /bgk_|bgdt_|API Key|api key/i, "renderer must not contain credential values or credential UI");
-assert.match(worker, /proxyCodexResponses[\s\S]*?credentialFor\(request, env, true\)/, "desktop keys must be allowed for Codex relay calls");
+assert.match(worker, /path === '\/v1\/responses'[\s\S]*?credentialFor\(request, env, true\)[\s\S]*?meteredProxy/, "desktop keys must be authenticated before metered relay calls");
 assert.doesNotMatch(worker, /proxyClaudeMessages|\/v1\/messages/, "desktop relay must not retain the removed provider route");
 assert.match(codexConfig, /model = "gpt-5\.6"/, "desktop relay configuration must pin GPT-5.6");
 assert.match(worker, /desktopAuthorizationStart[\s\S]*?desktop_web_authorization_started/, "browser authorization starts must be auditable for rate limiting");

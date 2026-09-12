@@ -11,7 +11,7 @@
 
   const defaultRecharge = { minAmountCents: 1000, maxAmountCents: 999900, presetAmountCents: [1000, 5000, 10000] };
   const localPreviewHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
-  const accountPreview = localPreviewHost && new URLSearchParams(window.location.search).get("preview") === "account";
+  const accountPreview = localPreviewHost && ['account','chat'].includes(new URLSearchParams(window.location.search).get('preview'));
   let recharge = { ...defaultRecharge };
   let checkoutKey = "";
   let checkoutAmountCents = null;

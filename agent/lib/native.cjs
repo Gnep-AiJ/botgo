@@ -19,12 +19,12 @@ function runtimeEnvironment(codexHome, relayKey, base = process.env) {
   return { ...env, CODEX_HOME: codexHome, BOTGO_CODEX_API_KEY: relayKey };
 }
 
-function openNativeTerminal({ command, projectPath, codexHome, relayKey, relayOrigin, sessionId = "", spawnImpl = spawn }) {
+function openNativeTerminal({ command, projectPath, codexHome, relayKey, relayOrigin, model, sessionId = "", spawnImpl = spawn }) {
   if (!fs.statSync(projectPath).isDirectory()) throw new Error("请选择有效的项目文件夹。");
   if (sessionId && !/^[A-Za-z0-9-]{1,200}$/.test(sessionId)) throw new Error("Invalid session identifier");
   const quote = value => "'" + String(value).replaceAll("'", "''") + "'";
   const args = sessionId ? ["resume", sessionId] : [];
-  args.push(...providerArguments(relayOrigin));
+  args.push(...providerArguments(relayOrigin,model));
   // No credentials in command text. Literal PowerShell quoting handles spaces,
   // quotes, $, backticks and command metacharacters in user project paths.
   const script = `Set-Location -LiteralPath ${quote(projectPath)}\r\n& ${quote(command)} ${args.map(quote).join(" ")}\r\nRemove-Item Env:BOTGO_CODEX_API_KEY -ErrorAction SilentlyContinue`;

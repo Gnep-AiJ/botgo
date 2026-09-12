@@ -99,5 +99,5 @@ try {
         if (@($userPath -split ';') -notcontains $bin) { [Environment]::SetEnvironmentVariable('Path', ($userPath.TrimEnd(';') + ';' + $bin).TrimStart(';'), 'User') }
         $env:Path = $bin + ';' + $env:Path
     }
-    Write-Host 'BotGo installed. Next: botgo auth login'
+    Write-Host 'BotGo installed. Run: botgo (sign in through your browser).'
 } finally { $lock.Dispose() }

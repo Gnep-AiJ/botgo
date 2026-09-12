@@ -10,7 +10,9 @@ Windows PowerShell:
 irm https://botgo.win/install.ps1 | iex
 ```
 
-The installer checks Node/npm and installs a private Node 22 runtime if needed. It verifies the release SHA-256 before switching versions. Run again to update or repair. Next run `botgo auth login`, then `botgo codex` inside your project.
+The installer checks Node/npm and installs a private Node 22 runtime if needed. It verifies the release SHA-256 before switching versions. Run again to update or repair. Inside your project, run `botgo`: browser login starts when needed, then the native Codex interface opens. No terminal password or API key is required. Noninteractive invocation prints help.
+
+Choose an enabled model with `botgo --model gpt-5.6-luna`. Models and availability come from BotGo; the default is GPT-5.6 Sol. Escape or Ctrl+C cancels the relevant interactive step. Existing `auth`, `run`, `resume`, `sessions`, `account`, and `update` commands remain supported.
 
 ## Development install
 

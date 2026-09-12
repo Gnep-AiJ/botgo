@@ -11,6 +11,7 @@ const artwork = [
 ];
 
 fs.mkdirSync(targetDirectory, { recursive: true });
+for (const name of ['ui-kit.js','ui-kit.css']) fs.copyFileSync(path.resolve(__dirname,'../..',name),path.join(targetDirectory,name));
 for (const filename of artwork) {
   const source = path.join(sourceDirectory, filename);
   if (!fs.existsSync(source)) throw new Error(`Missing BotGo artwork: ${filename}`);

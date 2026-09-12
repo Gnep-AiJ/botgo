@@ -11,6 +11,8 @@ tags: [botgo, ui, responsive, theme]
 - 结构：`workspace.html`
 - 样式：`workspace.css`
 - 交互：`workspace.js`
+- 共享菜单/Markdown：`ui-kit.js/css`（Desktop 构建同步复制）
+- 应用安装与指南：`agent-install.js`，导航为“对话 / 应用 / 指南”
 - 契约测试：`tests/homepage-workspace.test.mjs`
 
 ## 版式骨架

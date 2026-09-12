@@ -12,7 +12,7 @@ function validateRelayOrigin(relayOrigin) {
 function managedConfig(relayOrigin) {
   const origin = validateRelayOrigin(relayOrigin);
   return [
-    'model = "gpt-5.6"',
+    'model = "gpt-5.6-sol"',
     'model_provider = "botgo"',
     "",
     "[model_providers.botgo]",
@@ -48,10 +48,11 @@ function writeCodexConfig({ codexHome, relayOrigin, fsImpl = fs }) {
   return configPath;
 }
 
-function providerArguments(origin) {
+function providerArguments(origin, model = 'gpt-5.6-sol') {
   const base = validateRelayOrigin(origin);
+  if (!/^[a-zA-Z0-9._-]{1,128}$/.test(model)) throw new Error('Invalid model');
   return [
-    '-c', 'model="gpt-5.6"', '-c', 'model_provider="botgo"',
+    '-c', `model="${model}"`, '-c', 'model_provider="botgo"',
     '-c', 'model_providers.botgo.name="BotGo Relay"',
     '-c', `model_providers.botgo.base_url="${base}/api/v1"`,
     '-c', 'model_providers.botgo.env_key="BOTGO_CODEX_API_KEY"',

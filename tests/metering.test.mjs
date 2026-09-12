@@ -1,0 +1,62 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { DatabaseSync } from 'node:sqlite';
+import { MODEL_SEEDS, costMicros, normalizedUsage, usageObserver, meteredProxy, settle } from '../worker/src/metering.js';
+
+const sql=new DatabaseSync(':memory:');
+for(const name of fs.readdirSync('worker/migrations').filter(n=>n.endsWith('.sql')).sort()) sql.exec(fs.readFileSync(`worker/migrations/${name}`,'utf8'));
+sql.exec("INSERT INTO accounts(id,email,password_hash,credit_balance) VALUES('test','test@example.invalid','unused',1000)");
+const snapshot={model:'gpt-5.6-sol',price:MODEL_SEEDS[0].price,multiplierPpm:300000,usdCnyPpm:7000000};
+assert.equal(costMicros({input_tokens:1000,output_tokens:100},snapshot),12600);
+assert.equal(costMicros({input_tokens:1000,output_tokens:100,input_tokens_details:{cached_tokens:400,cache_write_tokens:100},output_tokens_details:{reasoning_tokens:90}},snapshot),9786);
+assert.equal(costMicros({input_tokens:1,output_tokens:0},snapshot),9);
+assert.equal(costMicros({input_tokens:272001,output_tokens:2},snapshot),4569743);
+for(const usage of [null,{}, {input_tokens:-1,output_tokens:1},{input_tokens:1,output_tokens:1,input_tokens_details:{cached_tokens:2}}])assert.throws(()=>normalizedUsage(usage));
+const encoder=new TextEncoder(),observer=usageObserver();
+const frame='data: '+JSON.stringify({type:'response.completed',response:{usage:{input_tokens:3,output_tokens:2}}})+'\n\n';
+for(const byte of encoder.encode(frame))observer.push(new Uint8Array([byte]));
+assert.equal(observer.finish().input_tokens,3);
+const partial=usageObserver();partial.push(encoder.encode('data: {"type":"response.created","response":{"usage":{"input_tokens":1,"output_tokens":0}}}\n'));assert.equal(partial.finish(),null);
+
+function statement(query){let values=[];return {bind(...args){values=args;return this;},async first(){return sql.prepare(query).get(...values)||null;},async all(){return {results:sql.prepare(query).all(...values)};},async run(){const result=sql.prepare(query).run(...values);return {meta:{changes:Number(result.changes)}};}};}
+const env={DB:{prepare:statement,async batch(statements){sql.exec('BEGIN');try{const result=[];for(const s of statements)result.push(await s.run());sql.exec('COMMIT');return result;}catch(e){sql.exec('ROLLBACK');throw e;}}}};
+const account=()=>sql.prepare("SELECT * FROM accounts WHERE id='test'").get();
+const balance=()=>account().credit_balance*10000+account().credit_remainder_micros;
+const reserve=(id,amount)=>sql.prepare('INSERT INTO metered_requests(id,account_id,channel,model,snapshot,reserved_micros) VALUES(?,?,?,?,?,?)').run(id,'test','web_chat',snapshot.model,JSON.stringify(snapshot),amount);
+reserve('first',20000);reserve('second',20000);
+assert.equal(account().billing_reserved_micros,40000);
+await settle(env,'first',{input_tokens:1,output_tokens:0},snapshot);
+assert.equal(balance(),9999991);assert.equal(account().billing_reserved_micros,20000);
+await settle(env,'first',{input_tokens:1,output_tokens:0},snapshot);
+assert.equal(balance(),9999991,'duplicate settlement is a no-op');
+await settle(env,'second',null,snapshot,'refunded');
+assert.equal(account().billing_reserved_micros,0);
+assert.throws(()=>reserve('too-much',10000000),/BILLING_INSUFFICIENT/);
+assert.equal(account().billing_reserved_micros,0,'failed reservation rolls back');
+sql.exec("UPDATE accounts SET credit_balance=credit_balance+100 WHERE id='test'");assert.equal(balance(),10999991,'fen recharge preserves sub-fen remainder');
+reserve('overrun',1);await settle(env,'overrun',{input_tokens:2000000,output_tokens:0},snapshot);
+assert.equal(balance(),0);assert.equal(account().billing_reserved_micros,0);assert.equal(account().billing_blocked,1);
+assert.equal(sql.prepare("SELECT state FROM metered_requests WHERE id='overrun'").get().state,'review');
+sql.exec("UPDATE accounts SET credit_balance=1000,billing_blocked=0 WHERE id='test'");
+for(const model of MODEL_SEEDS)sql.prepare('INSERT INTO model_catalog(id,name,upstream_id,price_json,enabled,web_enabled,agent_enabled) VALUES(?,?,?,?,?,?,?)').run(model.id,model.name,model.id,JSON.stringify(model.price),model===MODEL_SEEDS[0]?1:0,1,1);
+sql.exec("INSERT INTO upstream_profiles(id,name,base_url,api_key_ciphertext,api_key_iv,key_hint) VALUES('test-profile','test','https://upstream.invalid/v1','unused','unused','test')");
+sql.exec("INSERT INTO upstream_route_probes(profile_id,channel,model_id,status,metering_verified) VALUES('test-profile','web_chat','gpt-5.6-sol','ok',1)");
+const originalFetch=globalThis.fetch;let calls=0;const jobs=[];
+globalThis.fetch=async(_url,init)=>{calls++;const payload=JSON.parse(init.body);assert.equal(payload.model,'gpt-5.6-sol');assert.equal(payload.stream_options.include_usage,true);return new Response('data: {"choices":[{"delta":{"content":"OK"}}]}\n\ndata: {"usage":{"prompt_tokens":1000,"completion_tokens":100}}\n\ndata: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}});};
+const makeRequest=()=>new Request('https://botgo.test/chat/stream',{method:'POST',headers:{'idempotency-key':'same-request-123456'}});
+const options={accountId:'test',channel:'web_chat',body:{model:snapshot.model,messages:[{role:'user',content:'hi'}]},upstream:{profileId:'test-profile',baseUrl:'https://upstream.invalid/v1',apiKey:'test-only'}};
+try{
+  const response=await meteredProxy(makeRequest(),env,{waitUntil:p=>jobs.push(p)},options);
+  assert.equal(response.status,200);assert.match(await response.text(),/OK/);await Promise.all(jobs);assert.equal(balance(),9987400);
+  const duplicate=await meteredProxy(makeRequest(),env,{waitUntil:p=>jobs.push(p)},options);assert.equal(duplicate.status,409);assert.equal(calls,1);assert.equal(account().billing_reserved_micros,0);
+  const invalid=await meteredProxy(makeRequest(),env,{}, {...options,body:{...options.body,model:'unknown'}});assert.equal(invalid.status,400);
+  globalThis.fetch=async()=>new Response('data: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}});
+  const missing=await meteredProxy(new Request('https://botgo.test/chat/stream'),env,{waitUntil:p=>jobs.push(p)},options);await missing.text();await Promise.all(jobs);assert.equal(balance(),9987400);assert.equal(sql.prepare('SELECT enabled FROM model_catalog WHERE id=?').get(snapshot.model).enabled,0,'missing usage disables the unmetered route');
+  sql.prepare('UPDATE model_catalog SET enabled=1 WHERE id=?').run(snapshot.model);
+  let upstreamCancelled=false;
+  globalThis.fetch=async()=>new Response(new ReadableStream({start(controller){controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'));},cancel(){upstreamCancelled=true;}}),{headers:{'content-type':'text/event-stream'}});
+  const stopped=await meteredProxy(new Request('https://botgo.test/chat/stream'),env,{waitUntil:p=>jobs.push(p)},options);
+  const downstream=stopped.body.getReader();await downstream.read();await downstream.cancel();await Promise.all(jobs);
+  assert.equal(upstreamCancelled,true);assert.equal(account().billing_reserved_micros,0);assert.equal(balance(),9987400,'cancel without usage does not invent a fee');
+}finally{globalThis.fetch=originalFetch;sql.close();}
+console.log('Metering: migrations, precision, cache, reasoning, long context, atomic reserves, overrun, idempotency and SSE passed');

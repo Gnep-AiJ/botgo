@@ -6,6 +6,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self';style-src 'self';script-src 'self';img-src 'self' data:;connect-src 'self'">
   <title>BotGo Desktop</title>
   <link rel="stylesheet" href="renderer.css">
+  <link rel="stylesheet" href="assets/ui-kit.css">
 </head>
 <body>
   <main class="desktop-shell" data-page="projects">
@@ -106,6 +107,7 @@
           <textarea id="task-prompt" data-task-prompt rows="1" placeholder="给 BotGo 一个任务…"></textarea>
           <div class="composer-toolbar">
             <div class="context-controls">
+              <select data-model aria-label="选择模型"><option value="gpt-5.6-sol">GPT-5.6 Sol</option></select>
               <span class="project-chip" data-project-chip>未选择项目</span>
               <label class="mode-select">
                 <span class="sr-only">权限模式</span>
@@ -130,6 +132,6 @@
       </section>
     </section>
   </main>
-  <script src="renderer.js"></script>
+  <script src="assets/ui-kit.js"></script><script src="renderer.js"></script>
 </body>
 </html>

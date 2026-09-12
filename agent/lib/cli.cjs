@@ -21,7 +21,7 @@ const PERMISSIONS = ["read-only", "workspace-write", "full-access"];
 function parseArgs(argv) {
   const options = { project: process.cwd(), permission: "workspace-write", origin: process.env.BOTGO_API_ORIGIN || DEFAULT_ORIGIN, json: false, yes: false };
   const positional = [];
-  const valueOptions = new Map([["--project", "project"], ["-p", "project"], ["--permission", "permission"], ["--mode", "permission"], ["--origin", "origin"]]);
+  const valueOptions = new Map([["--project", "project"], ["-p", "project"], ["--permission", "permission"], ["--mode", "permission"], ["--origin", "origin"], ['--model','model'], ['-m','model']]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--") { positional.push(...argv.slice(index + 1)); break; }
@@ -74,13 +74,12 @@ function callbackPage(title, message) {
 function openBrowser(url) {
   const platform = process.platform;
   if (platform === "win32") {
-    const child = spawn("cmd.exe", ["/c", "start", "", url], { detached: true, stdio: "ignore", windowsHide: true });
-    child.unref();
-    return;
+    const child = spawn("explorer.exe", [url], { detached: true, stdio: "ignore", windowsHide: true });
+    return new Promise((resolve,reject)=>{child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});});
   }
   const command = platform === "darwin" ? "open" : "xdg-open";
   const child = spawn(command, [url], { detached: true, stdio: "ignore" });
-  child.unref();
+  return new Promise((resolve,reject)=>{child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});});
 }
 
 async function login(context, { openBrowserImpl = openBrowser, timeoutMs = 5 * 60 * 1000 } = {}) {
@@ -94,8 +93,11 @@ async function login(context, { openBrowserImpl = openBrowser, timeoutMs = 5 * 6
   const close = () => {
     if (timeout) clearTimeout(timeout);
     if (server?.listening) server.close();
+    process.removeListener('SIGINT',cancelLogin);
   };
+  const cancelLogin=()=>{if(settled)return;settled=true;close();rejectResult(new Error('已取消浏览器登录。重新运行 botgo 可重试。'));};
   server = http.createServer(async (request, response) => {
+    if(settled){response.writeHead(410);response.end('Authorization ended');return;}
     if (request.method !== "GET" || new URL(request.url || "/", "http://127.0.0.1").pathname !== "/callback") {
       response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
       response.end("Not found");
@@ -141,7 +143,8 @@ async function login(context, { openBrowserImpl = openBrowser, timeoutMs = 5 * 6
     page.searchParams.set("state", proof.state);
     page.searchParams.set("callback", callback);
     page.searchParams.set("client", "agent");
-    openBrowserImpl(page.toString());
+    process.once('SIGINT',cancelLogin);
+    await openBrowserImpl(page.toString());
     outputLine(`已打开浏览器完成 BotGo 授权（${context.api.origin}）。`, context.output);
     timeout = setTimeout(async () => {
       if (settled) return;
@@ -231,13 +234,17 @@ async function executeTask(context, { projectPath, prompt, permission, session =
   writeCodexConfig({ codexHome: context.paths.codexHome, relayOrigin: context.api.origin });
   const credential = await storedCredential(context);
   const account = await context.api.account(credential.deviceToken);
-  if (!Number.isFinite(account.account?.credits) || account.account.credits < 1) throw new Error("BotGo credits 不足，请先充值或升级账户");
+  if (!Number.isFinite(account.account?.credits) || account.account.credits <= 0) throw new Error("BotGo 余额不足，请先充值");
+  const available=await context.api.models();
+  const selectedModel=options.model||session?.model||available.defaultModel;
+  if(!available.models.some(m=>m.id===selectedModel&&m.enabled&&m.agent))throw new Error('所选模型暂不可用于 Agent。');
   const issued = await context.api.issueKey(credential.deviceToken);
   if (!/^bgk_[A-Za-z0-9_-]{1,256}$/.test(issued.key || "")) throw new Error("BotGo 未返回有效的执行凭据");
   const current = session || {
     id: crypto.randomUUID(), projectPath, title: prompt.slice(0, 120), codexSessionId: "", status: "idle", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
   };
   current.projectPath = projectPath;
+  current.model=selectedModel;
   current.title = current.messages?.length ? current.title : prompt.slice(0, 120);
   current.status = "running";
   current.messages = Array.isArray(current.messages) ? current.messages : [];
@@ -253,10 +260,11 @@ async function executeTask(context, { projectPath, prompt, permission, session =
       codexHome: context.paths.codexHome,
       relayKey: issued.key,
       relayOrigin: context.api.origin,
+      model: selectedModel,
       sessionId: current.codexSessionId,
       onEvent(event) {
         if (event.type === "session") current.codexSessionId = event.sessionId;
-        if (event.type === "progress") current.messages.push({ id: crypto.randomUUID(), role: "assistant", kind: "progress", content: event.message, files: [], createdAt: new Date().toISOString() });
+        if (event.type === "progress") current.messages.push({ id: crypto.randomUUID(), role: "assistant", model:selectedModel, kind: "progress", content: event.message, files: [], createdAt: new Date().toISOString() });
         if (event.type === "files") current.messages.push({ id: crypto.randomUUID(), role: "system", kind: "files", content: "文件变更", files: event.files, createdAt: new Date().toISOString() });
         if (event.type === "error") current.messages.push({ id: crypto.randomUUID(), role: "system", kind: "error", content: event.message, files: [], createdAt: new Date().toISOString() });
         if (["completed", "stopped", "error"].includes(event.type)) current.status = event.type;
@@ -348,8 +356,9 @@ function version(output = console.log) { output(packageInfo.version); }
 async function main(argv = process.argv.slice(2), overrides = {}) {
   const { options, positional } = parseArgs(argv);
   if (options.version) { version(overrides.output || console.log); return { ok: true, version: packageInfo.version }; }
-  if (options.help || !positional.length || positional[0] === "help") { help(overrides.output || console.log); return { ok: true }; }
-  const command = positional[0];
+  const interactive = overrides.isTTY ?? Boolean(process.stdin.isTTY && process.stdout.isTTY);
+  if (options.help || (!positional.length && !interactive) || positional[0] === "help") { help(overrides.output || console.log); return { ok: true }; }
+  const command = positional[0] || 'codex';
   if (command === "update") {
     return codexUpdateCommand({
       packageRoot: path.resolve(__dirname, ".."),
@@ -362,13 +371,26 @@ async function main(argv = process.argv.slice(2), overrides = {}) {
   }
   const context = createContext(options, overrides);
   if (command === "codex") {
-    const credential = await storedCredential(context);
+    let credential = await context.credentialStore.load();
+    if (credential?.deviceToken) {
+      try { await context.api.account(credential.deviceToken); }
+      catch(error) { if(error.status!==401&&error.status!==403)throw error;credential=null; }
+    }
+    if (!credential?.deviceToken) {
+      if (!interactive) throw new Error('请在交互终端运行 botgo auth login');
+      outputLine('BotGo Agent · 通过浏览器登录你的 BotGo 账户',context.output);
+      await (overrides.loginImpl || login)(context);
+      credential=await storedCredential(context);
+    }
+    const available = await context.api.models();
+    const model=options.model || available.defaultModel;
+    if(!available.models.some(m=>m.id===model&&m.enabled&&m.agent))throw new Error('所选模型暂不可用于 Agent。');
     writeCodexConfig({ codexHome: context.paths.codexHome, relayOrigin: context.api.origin });
     const issued = await context.api.issueKey(credential.deviceToken);
-    const child = spawn(nativeCommand(context.paths.packageRoot), [...positional.slice(1), ...providerArguments(context.api.origin)], {
+    const child = (overrides.spawnImpl || spawn)(nativeCommand(context.paths.packageRoot), [...positional.slice(1), ...providerArguments(context.api.origin,model)], {
       cwd: ensureProject(options.project), env: runtimeEnvironment(context.paths.codexHome, issued.key), stdio: "inherit", windowsHide: false
     });
-    return new Promise((resolve, reject) => { child.once("error", reject); child.once("close", code => { process.exitCode = code || 0; resolve({ exitCode: code }); }); });
+    return new Promise((resolve, reject) => { child.once("error", reject); child.once("close", code => { process.exitCode = code ?? 1; resolve({ exitCode: code ?? 1 }); }); });
   }
   if (command === "auth") return authCommand(context, positional[1]);
   if (command === "account") return accountCommand(context);

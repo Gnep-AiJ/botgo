@@ -3,7 +3,8 @@ const CREDIT_SCALE = 100;
 
 function publicBalance(account) {
   const cents = Number(account.credit_balance) || 0;
-  return { credits: Math.round(cents) / CREDIT_SCALE, balanceCents: cents };
+  const remainder=Number(account.credit_remainder_micros)||0;
+  return { credits: Math.round(cents) / CREDIT_SCALE+remainder/1e6, balanceCents: cents, balanceMicros:cents*10000+remainder };
 }
 
 export class DesktopAuthError extends Error {
@@ -152,7 +153,7 @@ export async function cancelDesktopWebAuthorization(env, body, { sha256 = defaul
 
 export async function desktopCredentialFor(env, rawDeviceToken, { sha256 = defaultSha256 } = {}) {
   const { device, tokenHash } = await activeDesktopDevice(env, rawDeviceToken, sha256);
-  const account = await env.DB.prepare("SELECT id, email, credit_balance, status FROM accounts WHERE id = ?")
+  const account = await env.DB.prepare("SELECT id, email, credit_balance, credit_remainder_micros, billing_reserved_micros, status FROM accounts WHERE id = ?")
     .bind(device.account_id).first();
   if (!account || account.status !== "active") throw new DesktopAuthError("账户不可用。", 403);
   const subscription = await env.DB.prepare("SELECT plan, status, expires_at FROM subscriptions WHERE account_id = ?")

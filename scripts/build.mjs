@@ -6,6 +6,7 @@ const { copyFile, mkdir, readFile, rm, stat, writeFile } = fs.promises;
 const root = process.cwd();
 const dist = path.join(root, "dist");
 const files = [
+  'ui-kit.js', 'ui-kit.css', 'admin-metering.js',
   "install.ps1",
   "agent-install.js",
   "index.html",

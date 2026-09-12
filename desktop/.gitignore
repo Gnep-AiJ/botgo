@@ -1,2 +1,4 @@
 dist/
 runtime-config.cjs
+assets/ui-kit.js
+assets/ui-kit.css

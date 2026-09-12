@@ -14,8 +14,10 @@ tags: [botgo, desktop, cli]
 - 运行器：`agent/lib/codex-runner.cjs`；桌面通过 `desktop/lib/agent-runtime.cjs` 引用，打包时复制同一源码。
 - 原生 Windows Codex 版本以 `agent/package-lock.json` 为准，本轮基线 0.154.0。桌面不自动使用用户全局 Codex。
 - `task:start` 校验项目、提示与权限，主进程获取设备执行凭据；命令行不包含凭据。
-- 共用配置参数固定 BotGo provider、GPT-5.6、Responses 与服务域名；原生配置其余设置保留。
-- CLI：`botgo auth login`、`botgo account`、`botgo run`、`botgo resume`、`botgo sessions`、`botgo codex -- <参数>`。
+- 共用配置参数固定 BotGo provider、Responses 与服务域名，模型由服务端目录与所选模型决定，默认 Sol；原生配置其余设置保留。
+- 交互终端直接输入 `botgo`：未登录或凭据过期时打开网页登录，成功后进入原生 Codex。无 TTY 时只显示帮助。支持 `--model <id>`。
+- 保留 `botgo auth login`、`botgo account`、`botgo run`、`botgo resume`、`botgo sessions`、`botgo codex -- <参数>`。图形与 CLI 会话保存所用模型。
+- `ui-kit.js/css` 提供模型与权限菜单、键盘操作、上下翻转和安全 Markdown；桌面构建通过 sync-assets 复制同一实现。
 - 终端会话与图形会话不做实时双向同步；已有 session ID 可在终端恢复。
 - Windows 停止操作只结束当前 Codex 进程树；退出桌面会停止当前图形任务。
 

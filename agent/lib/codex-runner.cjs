@@ -68,7 +68,7 @@ function invocationFor(command, args, { platform = process.platform, execPath = 
 function createCodexRunner({ spawnImpl = spawn, command = defaultCommand(), baseEnv = process.env, platform = process.platform, execPath = process.execPath } = {}) {
   let active = null;
 
-  function start({ projectPath, prompt, permission, codexHome, relayKey, relayOrigin, sessionId = "", signal, onEvent } = {}) {
+  function start({ projectPath, prompt, permission, codexHome, relayKey, relayOrigin, model, sessionId = "", signal, onEvent } = {}) {
     if (active) throw new Error("A Codex task is already running");
     if (typeof projectPath !== "string" || !projectPath.trim()) throw new Error("A project path is required");
     if (typeof prompt !== "string" || !prompt.trim()) throw new Error("A task prompt is required");
@@ -76,7 +76,7 @@ function createCodexRunner({ spawnImpl = spawn, command = defaultCommand(), base
     if (!/^bgk_[A-Za-z0-9_-]{1,256}$/.test(String(relayKey || ""))) throw new Error("A BotGo relay key is required");
 
     const args = codexArgumentsFor(permission, prompt, sessionId);
-    if (relayOrigin) args.push(...providerArguments(relayOrigin));
+    if (relayOrigin) args.push(...providerArguments(relayOrigin, model));
     const env = runtimeEnvironment(codexHome, relayKey, baseEnv);
     const invocation = invocationFor(command, args, { platform, execPath });
     const child = spawnImpl(invocation.command, invocation.args, {

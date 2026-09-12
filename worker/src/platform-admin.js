@@ -1,4 +1,5 @@
 import { handleAlipayRoute } from "./alipay-routes.js";
+import { handleMeteringAdmin, usageObserver } from "./metering.js";
 
 const encoder = new TextEncoder();
 const CHANNELS = new Set(["web_chat", "desktop_codex"]);
@@ -99,15 +100,35 @@ async function probeProfile(env, row, channel, modelId) {
 
   const endpoint = channel === "web_chat" ? "chat/completions" : "responses";
   const payload = channel === "web_chat"
-    ? { model: modelId, messages: [{ role: "user", content: "Reply OK" }], max_tokens: 1, stream: false }
-    : { model: modelId, input: "Reply OK", max_output_tokens: 1, stream: false };
+    ? { model: modelId, messages: [{ role: "user", content: "Reply OK" }], max_completion_tokens: 32, stream: true, stream_options:{include_usage:true} }
+    : { model: modelId, input: "Call botgo_probe with value OK.", max_output_tokens: 128, stream: true, tools:[{type:'function',name:'botgo_probe',parameters:{type:'object',properties:{value:{type:'string'}},required:['value'],additionalProperties:false},strict:true}],tool_choice:{type:'function',name:'botgo_probe'} };
   let capability = { ok: false, status: 0, latencyMs: 0, errorCode: "network_error" };
   try {
-    const result = await fetchWithTimeout(`${row.base_url}/${endpoint}`, { method: "POST", headers, body: JSON.stringify(payload) });
-    capability = { ok: result.response.ok, status: result.response.status, latencyMs: result.latencyMs, errorCode: result.response.ok ? null : classifyFailure(result.response.status) };
+    const started=Date.now();
+    const response = await fetch(`${row.base_url}/${endpoint}`, { method: "POST", headers, body: JSON.stringify(payload),signal:AbortSignal.timeout(45000),redirect:'error' });
+    capability = { ok:false, status:response.status,latencyMs:Date.now()-started,errorCode:classifyFailure(response.status) };
+    if(response.ok&&response.headers.get('content-type')?.includes('text/event-stream')){
+      const observer=usageObserver(),reader=response.body.getReader(),decoder=new TextDecoder();let text='',size=0;
+      for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>1024*1024){await reader.cancel();throw new Error('probe_too_large');}observer.push(value);text+=decoder.decode(value,{stream:true});}
+      const usage=observer.finish();
+      capability.ok=!!usage;
+      capability.errorCode=usage?null:'missing_usage';
+      if(channel==='desktop_codex'&&usage){
+        const completed=text.split(/\r?\n/).filter(l=>l.startsWith('data:')).map(l=>{try{return JSON.parse(l.slice(5));}catch{return null;}}).find(e=>e?.type==='response.completed');
+        const output=completed?.response?.output||[];
+        const call=output.find(i=>i.type==='function_call'&&i.name==='botgo_probe');
+        if(!call?.call_id){capability.ok=false;capability.errorCode='missing_tool_call';}
+        else{
+          const resumed=await fetch(`${row.base_url}/responses`,{method:'POST',headers,signal:AbortSignal.timeout(45000),redirect:'error',body:JSON.stringify({model:modelId,stream:true,max_output_tokens:32,input:[{role:'user',content:'Call botgo_probe with value OK.'},...output,{type:'function_call_output',call_id:call.call_id,output:'OK'}],tools:payload.tools})});
+          if(!resumed.ok||!resumed.headers.get('content-type')?.includes('text/event-stream')){await resumed.body?.cancel();capability.ok=false;capability.errorCode='tool_resume_failed';}
+          else{const meter=usageObserver(),r=resumed.body.getReader();let bytes=0;for(;;){const {done,value}=await r.read();if(done)break;bytes+=value.length;if(bytes>1024*1024){await r.cancel();throw new Error('probe_too_large');}meter.push(value);}if(!meter.finish()){capability.ok=false;capability.errorCode='resume_missing_usage';}}
+        }
+      }
+      capability.latencyMs=Date.now()-started;
+    }else await response.body?.cancel();
   } catch (error) { capability.errorCode = error?.name === "AbortError" ? "timeout" : "network_error"; }
 
-  await env.DB.prepare("INSERT INTO upstream_route_probes (profile_id, channel, model_id, status, http_status, latency_ms, error_code, tested_at) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(profile_id, channel, model_id) DO UPDATE SET status = excluded.status, http_status = excluded.http_status, latency_ms = excluded.latency_ms, error_code = excluded.error_code, tested_at = CURRENT_TIMESTAMP")
+  await env.DB.prepare("INSERT INTO upstream_route_probes (profile_id, channel, model_id, status, http_status, latency_ms, error_code, tested_at, metering_verified) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1) ON CONFLICT(profile_id, channel, model_id) DO UPDATE SET status = excluded.status, http_status = excluded.http_status, latency_ms = excluded.latency_ms, error_code = excluded.error_code, tested_at = CURRENT_TIMESTAMP, metering_verified=1")
     .bind(row.id, channel, modelId, capability.ok ? "ok" : "failed", capability.status, capability.latencyMs, capability.errorCode).run();
   await env.DB.prepare("UPDATE upstream_profiles SET last_tested_at = CURRENT_TIMESTAMP, last_test_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(capability.ok ? "ok" : "failed", row.id).run();
   return { ok: capability.ok, models, capability };
@@ -268,7 +289,8 @@ export async function handlePlatformRoute(request, env, path, helpers) {
   if (path.startsWith("/admin/")) {
     const admin = await helpers.activeAdminFor(request, env);
     if (!admin) return json({ error: "需要管理员权限。" }, 403);
-    return await upstreamRoutes(request, env, path, admin, helpers.audit)
+    return await handleMeteringAdmin(request, env, path, admin, helpers.audit)
+      || await upstreamRoutes(request, env, path, admin, helpers.audit)
       || await handleAlipayRoute(request, env, path, { ...helpers, admin })
       || await billingAdminRoutes(request, env, path, admin, helpers.audit)
       || await releaseAdminRoutes(request, env, path, admin, helpers.audit)

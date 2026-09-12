@@ -3,6 +3,14 @@ const test = require("node:test");
 
 const { login } = require("../lib/cli.cjs");
 
+for(const mode of ['timeout','cancel'])test(`browser login ${mode} closes callback and permits retry`,async()=>{
+  let cancelled=0,url='';const count=process.listenerCount('SIGINT');
+  const context={api:{origin:'https://botgo.win',async startAuthorization(){return {authorizationId:'test'};},async cancelAuthorization(){cancelled++;}},credentialStore:{save(){throw Error('must not save');}},output(){}};
+  const pending=login(context,{timeoutMs:30,openBrowserImpl:value=>{url=value;if(mode==='cancel')setImmediate(()=>process.emit('SIGINT'));}});
+  await assert.rejects(pending,mode==='timeout'?/超时/:/取消/);assert.ok(cancelled>=1);assert.equal(process.listenerCount('SIGINT'),count);
+  await assert.rejects(fetch(new URL(url).searchParams.get('callback')));
+});
+
 test("browser login exchanges the one-time callback and stores only the device token", async () => {
   let browserUrl = "";
   let saved = null;

@@ -4,6 +4,8 @@
   "private": true,
   "description": "BotGo 科技品牌官网首页",
   "scripts": {
+    "pretest": "node --experimental-sqlite tests/metering.test.mjs",
+    "precheck": "node --check ui-kit.js && node --check admin-metering.js && node --check worker/src/metering.js && node --check scripts/probe-models.mjs && node --check tests/ui-preview.cjs",
     "build": "node scripts/build.mjs",
     "dev": "node scripts/dev.mjs",
     "test": "npm run build && node tests/homepage-workspace.test.mjs && node tests/codex-setup.test.mjs && node tests/gpt56-release.test.mjs && node tests/upstream-theme-contract.test.mjs && node tests/platform-management.test.mjs && node tests/alipay-payment.test.mjs && node tests/dev-preview.test.mjs && node tests/admin.test.mjs && node tests/cinematic-layout.test.mjs && node tests/home-hero-split.test.mjs && npm run test:desktop && node tests/agent-releases.test.mjs && npm --prefix agent test",

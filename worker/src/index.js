@@ -5,7 +5,6 @@ import { handlePlatformRoute, resolveUpstreamConfig } from "./platform-admin.js"
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const SMTP_MAX_REPLY_BYTES = 16 * 1024;
-const BOTGO_MODEL = "gpt-5.6";
 // Balances are stored as integer fen (cents). One existing quota unit maps to
 // one yuan, so the migration keeps the old visible balance and request cost.
 const CREDIT_SCALE = 100;
@@ -18,8 +17,10 @@ function balanceYuan(value) {
 function publicAccount(account) {
   return {
     email: account.email,
-    credits: balanceYuan(account.credit_balance),
-    balanceCents: Number(account.credit_balance) || 0
+    credits: balanceYuan(account.credit_balance)+(Number(account.credit_remainder_micros)||0)/1e6,
+    balanceCents: Number(account.credit_balance) || 0,
+    balanceMicros: (Number(account.credit_balance)||0)*10000+(Number(account.credit_remainder_micros)||0),
+    reservedMicros: Number(account.billing_reserved_micros)||0
   };
 }
 
@@ -318,7 +319,7 @@ async function requestLoginCode(request, env) {
 async function accountInfo(request, env) {
   const session = await sessionFor(request, env);
   if (!session) return json({ error: "请先登录。" }, 401);
-  const account = await env.DB.prepare("SELECT email, credit_balance, status FROM accounts WHERE id = ?").bind(session.sub).first();
+  const account = await env.DB.prepare("SELECT email, credit_balance, credit_remainder_micros, billing_reserved_micros, status FROM accounts WHERE id = ?").bind(session.sub).first();
   if (!account || account.status !== "active") return json({ error: "账户不可用。" }, 403);
   const subscription = await activeSubscription(env, session.sub);
   return json({ account: { ...publicAccount(account), plan: subscription?.plan || "free", subscriptionStatus: subscription?.status || "inactive", subscriptionExpiresAt: subscription?.expires_at || null } });
@@ -496,7 +497,7 @@ async function desktopAccount(request, env) {
   try {
     const credential = await desktopCredentialFor(env, bearerToken(request));
     await env.DB.prepare("UPDATE device_tokens SET last_used_at = CURRENT_TIMESTAMP WHERE token_hash = ?").bind(credential.tokenHash).run();
-    return json({ account: { ...publicAccount({ email: credential.account.email, credit_balance: credential.account.credit_balance }), plan: credential.subscription.plan } });
+    return json({ account: { ...publicAccount(credential.account), plan: credential.subscription.plan } });
   } catch (error) {
     return desktopFailure(error);
   }
@@ -557,101 +558,35 @@ async function credentialFor(request, env, includeDesktop = false) {
   return credential;
 }
 
-async function reserveRelayUsage(env, accountId, model) {
-  const debit = await env.DB.prepare("UPDATE accounts SET credit_balance = credit_balance - ? WHERE id = ? AND credit_balance >= ?").bind(CREDIT_SCALE, accountId, CREDIT_SCALE).run();
-  if (!debit.meta.changes) return null;
-  const ledgerId = requestId();
-  await env.DB.prepare("INSERT INTO usage_ledger (id, account_id, provider, model, units, outcome) VALUES (?, ?, 'botgo-codex', ?, 1, 'reserved')").bind(ledgerId, accountId, model || "codex").run();
-  return ledgerId;
-}
-
-async function refundRelayUsage(env, accountId, ledgerId) {
-  if (!ledgerId) return;
-  await env.DB.batch([
-    env.DB.prepare("UPDATE accounts SET credit_balance = credit_balance + ? WHERE id = ?").bind(CREDIT_SCALE, accountId),
-    env.DB.prepare("UPDATE usage_ledger SET outcome = 'refunded' WHERE id = ?").bind(ledgerId)
-  ]);
-}
-
-async function proxyCodexResponses(request, env) {
-  const credential = await credentialFor(request, env, true);
-  if (!credential) return json({ error: "BotGo Codex Key 无效、已撤销或订阅已失效。" }, 401);
-  const upstreamConfigValue = await resolveUpstreamConfig(env, "desktop_codex");
-  if (!upstreamConfigValue) return json({ error: "上游服务尚未配置。" }, 503);
-  const rawBody = await request.text();
-  let body;
-  try { body = JSON.parse(rawBody); } catch { return json({ error: "Responses 请求必须是 JSON。" }, 400); }
-  if (body.model !== BOTGO_MODEL) return json({ error: "当前仅支持 GPT-5.6。" }, 400);
-  const ledgerId = await reserveRelayUsage(env, credential.account_id, BOTGO_MODEL);
-  if (!ledgerId) return json({ error: "BotGo 额度不足。" }, 402);
-  const endpoint = `${upstreamConfigValue.baseUrl}/responses`;
-  try {
-    const upstream = await fetch(endpoint, {
-      method: "POST",
-      headers: { authorization: `Bearer ${upstreamConfigValue.apiKey}`, "content-type": "application/json" },
-      body: JSON.stringify({ ...body, model: upstreamConfigValue.modelId })
-    });
-    if (!upstream.ok || !upstream.body) throw new Error(`upstream ${upstream.status}`);
-    await env.DB.prepare("UPDATE usage_ledger SET outcome = 'completed' WHERE id = ?").bind(ledgerId).run();
-    await env.DB.prepare("UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?").bind(credential.id).run();
-    await audit(env, credential.account_id, "codex_response", { model: BOTGO_MODEL });
-    return new Response(upstream.body, {
-      status: upstream.status,
-      headers: { "content-type": upstream.headers.get("content-type") || "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff" }
-    });
-  } catch {
-    await refundRelayUsage(env, credential.account_id, ledgerId);
-    return json({ error: "BotGo 上游模型暂不可用，本次额度已退回。" }, 502);
-  }
-}
 
 async function proxyCodexModels(request, env) {
   const credential = await credentialFor(request, env, true);
   if (!credential) return json({ error: "BotGo Codex Key 无效、已撤销或订阅已失效。" }, 401);
   await env.DB.prepare("UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?").bind(credential.id).run();
-  return json({ object: "list", data: [{ id: BOTGO_MODEL, object: "model", created: 0, owned_by: "botgo" }] });
+  const available = await catalog(env);
+  return json({ object: "list", data: available.models.filter(m=>m.enabled&&m.agent_enabled).map(m=>({id:m.id,object:'model',created:0,owned_by:'botgo'})) });
 }
 
-async function streamChat(request, env) {
-  const session = await sessionFor(request, env);
-  if (!session) return json({ error: "请先登录。" }, 401);
-  const body = await bodyOf(request);
-  if (!body || body.model !== BOTGO_MODEL || !Array.isArray(body.messages) || body.messages.length === 0) return json({ error: "聊天请求不完整。" }, 400);
-  const upstreamConfigValue = await resolveUpstreamConfig(env, "web_chat");
-  if (!upstreamConfigValue) return json({ error: "上游服务尚未配置。" }, 503);
-  const account = await env.DB.prepare("SELECT id, credit_balance, status FROM accounts WHERE id = ?").bind(session.sub).first();
-  if (!account || account.status !== "active") return json({ error: "账户不可用。" }, 403);
-  const debit = await env.DB.prepare("UPDATE accounts SET credit_balance = credit_balance - ? WHERE id = ? AND credit_balance >= ?").bind(CREDIT_SCALE, account.id, CREDIT_SCALE).run();
-  if (!debit.meta.changes) return json({ error: "额度不足。" }, 402);
-  const ledgerId = requestId();
-  await env.DB.prepare("INSERT INTO usage_ledger (id, account_id, provider, model, units, outcome) VALUES (?, ?, ?, ?, 1, 'reserved')").bind(ledgerId, account.id, "botgo", BOTGO_MODEL).run();
-
-  const endpoint = `${upstreamConfigValue.baseUrl}/chat/completions`;
-  const upstreamBody = { model: upstreamConfigValue.modelId, messages: body.messages, stream: true };
-  const headers = { authorization: `Bearer ${upstreamConfigValue.apiKey}`, "content-type": "application/json" };
-  try {
-    const upstream = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(upstreamBody) });
-    if (!upstream.ok || !upstream.body) throw new Error(`upstream ${upstream.status}`);
-    await env.DB.prepare("UPDATE usage_ledger SET outcome = 'completed' WHERE id = ?").bind(ledgerId).run();
-    await audit(env, account.id, "chat_completed", { provider: "botgo", model: BOTGO_MODEL });
-    return new Response(upstream.body, { status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-store", "x-content-type-options": "nosniff" } });
-  } catch {
-    await env.DB.batch([
-      env.DB.prepare("UPDATE accounts SET credit_balance = credit_balance + ? WHERE id = ?").bind(CREDIT_SCALE, account.id),
-      env.DB.prepare("UPDATE usage_ledger SET outcome = 'refunded' WHERE id = ?").bind(ledgerId)
-    ]);
-    await audit(env, account.id, "chat_refunded", { provider: "botgo", model: BOTGO_MODEL });
-    return json({ error: "上游模型暂不可用，本次额度已退回。" }, 502);
-  }
-}
 
 import { handleAgentRelease } from "./agent-releases.js";
+import { catalog, publicCatalog, meteredProxy } from "./metering.js";
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     if (env.BOTGO_MAINTENANCE === "1") return json({ error: "服务更新中，请稍后重试。" }, 503, { "retry-after": "60" });
     if (!env.DB || !env.AUTH_SECRET) return json({ error: "后端绑定尚未配置。" }, 503);
     const path = new URL(request.url).pathname;
+    if (request.method === 'GET' && path === '/models') return json(publicCatalog(await catalog(env)));
+    if (request.method === 'POST' && (path === '/v1/responses' || path === '/chat/stream')) {
+      const channel = path === '/chat/stream' ? 'web_chat' : 'desktop_codex';
+      const identity = channel === 'web_chat' ? await sessionFor(request, env) : await credentialFor(request, env, true);
+      if (!identity) return json({error:'请先登录 BotGo。'},401);
+      const body = await bodyOf(request);
+      if (!body || typeof body.model !== 'string' || (channel === 'web_chat' && !Array.isArray(body.messages))) return json({error:'请求不完整。'},400);
+      const upstream = await resolveUpstreamConfig(env, channel);
+      if (!upstream) return json({error:'上游服务尚未配置。'},503);
+      return meteredProxy(request, env, ctx, {accountId:identity.sub || identity.account_id, channel, body, upstream});
+    }
     const agentRelease = await handleAgentRelease(request, env, path);
     if (agentRelease) return agentRelease;
     const platformResponse = await handlePlatformRoute(request, env, path, { activeAdminFor, audit, sessionFor });
@@ -680,9 +615,7 @@ export default {
     if (request.method === "POST" && inviteRevokeMatch) return revokeInvite(request, env, inviteRevokeMatch[1]);
     const accountStatusMatch = path.match(/^\/admin\/accounts\/([^/]+)\/status$/);
     if (request.method === "POST" && accountStatusMatch) return updateAccountStatus(request, env, decodeURIComponent(accountStatusMatch[1]));
-    if (request.method === "POST" && path === "/v1/responses") return proxyCodexResponses(request, env);
     if (request.method === "GET" && path === "/v1/models") return proxyCodexModels(request, env);
-    if (request.method === "POST" && path === "/chat/stream") return streamChat(request, env);
     return json({ error: "接口不存在。" }, 404);
   }
 };

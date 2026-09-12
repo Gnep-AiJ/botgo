@@ -42,6 +42,7 @@ test("executeTask issues a relay key and records a resumable session", async () 
     api: {
       origin: "https://botgo.win",
       async account() { return { account: { credits: 3 } }; },
+      async models() { return {defaultModel:'gpt-5.6-sol',models:[{id:'gpt-5.6-sol',enabled:true,agent:true}]}; },
       async issueKey() { return { key: "bgk_relay" }; }
     },
     sessions: {

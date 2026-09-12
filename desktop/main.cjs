@@ -266,6 +266,7 @@ app.whenReady().then(() => {
     return apiRequest("/desktop/account", { deviceToken: current.deviceToken });
   });
   ipcMain.handle("history:get", async () => state().load());
+  ipcMain.handle('models:get', async () => apiRequest('/models'));
   ipcMain.handle("project:choose", async () => {
     const selected = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory", "createDirectory"] });
     if (selected.canceled || !selected.filePaths[0]) return null;
@@ -289,19 +290,23 @@ app.whenReady().then(() => {
     try {
     const current = await credential();
     const account = await apiRequest("/desktop/account", { deviceToken: current.deviceToken });
-    if (!Number.isFinite(account.account?.credits) || account.account.credits < 1) throw new Error("额度不足。请前往 BotGo 网站管理账户。");
+    if (!Number.isFinite(account.account?.credits) || account.account.credits <= 0) throw new Error("额度不足。请前往 BotGo 网站管理账户。");
+    const available = await apiRequest('/models');
+    const selectedModel = task.model || available.defaultModel;
+    if (!available.models.some(m=>m.id===selectedModel&&m.enabled&&m.agent)) throw new Error('所选模型暂不可用于 Agent。');
     const issued = await apiRequest("/desktop/key", { method: "POST", deviceToken: current.deviceToken });
     await prepareRuntime();
     const history = state().load();
     let thread = history.threads.find((item) => item.id === task.threadId && item.projectPath === task.projectPath);
     if (!thread) thread = { id: crypto.randomUUID(), projectPath: task.projectPath, title: task.prompt.slice(0, 64), sessionId: "", status: "idle", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-    const entry = { ...thread, title: thread.messages.length ? thread.title : task.prompt.slice(0, 64), status: "running", updatedAt: new Date().toISOString(), messages: [...thread.messages, { id: crypto.randomUUID(), role: "user", kind: "message", content: task.prompt, files: [], createdAt: new Date().toISOString() }] };
+    const entry = { ...thread, model: selectedModel, title: thread.messages.length ? thread.title : task.prompt.slice(0, 64), status: "running", updatedAt: new Date().toISOString(), messages: [...thread.messages, { id: crypto.randomUUID(), role: "user", kind: "message", content: task.prompt, files: [], createdAt: new Date().toISOString() }] };
     state().save({ ...history, selectedProject: entry.projectPath, selectedThreadId: entry.id, recentProjects: [entry.projectPath, ...history.recentProjects.filter((item) => item !== entry.projectPath)], threads: [entry, ...history.threads.filter((item) => item.id !== entry.id)] });
     const runner = createCodexRunner({ command: nativeCommand(agentRoot) });
     activeTask = runner.start({
       id: entry.id,
       projectPath: entry.projectPath,
       prompt: task.prompt,
+      model: selectedModel,
       permission: task.mode,
       confirmedFullAccess: task.confirmedFullAccess,
       sessionId: entry.sessionId,
@@ -310,7 +315,7 @@ app.whenReady().then(() => {
       relayOrigin: requireApiOrigin(),
       onEvent(event) {
         if (event.type === "session") entry.sessionId = event.sessionId;
-        if (event.type === "progress" && event.message) entry.messages.push({ id: crypto.randomUUID(), role: "assistant", kind: "message", content: event.message, files: [], createdAt: new Date().toISOString() });
+        if (event.type === "progress" && event.message) entry.messages.push({ id: crypto.randomUUID(), role: "assistant", model: selectedModel, kind: "message", content: event.message, files: [], createdAt: new Date().toISOString() });
         if (event.type === "files") entry.messages.push({ id: crypto.randomUUID(), role: "system", kind: "files", content: "变更文件", files: event.files, createdAt: new Date().toISOString() });
         if (event.type === "error") entry.messages.push({ id: crypto.randomUUID(), role: "system", kind: "error", content: event.message || "任务未能完成。", files: [], createdAt: new Date().toISOString() });
         if (["session", "progress", "files"].includes(event.type)) {
@@ -336,13 +341,16 @@ app.whenReady().then(() => {
     return { id: entry.id };
     } finally { taskStarting = false; }
   });
-  ipcMain.handle("runtime:open-terminal", async (_event, { projectPath, sessionId }) => {
+  ipcMain.handle("runtime:open-terminal", async (_event, { projectPath, sessionId, model }) => {
     if (activeTask) throw new Error("请先停止当前任务。");
     if (!state().load().recentProjects.includes(projectPath)) throw new Error("请先选择项目。");
+    const models=await apiRequest('/models');
+    model=model||models.defaultModel;
+    if(!models.models.some(m=>m.id===model&&m.enabled&&m.agent))throw new Error('所选模型暂不可用。');
     await prepareRuntime();
     const current = await credential();
     const issued = await apiRequest("/desktop/key", { method: "POST", deviceToken: current.deviceToken });
-    return openNativeTerminal({ command: nativeCommand(agentRoot), projectPath, codexHome: appPaths().codexHome, relayKey: issued.key, relayOrigin: requireApiOrigin(), sessionId });
+    return openNativeTerminal({ command: nativeCommand(agentRoot), projectPath, codexHome: appPaths().codexHome, relayKey: issued.key, relayOrigin: requireApiOrigin(), model, sessionId });
   });
   ipcMain.handle("task:stop", async () => { activeTask?.stop(); return { ok: true }; });
   ipcMain.handle("account:revoke-device", async () => {

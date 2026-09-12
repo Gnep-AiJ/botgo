@@ -13,6 +13,7 @@ function normalizeMessage(message) {
     role: allowedRole.has(message?.role) ? message.role : "system",
     kind: ["message", "progress", "error", "files"].includes(message?.kind) ? message.kind : "message",
     content: String(message?.content || ""),
+    model: String(message?.model || ''),
     files: Array.isArray(message?.files) ? message.files.filter((file) => typeof file === "string").slice(0, 200) : [],
     createdAt: String(message?.createdAt || now())
   };
@@ -25,6 +26,7 @@ function normalizeSession(session) {
     projectPath: String(session?.projectPath || ""),
     title: String(session?.title || messages.find((message) => message.role === "user")?.content || "New session").slice(0, 120),
     codexSessionId: String(session?.codexSessionId || "").slice(0, 200),
+    model: String(session?.model || ''),
     status: allowedStatus.has(session?.status) ? session.status : "idle",
     messages,
     createdAt: String(session?.createdAt || now()),

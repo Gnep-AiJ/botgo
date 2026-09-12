@@ -10,7 +10,7 @@ const workspaceSource = fs.readFileSync(path.join(root, "workspace.js"), "utf8")
 const billingSource = fs.readFileSync(path.join(root, "workspace-billing.js"), "utf8");
 assert.match(devSource, /ignoredPrefixes = \["\.tmp-", "tmp-", "layout-", "debug-"\]/, "开发预览应忽略截图、浏览器临时目录和调试产物");
 assert.match(devSource, /ignoredRoots = new Set\(\[[^\]]*"desktop"[^\]]*"docs"[^\]]*"tests"[^\]]*"worker"/, "开发预览不应监听桌面端、文档、测试和 Worker 产物");
-assert.match(workspaceSource, /localPreviewHost\s*&&\s*params\.get\("preview"\) === "account"/, "账户演示模式必须限于本地主机和明确查询参数");
+assert.match(workspaceSource, /localPreviewHost\s*&&\s*\['account','chat'\]\.includes\(params\.get\('preview'\)\)/, "演示模式必须限于本地主机和明确查询参数");
 assert.match(workspaceSource, /preview@botgo\.local/, "账户演示模式应使用明确的预览身份");
 assert.match(billingSource, /accountPreview[\s\S]*本地界面预览不会发起支付。/, "账户演示模式不得发起真实支付");
 const port = 40000 + (process.pid % 10000);

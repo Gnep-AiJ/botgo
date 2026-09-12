@@ -55,7 +55,8 @@ assert.match(workspace, /data-recharge-option/, "余额弹窗应提供预设充�
 assert.match(workspace, /data-subscription-upgrade[^>]*disabled/, "充值入口应在支付配置加载前禁用");
 assert.match(workspace, /BotGo Desktop/, "网页工作台应以 BotGo Desktop 作为本地开发入口");
 assert.match(workspace, /data-desktop-open/, "桌面端入口应使用独立对话框说明");
-assert.doesNotMatch(workspace, /API Key|复制安装命令|Codex CLI|Claude Code|chatgpt\.com\/download/, "网页不应暴露 Key、命令、CLI 或第三方官方下载入口");
+assert.doesNotMatch(workspace, /API Key|Codex CLI|Claude Code|chatgpt\.com\/download/, "网页不应暴露凭据或第三方下载入口");
+assert.match(workspace, /复制安装命令/, "应用页应提供 BotGo CLI 安装入口");
 assert.doesNotMatch(workspace, /agent-setup-dialog/, "网页不应保留底层 Agent 配置弹窗");
 assert.match(workspace, /id="login-button"/, "登录按钮应位于工作区头部");
 assert.match(workspace, /id="register-button"/, "注册按钮应位于工作区头部");
