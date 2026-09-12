@@ -31,12 +31,20 @@ function installedCodexPackagePath(packageRoot) {
   return path.join(packageRoot, "node_modules", "@openai", "codex", "package.json");
 }
 
-function npmInvocation({ platform = process.platform, execPath = process.execPath, fsImpl = fs, args = [] } = {}) {
+function npmInvocation({ platform = process.platform, execPath = process.execPath, fsImpl = fs, env = process.env, args = [] } = {}) {
   if (platform === "win32") {
-    const npmCli = path.win32.join(path.win32.dirname(execPath), "node_modules", "npm", "bin", "npm-cli.js");
-    if (typeof fsImpl.existsSync !== "function" || fsImpl.existsSync(npmCli)) return { command: execPath, args: [npmCli, ...args] };
+    const npmEntry = (directory) => path.win32.join(directory, "node_modules", "npm", "bin", "npm-cli.js");
+    const pathValue = Object.entries(env).find(([key]) => key.toLowerCase() === "path")?.[1] || "";
+    const candidates = [
+      npmEntry(path.win32.dirname(execPath)),
+      env.npm_execpath,
+      ...pathValue.split(";").map((entry) => entry.trim().replace(/^"|"$/g, "")).filter(Boolean).map(npmEntry)
+    ];
+    const npmCli = candidates.find((entry) => typeof entry === "string" && path.win32.isAbsolute(entry) && path.win32.basename(entry).toLowerCase() === "npm-cli.js" && fsImpl.existsSync(entry));
+    if (!npmCli) throw new Error("Cannot locate npm-cli.js. Reinstall BotGo Agent with -UseBundledNode or install Node.js with npm.");
+    return { command: execPath, args: [npmCli, ...args] };
   }
-  return { command: platform === "win32" ? "npm.cmd" : "npm", args };
+  return { command: "npm", args };
 }
 
 function readInstalledCodexVersion({ packageRoot, fsImpl = fs } = {}) {
@@ -56,7 +64,7 @@ function readInstalledCodexVersion({ packageRoot, fsImpl = fs } = {}) {
 }
 
 function fetchLatestStableVersionViaNpm({ registry = DEFAULT_REGISTRY, platform = process.platform, execPath = process.execPath, fsImpl = fs, spawnSyncImpl = spawnSync, env = process.env } = {}) {
-  const invocation = npmInvocation({ platform, execPath, fsImpl, args: ["view", "@openai/codex", "dist-tags.latest", "--json", "--registry", registry] });
+  const invocation = npmInvocation({ platform, execPath, fsImpl, env, args: ["view", "@openai/codex", "dist-tags.latest", "--json", "--registry", registry] });
   const result = spawnSyncImpl(invocation.command, invocation.args, {
     env,
     encoding: "utf8",
@@ -103,7 +111,7 @@ function applyCodexUpdate({ packageRoot, latestVersion, platform = process.platf
   if (typeof packageRoot !== "string" || !packageRoot) throw new Error("A BotGo Agent package root is required");
   const parsed = stableVersion(latestVersion);
   if (!parsed) throw new Error("Codex update version must be a stable x.y.z version");
-  const invocation = npmInvocation({ platform, execPath, fsImpl, args: ["install", "--save-exact", `@openai/codex@${parsed.text}`] });
+  const invocation = npmInvocation({ platform, execPath, fsImpl, env, args: ["install", "--save-exact", `@openai/codex@${parsed.text}`] });
   const result = spawnSyncImpl(invocation.command, invocation.args, {
     cwd: packageRoot,
     env,

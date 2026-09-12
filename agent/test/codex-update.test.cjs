@@ -43,6 +43,7 @@ test("fetchLatestStableVersion falls back to npm when direct fetch is unavailabl
   const version = await fetchLatestStableVersion({
     platform: "win32",
     execPath: "D:\\Environment\\node\\node.exe",
+    fsImpl: { existsSync() { return true; } },
     fetchImpl: async () => { throw new Error("fetch failed"); },
     spawnSyncImpl(command, args, options) {
       calls.push({ command, args, options });
@@ -50,7 +51,7 @@ test("fetchLatestStableVersion falls back to npm when direct fetch is unavailabl
     }
   });
   assert.equal(version, "0.154.0");
-  assert.equal(calls[0].command, process.execPath);
+  assert.equal(calls[0].command, "D:\\Environment\\node\\node.exe");
   assert.deepEqual(calls[0].args, [
     "D:\\Environment\\node\\node_modules\\npm\\bin\\npm-cli.js",
     "view", "@openai/codex", "dist-tags.latest", "--json", "--registry", "https://registry.npmjs.org/@openai%2fcodex"
@@ -84,6 +85,26 @@ test("npmInvocation uses the Node npm entrypoint on Windows", () => {
     npmInvocation({ platform: "win32", execPath: "C:\\node.exe", fsImpl: { existsSync() { return true; } }, args: ["--version"] }),
     { command: "C:\\node.exe", args: ["C:\\node_modules\\npm\\bin\\npm-cli.js", "--version"] }
   );
+});
+
+test("npmInvocation discovers separately installed npm without executing a cmd shell", () => {
+  for (const env of [
+    { npm_execpath: "C:\\tools\\npm\\bin\\npm-cli.js" },
+    { Path: 'C:\\missing;"C:\\npm tools"' }
+  ]) {
+    const expected = env.npm_execpath || "C:\\npm tools\\node_modules\\npm\\bin\\npm-cli.js";
+    const invocation = npmInvocation({
+      platform: "win32", execPath: "C:\\node\\node.exe", env,
+      fsImpl: { existsSync(entry) { return entry === expected; } }, args: ["--version"]
+    });
+    assert.deepEqual(invocation, { command: "C:\\node\\node.exe", args: [expected, "--version"] });
+  }
+});
+
+test("npmInvocation reports missing npm instead of attempting an unlaunchable cmd file", () => {
+  assert.throws(() => npmInvocation({
+    platform: "win32", env: {}, fsImpl: { existsSync() { return false; } }
+  }), /Reinstall BotGo Agent/);
 });
 
 test("applyCodexUpdate rejects prerelease or malformed versions", () => {
