@@ -36,6 +36,7 @@ flowchart LR
 ```
 
 后台样式与隔离发布流程：[[notes/Admin UI]]。
+开放注册、赠送余额及三端历史保留：[[notes/Open Registration and Retention]]。
 
 ## 代码边界
 

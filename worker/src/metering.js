@@ -10,7 +10,7 @@ export const MODEL_SEEDS = [
 export const reply = (body,status=200) => Response.json(body,{status,headers:{'cache-control':'no-store'}});
 export async function catalog(env) {
   const [rows,settings] = await Promise.all([
-    env.DB.prepare("SELECT * FROM model_catalog WHERE id<>'gpt-5.4' ORDER BY rowid").all(),
+    env.DB.prepare("SELECT * FROM model_catalog WHERE id<>'gpt-5.4' AND archived=0 ORDER BY rowid").all(),
     env.DB.prepare('SELECT * FROM metering_settings WHERE id=1').first()
   ]);
   return {models:(rows.results||[]).map(r=>({...r,price:JSON.parse(r.price_json)})),settings};
@@ -155,6 +155,17 @@ export async function handleMeteringAdmin(request,env,path,admin,audit) {
     await audit(env,admin.id,'metering_settings_changed',{defaultModel:body.defaultModel,multiplierPpm:body.multiplierPpm,usdCnyPpm:body.usdCnyPpm});return reply({ok:true});
   }
   const match=path.match(/^\/admin\/metering\/models\/([a-z0-9.-]+)$/);
+  if(match&&request.method==='DELETE') {
+    const model=await env.DB.prepare('SELECT id,upstream_id FROM model_catalog WHERE id=? AND archived=0').bind(match[1]).first();
+    if(!model)return reply({error:'模型不存在。'},404);
+    const used=await env.DB.prepare('SELECT id FROM metering_settings WHERE default_model=? UNION ALL SELECT channel FROM upstream_routes WHERE model_id=?').bind(model.id,model.upstream_id).first();
+    if(used)return reply({error:'请先更换默认模型或路由中的模型。'},409);
+    const historical=await env.DB.prepare('SELECT id FROM metered_requests WHERE model=? LIMIT 1').bind(model.id).first();
+    if(historical)await env.DB.prepare('UPDATE model_catalog SET archived=1,enabled=0,web_enabled=0,agent_enabled=0 WHERE id=?').bind(model.id).run();
+    else await env.DB.prepare('DELETE FROM model_catalog WHERE id=?').bind(model.id).run();
+    await audit(env,admin.id,'model_removed',{model:model.id,archived:!!historical});
+    return reply({ok:true,archived:!!historical});
+  }
   if(match&&request.method==='PUT') {
     const p=body?.price;
     if(!p||!['input','cached','write','output','longThreshold','longInput','longOutput'].every(k=>Number.isFinite(p[k])&&p[k]>=0&&p[k]<=10000000)||p.longThreshold<1||p.longInput<1||p.longOutput<1||p.tier!=='default'||!/^https:\/\/(developers\.)?openai\.com\//.test(p.source||''))return reply({error:'价格快照无效。'},400);

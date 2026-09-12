@@ -218,7 +218,7 @@
     loginForm.hidden = isRegister;
     registerForm.hidden = !isRegister;
     verifyForm.hidden = true;
-    authEyebrow.textContent = isRegister ? "BOTGO ACCOUNT / INVITE" : "BOTGO ACCOUNT";
+    authEyebrow.textContent = isRegister ? "BOTGO ACCOUNT" : "BOTGO ACCOUNT";
     authTitle.textContent = isRegister ? "创建 BotGo 账户" : "登录 BotGo";
     document.querySelectorAll(".auth-mode-switch [data-auth-mode]").forEach((button) => {
       button.setAttribute("aria-current", button.dataset.authMode === mode ? "page" : "false");
@@ -476,14 +476,14 @@
   });
   registerForm.addEventListener("submit", async (event) => {
     event.preventDefault(); setStatus("register-status", "正在发送验证码…", false); const data = Object.fromEntries(new FormData(registerForm));
-    try { await api("/auth/redeem-invite", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(data) }); showVerification(data.email, "register"); setStatus("verify-status", "验证码已发送，请检查邮箱。", false); }
+    try { await api("/auth/request-login-code", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(data) }); showVerification(data.email, "register"); setStatus("verify-status", "验证码已发送，请检查邮箱。", false); }
     catch (error) { setStatus("register-status", error.message, true); }
   });
   verifyForm.addEventListener("submit", async (event) => {
     event.preventDefault(); setStatus("verify-status", "正在验证邮箱…", false);
     const data = Object.fromEntries(new FormData(verifyForm));
     data.code = String(data.code || "").trim().replace(/[０-９]/g, (digit) => String(digit.charCodeAt(0) - 0xfee0));
-    try { const result = await api(verificationPurpose === "login" ? "/auth/login" : "/auth/verify-email", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(data) }); account = result.account; renderAccountState(); authDialog.close(); }
+    try { const result = await api("/auth/login", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(data) }); account = result.account; renderAccountState(); authDialog.close(); }
     catch (error) { setStatus("verify-status", error.message, true); }
   });
 

@@ -122,7 +122,9 @@ async function main() {
   const versionedScript = withBuildVersion(script, buildVersion);
   await writeFile(path.join(dist, "index.html"), createProductionHome(html, css, versionedScript));
   await writeFile(path.join(dist, "workspace.html"), withContentVersion(withContentVersion(workspaceHtml, "workspace.css", workspaceCss), "workspace.js", workspaceScript));
-  await writeFile(path.join(dist, "admin.html"), withContentVersion(withContentVersion(adminHtml, "admin.css", adminCss), "admin.js", adminScript));
+  let adminVersioned=adminHtml;
+  for(const asset of ['admin.css','admin-layout.css','admin.js','admin-platform.js','admin-metering.js'])adminVersioned=withContentVersion(adminVersioned,asset,await readFile(path.join(root,asset),'utf8'));
+  await writeFile(path.join(dist,"admin.html"),adminVersioned);
   await writeFile(path.join(dist, "_headers"), createProductionHeaders(headers, versionedScript));
   console.log(`Built ${files.length} production files in dist/`);
 }

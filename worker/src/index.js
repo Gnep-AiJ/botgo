@@ -1,7 +1,8 @@
+import { consumeLoginCode } from "./account-operations.js";
 import { connect } from "cloudflare:sockets";
 import { DesktopAuthError, approveDesktopWebAuthorization, cancelDesktopWebAuthorization, desktopCredentialFor, desktopRelayCredentialFor, desktopWebAuthorizationFor, exchangeDesktopWebAuthorization, issueDesktopKey, revokeDesktopDevice, startDesktopWebAuthorization } from "./desktop-auth.js";
 import { handlePlatformRoute, resolveUpstreamConfig } from "./platform-admin.js";
-import { conversationRoute, startConversationTurn } from "./conversations.js";
+import { conversationRoute, startConversationTurn, purgeExpiredConversations } from "./conversations.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -67,7 +68,9 @@ async function sessionFor(request, env) {
   if (!payload || !signature || signature !== await hmac(payload, env.AUTH_SECRET)) return null;
   try {
     const data = JSON.parse(new TextDecoder().decode(decodeBase64url(payload)));
-    return data.exp > Date.now() ? data : null;
+    if (data.exp <= Date.now()) return null;
+    const account = await env.DB.prepare("SELECT status FROM accounts WHERE id=?").bind(data.sub).first();
+    return account?.status === "active" ? data : null;
   } catch {
     return null;
   }
@@ -284,11 +287,9 @@ async function login(request, env) {
   if (!body || !emailIsValid(body.email) || !/^\d{6}$/.test(code)) return json({ error: "请输入邮件中的 6 位验证码。" }, 400);
   const email = body.email.trim().toLowerCase();
   const tokenHash = await sha256(`login:${email}:${code}`);
-  const verification = await env.DB.prepare("SELECT * FROM email_login_codes WHERE token_hash = ? AND consumed_at IS NULL").bind(tokenHash).first();
-  if (!verification || verification.expires_at <= new Date().toISOString()) return json({ error: "验证码无效或已过期。" }, 400);
-  const account = await env.DB.prepare("SELECT id, email, credit_balance, status FROM accounts WHERE email = ?").bind(email).first();
-  if (!account || account.status !== "active") return json({ error: "账户不可用。" }, 403);
-  await env.DB.prepare("UPDATE email_login_codes SET consumed_at = CURRENT_TIMESTAMP WHERE token_hash = ?").bind(tokenHash).run();
+  const account = await consumeLoginCode(env,email,tokenHash);
+  if (!account) return json({ error: "验证码无效、已使用或已过期。" }, 400);
+  if (account.status !== "active") return json({ error: "账户不可用。" }, 403);
   const token = await createSession(account, env);
   await audit(env, account.id, "email_code_login");
   return json({ ok: true, account: publicAccount(account) }, 200, { "set-cookie": `botgo_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800` });
@@ -299,7 +300,7 @@ async function requestLoginCode(request, env) {
   if (!body || !emailIsValid(body.email)) return json({ error: "请输入有效邮箱地址。" }, 400);
   const email = body.email.trim().toLowerCase();
   const account = await env.DB.prepare("SELECT id, status FROM accounts WHERE email = ?").bind(email).first();
-  if (!account || account.status !== "active") return json({ error: "账户不存在或不可用。" }, 404);
+  if (account && account.status !== "active") return json({ error: "账户不可用。" }, 403);
   const guard = await verificationRequestGuard(request, env, email, "email_login_codes", "login_verification_requested");
   if (guard.response) return guard.response;
   const code = String(100000 + (crypto.getRandomValues(new Uint32Array(1))[0] % 900000));
@@ -313,7 +314,7 @@ async function requestLoginCode(request, env) {
     await env.DB.prepare("DELETE FROM email_login_codes WHERE token_hash = ?").bind(tokenHash).run();
     return json({ error: "邮件服务尚未配置或暂不可用。" }, 503);
   }
-  await audit(env, account.id, "login_verification_requested", { emailHash: await sha256(email), ipHash: guard.ipHash });
+  await audit(env, account?.id || null, "login_verification_requested", { emailHash: await sha256(email), ipHash: guard.ipHash });
   return json({ ok: true, message: "验证码已发送。" }, 202);
 }
 
@@ -322,7 +323,7 @@ async function accountInfo(request, env) {
   if (!session) return json({ error: "请先登录。" }, 401);
   const account = await env.DB.prepare("SELECT email, credit_balance, credit_remainder_micros, billing_reserved_micros, status FROM accounts WHERE id = ?").bind(session.sub).first();
   if (!account || account.status !== "active") return json({ error: "账户不可用。" }, 403);
-  const subscription = await activeSubscription(env, session.sub);
+  const subscription = {plan:"metered",status:"active",expires_at:null};
   return json({ account: { ...publicAccount(account), plan: subscription?.plan || "free", subscriptionStatus: subscription?.status || "inactive", subscriptionExpiresAt: subscription?.expires_at || null } });
 }
 
@@ -534,7 +535,6 @@ async function issueCodexKey(request, env) {
   const session = await sessionFor(request, env);
   if (!session) return json({ error: "请先登录。" }, 401);
   const subscription = await activeSubscription(env, session.sub);
-  if (!subscription) return json({ error: "当前账户没有有效订阅，请联系 BotGo 开通后再生成 Key。" }, 403);
   const rawKey = `bgk_${base64url(crypto.getRandomValues(new Uint8Array(32)))}`;
   const keyHash = await sha256(rawKey);
   const keyId = requestId();
@@ -555,14 +555,14 @@ async function credentialFor(request, env, includeDesktop = false) {
   }
   const keyHash = await sha256(rawKey);
   const credential = await env.DB.prepare("SELECT k.id, k.account_id, a.credit_balance, a.status FROM api_keys k JOIN accounts a ON a.id = k.account_id WHERE k.key_hash = ? AND k.scope IN ('codex', 'agent') AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at > CURRENT_TIMESTAMP)").bind(keyHash).first();
-  if (!credential || credential.status !== "active" || !(await activeSubscription(env, credential.account_id))) return null;
+  if (!credential || credential.status !== "active") return null;
   return credential;
 }
 
 
 async function proxyCodexModels(request, env) {
   const credential = await credentialFor(request, env, true);
-  if (!credential) return json({ error: "BotGo Codex Key 无效、已撤销或订阅已失效。" }, 401);
+  if (!credential) return json({ error: "BotGo Key 无效或已撤销。" }, 401);
   await env.DB.prepare("UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?").bind(credential.id).run();
   const available = await catalog(env);
   return json({ object: "list", data: available.models.filter(m=>m.enabled&&m.agent_enabled).map(m=>({id:m.id,object:'model',created:0,owned_by:'botgo'})) });
@@ -573,6 +573,7 @@ import { handleAgentRelease } from "./agent-releases.js";
 import { catalog, publicCatalog, meteredProxy } from "./metering.js";
 
 export default {
+  async scheduled(event, env, ctx) { ctx.waitUntil(purgeExpiredConversations(env)); },
   async fetch(request, env, ctx) {
     if (env.BOTGO_MAINTENANCE === "1") return json({ error: "服务更新中，请稍后重试。" }, 503, { "retry-after": "60" });
     if (!env.DB || !env.AUTH_SECRET) return json({ error: "后端绑定尚未配置。" }, 503);
@@ -608,8 +609,8 @@ export default {
     const platformResponse = await handlePlatformRoute(request, env, path, { activeAdminFor, audit, sessionFor });
     if (platformResponse) return platformResponse;
     if (request.method === "GET" && path === "/health") return json({ ok: true, service: "botgo-api" });
-    if (request.method === "POST" && path === "/auth/redeem-invite") return redeemInvite(request, env);
-    if (request.method === "POST" && path === "/auth/verify-email") return verifyEmail(request, env);
+    if (request.method === "POST" && path === "/auth/redeem-invite") return json({error:"请使用邮箱验证码登录或注册。"},410);
+    if (request.method === "POST" && path === "/auth/verify-email") return json({error:"请重新获取邮箱验证码。"},410);
     if (request.method === "POST" && path === "/auth/request-login-code") return requestLoginCode(request, env);
     if (request.method === "POST" && path === "/auth/login") return login(request, env);
     if (request.method === "POST" && path === "/desktop/authorize/start") return desktopAuthorizationStart(request, env);
@@ -626,7 +627,7 @@ export default {
     if (request.method === "POST" && path === "/desktop/key") return desktopIssueKey(request, env);
     if (request.method === "POST" && path === "/desktop/revoke") return desktopRevoke(request, env);
     if (request.method === "GET" && path === "/admin/overview") return adminOverview(request, env);
-    if ((request.method === "GET" || request.method === "POST") && path === "/admin/invites") return adminInvites(request, env);
+    if ((request.method === "GET" || request.method === "POST") && path === "/admin/invites") return json({error:"邀请码已停用。"},410);
     const inviteRevokeMatch = path.match(/^\/admin\/invites\/([A-Za-z0-9_-]{43})\/revoke$/);
     if (request.method === "POST" && inviteRevokeMatch) return revokeInvite(request, env, inviteRevokeMatch[1]);
     const accountStatusMatch = path.match(/^\/admin\/accounts\/([^/]+)\/status$/);

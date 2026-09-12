@@ -156,25 +156,21 @@ export async function desktopCredentialFor(env, rawDeviceToken, { sha256 = defau
   const account = await env.DB.prepare("SELECT id, email, credit_balance, credit_remainder_micros, billing_reserved_micros, status FROM accounts WHERE id = ?")
     .bind(device.account_id).first();
   if (!account || account.status !== "active") throw new DesktopAuthError("账户不可用。", 403);
-  const subscription = await env.DB.prepare("SELECT plan, status, expires_at FROM subscriptions WHERE account_id = ?")
-    .bind(account.id).first();
-  if (!subscription || subscription.status !== "active" || (subscription.expires_at && subscription.expires_at <= new Date().toISOString())) {
-    throw new DesktopAuthError("当前账户没有有效订阅。", 403);
-  }
+  const subscription = {plan:"metered",status:"active",expires_at:null};
   return { account, device, subscription, tokenHash };
 }
 
 export async function desktopRelayCredentialFor(env, rawKey, { sha256 = defaultSha256 } = {}) {
   if (typeof rawKey !== "string" || !rawKey.startsWith("bgk_")) return null;
   const keyHash = await sha256(rawKey);
-  const credential = await env.DB.prepare("SELECT k.id, k.account_id, a.email, a.credit_balance, a.status, s.plan, s.status AS subscription_status, s.expires_at AS subscription_expires_at FROM api_keys k JOIN accounts a ON a.id = k.account_id JOIN device_tokens d ON d.token_hash = k.device_token_hash JOIN subscriptions s ON s.account_id = a.id WHERE k.key_hash = ? AND k.scope = 'desktop' AND k.revoked_at IS NULL AND d.revoked_at IS NULL AND d.expires_at > ?")
+  const credential = await env.DB.prepare("SELECT k.id, k.account_id, a.email, a.credit_balance, a.status FROM api_keys k JOIN accounts a ON a.id = k.account_id JOIN device_tokens d ON d.token_hash = k.device_token_hash WHERE k.key_hash = ? AND k.scope = 'desktop' AND k.revoked_at IS NULL AND d.revoked_at IS NULL AND d.expires_at > ?")
     .bind(keyHash, new Date().toISOString()).first();
-  if (!credential || credential.status !== "active" || credential.subscription_status !== "active" || (credential.subscription_expires_at && credential.subscription_expires_at <= new Date().toISOString())) return null;
+  if (!credential || credential.status !== "active") return null;
   return {
     id: credential.id,
     account_id: credential.account_id,
     account: { id: credential.account_id, email: credential.email, credit_balance: credential.credit_balance, status: credential.status },
-    subscription: { plan: credential.plan, status: credential.subscription_status, expires_at: credential.subscription_expires_at }
+    subscription: { plan: "metered", status: "active", expires_at: null }
   };
 }
 

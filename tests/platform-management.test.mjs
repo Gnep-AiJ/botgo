@@ -30,10 +30,11 @@ assert.match(workspaceBilling, /window\.open\("about:blank"/, "the client must o
 assert.match(workspaceBilling, /popup\.location\.replace/, "the client must navigate the dedicated window to the signed payment URL");
 assert.match(workspaceBilling, /\/api\/billing\/query/, "the original page must poll the order status");
 assert.match(headers, /form-action 'self' https:\/\/openapi\.alipay\.com https:\/\/openapi-sandbox\.dl\.alipaydev\.com/, "CSP must allow Alipay checkout form targets");
-assert.match(platform, /subscription_granted/, "manual Pro grants must be audited");
+assert.match(platform, /套餐已停用/, "legacy subscription grants must reject writes");
 assert.match(platform, /DESKTOP_RELEASES\.get/, "desktop downloads must stream from private R2");
 assert.match(admin, /id="upstream-form"/, "admin must expose upstream management");
-assert.match(admin, /id="billing-form"/, "admin must expose plan management");
+assert.match(admin, /id="order-list"/, "admin must expose recharge orders");
+assert.doesNotMatch(admin, /邀请码|开通 Pro|兼容价格|data-admin-view="audit"/, "obsolete admin features must be removed");
 assert.match(admin, /id="release-form"/, "admin must expose release management");
 assert.match(admin, /data-admin-view="upstreams"/, "admin must use dedicated operational views");
 assert.doesNotMatch(read("admin-platform.js"), /\bprompt\(/, "admin editing must not use browser prompt dialogs");

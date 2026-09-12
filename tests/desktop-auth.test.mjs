@@ -75,7 +75,9 @@ assert.equal(session.account.email, "alice@botgo.test");
 assert.match(session.deviceToken, /^bgdt_/);
 assert.equal(records.loginCodes.get("login-hash").consumed_at, "now");
 
+records.subscriptions.clear();
 const firstKey = await issueDesktopKey(env, session.deviceToken, { sha256, requestId });
+assert.equal(firstKey.subscription.plan,"metered","a verified user must not require a legacy subscription");
 const secondKey = await issueDesktopKey(env, session.deviceToken, { sha256, requestId });
 assert.match(firstKey.key, /^bgk_/);
 assert.notEqual(firstKey.key, secondKey.key);

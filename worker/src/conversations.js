@@ -4,7 +4,7 @@ async function recover(env,id) {
   await env.DB.prepare("UPDATE web_chat_turns SET state='stopped' WHERE conversation_id=? AND state='running' AND updated_at<datetime('now','-4 minutes')").bind(id).run();
 }
 async function owned(env,accountId,id) {
-  return env.DB.prepare('SELECT * FROM web_conversations WHERE id=? AND account_id=?').bind(id,accountId).first();
+  return env.DB.prepare("SELECT * FROM web_conversations WHERE id=? AND account_id=? AND (created_at>datetime('now','-30 days') OR EXISTS(SELECT 1 FROM web_chat_turns WHERE conversation_id=web_conversations.id AND created_at>datetime('now','-30 days')))").bind(id,accountId).first();
 }
 export async function conversationRoute(request,env,accountId,path) {
   const match=path.match(/^\/conversations\/([a-zA-Z0-9_-]{16,128})$/);
@@ -13,7 +13,7 @@ export async function conversationRoute(request,env,accountId,path) {
   if(path==='/conversations') {
     if(request.method==='GET') {
       const offset=Math.max(0,Math.min(100000,Number(new URL(request.url).searchParams.get('offset'))||0));
-      const rows=await env.DB.prepare('SELECT id,title,updated_at FROM web_conversations WHERE account_id=? ORDER BY updated_at DESC,rowid DESC LIMIT 51 OFFSET ?').bind(accountId,Math.floor(offset)).all();
+      const rows=await env.DB.prepare("SELECT id,COALESCE((SELECT substr(content,1,40) FROM web_chat_turns WHERE conversation_id=web_conversations.id AND created_at>datetime('now','-30 days') ORDER BY rowid LIMIT 1),CASE WHEN created_at>datetime('now','-30 days') THEN title ELSE '新对话' END) AS title,updated_at FROM web_conversations WHERE account_id=? AND (created_at>datetime('now','-30 days') OR EXISTS(SELECT 1 FROM web_chat_turns WHERE conversation_id=web_conversations.id AND created_at>datetime('now','-30 days'))) ORDER BY updated_at DESC,rowid DESC LIMIT 51 OFFSET ?").bind(accountId,Math.floor(offset)).all();
       return json({conversations:rows.results.slice(0,50),hasMore:rows.results.length>50});
     }
     if(request.method==='POST') {
@@ -28,8 +28,8 @@ export async function conversationRoute(request,env,accountId,path) {
     if(!conversation)return json({error:'对话不存在。'},404);
     await recover(env,id);
     if(request.method==='GET') {
-      const rows=await env.DB.prepare('SELECT request_id,content,answer,model,state FROM web_chat_turns WHERE conversation_id=? ORDER BY rowid').bind(id).all();
-      return json({...conversation,messages:rows.results.flatMap(t=>[
+      const rows=await env.DB.prepare("SELECT request_id,content,answer,model,state FROM web_chat_turns WHERE conversation_id=? AND created_at>datetime('now','-30 days') ORDER BY rowid").bind(id).all();
+      return json({...conversation,title:rows.results[0]?.content.slice(0,40)||'新对话',messages:rows.results.flatMap(t=>[
         {role:'user',content:t.content,requestId:t.request_id},
         {role:'assistant',content:t.answer,model:t.model,state:t.state,requestId:t.request_id}
       ])});
@@ -81,9 +81,22 @@ export async function startConversationTurn(env,accountId,body) {
     async result(result){answer=result.choices?.[0]?.message?.content||'';terminal=true;await save('completed');}
   };
   try {
-    const rows=await env.DB.prepare("SELECT content,answer FROM web_chat_turns WHERE conversation_id=? AND request_id<>? AND state IN ('completed','stopped') ORDER BY rowid").bind(body.conversationId,body.requestId).all();
+    const rows=await env.DB.prepare("SELECT content,answer FROM web_chat_turns WHERE conversation_id=? AND request_id<>? AND state IN ('completed','stopped') AND created_at>datetime('now','-30 days') ORDER BY rowid").bind(body.conversationId,body.requestId).all();
     const messages=rows.results.flatMap(t=>[{role:'user',content:t.content},...(t.answer?[{role:'assistant',content:t.answer}]:[])]);
     messages.push({role:'user',content:body.content.trim()});
     return {history,body:{model:body.model,messages}};
   }catch(error){await save('failed');throw error;}
+}
+
+export async function purgeExpiredConversations(env) {
+ let removed=0;
+ for(let batch=0;batch<10;batch++) {
+  const result=await env.DB.prepare("DELETE FROM web_chat_turns WHERE request_id IN (SELECT request_id FROM web_chat_turns WHERE created_at<=datetime('now','-30 days') ORDER BY created_at LIMIT 200)").run();
+  removed+=result.meta.changes;
+  if(result.meta.changes<200)break;
+ }
+ await env.DB.prepare("DELETE FROM web_conversations WHERE id IN (SELECT id FROM web_conversations WHERE NOT EXISTS(SELECT 1 FROM web_chat_turns WHERE conversation_id=web_conversations.id) AND created_at<=datetime('now','-30 days') LIMIT 2000)").run();
+ await env.DB.prepare("UPDATE web_conversations SET title=COALESCE((SELECT substr(content,1,40) FROM web_chat_turns WHERE conversation_id=web_conversations.id AND created_at>datetime('now','-30 days') ORDER BY rowid LIMIT 1),'新对话') WHERE id IN (SELECT id FROM web_conversations WHERE created_at<=datetime('now','-30 days') AND title<>COALESCE((SELECT substr(content,1,40) FROM web_chat_turns WHERE conversation_id=web_conversations.id AND created_at>datetime('now','-30 days') ORDER BY rowid LIMIT 1),'新对话') LIMIT 2000)").run();
+ console.log(JSON.stringify({event:'web_history_cleanup',removed}));
+ return {removed};
 }

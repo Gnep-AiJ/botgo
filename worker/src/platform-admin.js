@@ -1,3 +1,4 @@
+import { grantBalance } from "./account-operations.js";
 import { handleAlipayRoute } from "./alipay-routes.js";
 import { handleMeteringAdmin, usageObserver } from "./metering.js";
 
@@ -246,13 +247,10 @@ async function billingAdminRoutes(request, env, path, admin, audit) {
     if (!Number.isInteger(price) || price < 1 || price > 100000000 || !Number.isInteger(credits) || credits < 1 || credits > 100000000) return json({ error: "价格或额度不正确。" }, 400);
     await env.DB.prepare("UPDATE billing_settings SET price_cents = ?, included_credits = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 'pro'").bind(price, credits).run(); await audit(env, admin.id, "billing_plan_updated", { priceCents: price, includedCredits: credits }); return json({ ok: true });
   }
+  const balanceGrant = path.match(/^\/admin\/accounts\/([^/]+)\/grants$/);
+  if(balanceGrant && request.method === "POST") return grantBalance(request,env,admin,decodeURIComponent(balanceGrant[1]));
   const grant = path.match(/^\/admin\/accounts\/([^/]+)\/subscription$/);
-  if (grant && request.method === "POST") {
-    const accountId = decodeURIComponent(grant[1]); const plan = await env.DB.prepare("SELECT included_credits, period_days FROM billing_settings WHERE id = 'pro'").first(); if (!plan) return json({ error: "Pro 套餐尚未配置。" }, 503);
-    const current = await env.DB.prepare("SELECT expires_at FROM subscriptions WHERE account_id = ?").bind(accountId).first(); const currentExpiry = Date.parse(current?.expires_at || ""); const periodStart = Number.isFinite(currentExpiry) && currentExpiry > Date.now() ? currentExpiry : Date.now(); const expiresAt = new Date(periodStart + plan.period_days * 86400000).toISOString();
-    const result = await env.DB.prepare("UPDATE accounts SET credit_balance = ? WHERE id = ?").bind(plan.included_credits * CREDIT_SCALE, accountId).run(); if (!result.meta?.changes) return json({ error: "账户不存在。" }, 404);
-    await env.DB.prepare("INSERT INTO subscriptions (account_id, plan, status, expires_at, updated_at) VALUES (?, 'pro', 'active', ?, CURRENT_TIMESTAMP) ON CONFLICT(account_id) DO UPDATE SET plan = 'pro', status = 'active', expires_at = excluded.expires_at, updated_at = CURRENT_TIMESTAMP").bind(accountId, expiresAt).run(); await audit(env, admin.id, "subscription_granted", { accountId, expiresAt, credits: plan.included_credits }); return json({ ok: true, expiresAt, credits: plan.included_credits });
-  }
+  if (grant && request.method === "POST") return json({error:"套餐已停用，请使用赠送余额。"},410);
   return null;
 }
 
@@ -277,6 +275,12 @@ async function releaseAdminRoutes(request, env, path, admin, audit) {
   if (path === "/admin/desktop/releases" && request.method === "POST") {
     const body = await bodyOf(request); const size = Number(body?.sizeBytes); if (!/^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(body?.version || "") || !/^[A-Za-z0-9][A-Za-z0-9._\/-]{0,240}$/.test(body?.objectKey || "") || !/^[A-Fa-f0-9]{64}$/.test(body?.sha256 || "") || !Number.isInteger(size) || size < 1) return json({ error: "发布元数据不正确。" }, 400);
     const id = crypto.randomUUID(); const fileName = String(body.fileName || `BotGo-Setup-${body.version}.exe`).replace(/[\\/\r\n]/g, "").slice(0, 160); await env.DB.prepare("INSERT INTO desktop_releases (id, version, object_key, file_name, size_bytes, sha256, notes) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(id, body.version, body.objectKey, fileName, size, body.sha256.toLowerCase(), String(body.notes || "").slice(0, 2000)).run(); await audit(env, admin.id, "desktop_release_created", { releaseId: id, version: body.version }); return json({ id }, 201);
+  }
+  const removal=path.match(/^\/admin\/desktop\/releases\/([0-9a-f-]+)$/i);
+  if(removal && request.method==='DELETE') {
+    const result=await env.DB.prepare("DELETE FROM desktop_releases WHERE id=? AND status='draft'").bind(removal[1]).run();
+    if(!result.meta.changes)return json({error:'只能删除版本草稿。'},409);
+    await audit(env,admin.id,'desktop_release_deleted',{releaseId:removal[1]});return json({ok:true});
   }
   const publish = path.match(/^\/admin\/desktop\/releases\/([0-9a-f-]+)\/publish$/i);
   if (publish && request.method === "POST") { const row = await env.DB.prepare("SELECT * FROM desktop_releases WHERE id = ?").bind(publish[1]).first(); if (!row) return json({ error: "发布记录不存在。" }, 404); if (!env.DESKTOP_RELEASES || !await env.DESKTOP_RELEASES.head(row.object_key)) return json({ error: "R2 中未找到对应安装包。" }, 409); await env.DB.batch([env.DB.prepare("UPDATE desktop_releases SET status = 'retired', updated_at = CURRENT_TIMESTAMP WHERE platform = ? AND status = 'published'").bind(row.platform), env.DB.prepare("UPDATE desktop_releases SET status = 'published', published_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(row.id)]); await audit(env, admin.id, "desktop_release_published", { releaseId: row.id, version: row.version }); return json({ ok: true }); }

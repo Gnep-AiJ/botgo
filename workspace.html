@@ -46,7 +46,7 @@
         </header>
         <aside class="conversation-sidebar" aria-label="会话列表">
           <button class="new-chat-button" id="new-chat-button" type="button">新建对话</button>
-          <div class="conversation-history" aria-label="最近对话">
+          <div class="conversation-history" aria-label="最近对话 · 保留 30 天">
             <p>最近对话</p>
             <div id="history-list"></div>
             <p id="history-status" role="status">登录后查看历史对话</p>
@@ -161,11 +161,10 @@
       </div>
       <form id="login-form" class="auth-form" novalidate>
         <label for="login-email">邮箱</label><input id="login-email" name="email" type="email" autocomplete="email" required />
-        <p class="form-status" id="login-status" aria-live="polite"></p><button class="primary-auth-button" type="submit">发送登录验证码</button>
+        <p class="form-status" id="login-status" aria-live="polite"></p><button class="primary-auth-button" type="submit">发送验证码</button>
       </form>
       <form id="register-form" class="auth-form" novalidate hidden>
         <label for="register-email">邮箱</label><input id="register-email" name="email" type="email" autocomplete="email" required />
-        <label for="invite-code">邀请码</label><input id="invite-code" name="inviteCode" autocomplete="off" required />
         <p class="form-status" id="register-status" aria-live="polite"></p><button class="primary-auth-button" type="submit">发送验证码</button>
       </form>
       <form id="verify-form" class="auth-form" novalidate hidden>
