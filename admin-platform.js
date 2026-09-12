@@ -53,6 +53,12 @@
   $("#billing-form").addEventListener("submit", async (event) => { event.preventDefault(); const form = event.currentTarget; const priceCents = Math.round(Number(form.elements.priceYuan.value) * 100); try { setStatus("billing-status", "正在保存…"); await api("/admin/billing/plan", jsonOptions("PUT", { priceCents, includedCredits: Number(form.elements.includedCredits.value) })); setStatus("billing-status", "兼容配置已保存。"); await loadPlan(); } catch (error) { setStatus("billing-status", error.message, true); } });
   $("#release-form").addEventListener("submit", async (event) => { event.preventDefault(); try { await api("/admin/desktop/releases", jsonOptions("POST", Object.fromEntries(new FormData(event.currentTarget)))); $("#release-dialog").close(); setStatus("release-status", "版本草稿已登记。"); await loadReleases(); } catch (error) { setStatus("release-status", error.message, true); } });
   $("#audit-filter").addEventListener("submit", (event) => { event.preventDefault(); loadAudit(1); });
-  window.addEventListener("botgo:admin-ready", () => Promise.all([loadUpstreams(), loadPlan(), loadReleases(), loadAudit()]));
-  window.addEventListener("botgo:admin-view", (event) => { if (event.detail.view === "audit") loadAudit(state.auditPage).catch(() => {}); });
+  function reportLoadError(target,error){const node=$(target);if(!node)return;node.replaceChildren();const p=document.createElement('p');p.className='action-status';p.setAttribute('role','status');p.textContent=error.message||'加载失败，请刷新重试。';node.append(p);}
+  window.addEventListener("botgo:admin-ready", () => Promise.allSettled([
+    loadUpstreams().catch(error=>{reportLoadError('#route-grid',error);reportLoadError('#route-overview',error);reportLoadError('#overview-alerts',error);$('#metric-routes').textContent='—';}),
+    loadPlan().catch(error=>setStatus('billing-status',error.message,true)),
+    loadReleases().catch(error=>reportLoadError('#release-list',error)),
+    loadAudit().catch(error=>reportLoadError('#audit-list',error))
+  ]));
+  window.addEventListener("botgo:admin-view", (event) => { if (event.detail.view === "audit") loadAudit(state.auditPage).catch(error=>reportLoadError('#audit-list',error)); });
 })();

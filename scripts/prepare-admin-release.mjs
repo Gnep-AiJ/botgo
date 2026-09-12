@@ -1,0 +1,20 @@
+// Preserve the entire production artifact and replace only Admin assets.
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+const root=process.cwd(),baseline=path.resolve(process.argv[2]||''),output=path.resolve(process.argv[3]||'');
+const scoped=p=>p.startsWith(root+path.sep)&&path.basename(p).startsWith('.tmp-');
+if(!scoped(baseline)||!scoped(output)||baseline===output||fs.existsSync(output))throw Error('Use separate workspace .tmp- directories; output must not exist.');
+const allowed=new Set(['admin.html','admin.css','admin-layout.css','admin.js','admin-platform.js','admin-metering.js']);
+const files=folder=>fs.readdirSync(folder,{withFileTypes:true}).flatMap(e=>e.isDirectory()?files(path.join(folder,e.name)).map(n=>e.name+'/'+n):[e.name]);
+const hash=file=>crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+const originals=files(baseline);
+if(!originals.includes('_headers')||!originals.includes('workspace.html')||!originals.includes('index.html'))throw Error('Incomplete production baseline.');
+fs.cpSync(baseline,output,{recursive:true});
+for(const file of allowed)fs.copyFileSync(path.join(root,'dist',file),path.join(output,file));
+const preserved=originals.filter(file=>!allowed.has(file));
+for(const file of preserved)if(hash(path.join(baseline,file))!==hash(path.join(output,file)))throw Error('Unexpected change: '+file);
+for(const file of files(output))if(!originals.includes(file)&&!allowed.has(file))throw Error('Unexpected new asset: '+file);
+const result={createdAt:new Date().toISOString(),baseline:path.basename(baseline),output:path.basename(output),adminFiles:[...allowed],preserved:preserved.map(file=>({file,sha256:hash(path.join(output,file))}))};
+fs.writeFileSync(output+'.manifest.json',JSON.stringify(result,null,2));
+console.log(JSON.stringify({adminFiles:allowed.size,preservedFiles:preserved.length,output:path.basename(output)}));

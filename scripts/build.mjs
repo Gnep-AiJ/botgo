@@ -21,6 +21,7 @@ const files = [
   "desktop-authorize.js",
   "admin.html",
   "admin.css",
+  "admin-layout.css",
   "admin.js",
   "admin-platform.js",
   "Wechat.jpg",

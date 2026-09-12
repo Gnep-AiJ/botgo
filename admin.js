@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const titles = { overview: "概览", upstreams: "上游与路由", accounts: "用户与邀请码", billing: "充值", releases: "桌面发布", audit: "审计日志" };
+  const titles = { overview: "概览", upstreams: "上游与路由", metering: "模型与计费", accounts: "用户与邀请码", billing: "充值", releases: "桌面发布", audit: "审计日志" };
   const state = { admin: null, overview: null, invites: [], accountPage: 1 };
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -25,7 +25,7 @@
   function renderNavigation() {
     const view = activeView();
     $$('[data-admin-view]').forEach((section) => { section.hidden = section.dataset.adminView !== view; });
-    $$('[data-admin-nav]').forEach((link) => link.toggleAttribute("aria-current", link.dataset.adminNav === view));
+    $$('[data-admin-nav]').forEach((link) => {if(link.dataset.adminNav === view)link.setAttribute('aria-current','page');else link.removeAttribute('aria-current');});
     $("#admin-page-title").textContent = titles[view];
     document.body.classList.remove("nav-open");
     $("#admin-menu-toggle").setAttribute("aria-expanded", "false");
@@ -92,6 +92,8 @@
   applyTheme(localStorage.getItem("botgo-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
   $("#admin-theme-toggle").addEventListener("click", () => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
   $("#admin-menu-toggle").addEventListener("click", () => { const open = document.body.classList.toggle("nav-open"); $("#admin-menu-toggle").setAttribute("aria-expanded", String(open)); });
+  document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.body.classList.contains('nav-open')){document.body.classList.remove('nav-open');$('#admin-menu-toggle').setAttribute('aria-expanded','false');$('#admin-menu-toggle').focus();}});
+  document.addEventListener('pointerdown',event=>{if(document.body.classList.contains('nav-open')&&!event.target.closest('#admin-sidebar,#admin-menu-toggle')){document.body.classList.remove('nav-open');$('#admin-menu-toggle').setAttribute('aria-expanded','false');}});
   window.addEventListener("hashchange", renderNavigation); renderNavigation();
   $("#admin-refresh").addEventListener("click", () => boot());
   $("#account-filter").addEventListener("submit", (event) => { event.preventDefault(); loadAccounts(1).catch((error) => setStatus("account-status", error.message, true)); });
