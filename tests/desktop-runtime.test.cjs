@@ -47,5 +47,39 @@ assert.equal(fs.readFileSync(prepared.backupPath, "utf8"), "model_provider = \"e
 restoreOriginalConfig({ configPath, backupPath: prepared.backupPath });
 assert.equal(fs.readFileSync(configPath, "utf8"), "model_provider = \"existing\"\n");
 
+const projectA = path.join(temporaryDirectory, 'a', 'same');
+const projectB = path.join(temporaryDirectory, 'b', 'same');
+fs.mkdirSync(projectA, { recursive: true }); fs.mkdirSync(projectB, { recursive: true });
+fs.writeFileSync(path.join(projectA, 'keep.txt'), 'project source');
+state.save({ selectedProject: projectA, selectedThreadId: 'a', recentProjects: [projectA, projectB], threads: [
+  { id: 'a', title: 'A', projectPath: projectA, messages: [{ role: 'user', content: 'retained' }] },
+  { id: 'b', title: 'B', projectPath: projectB },
+  { id: 'c', title: 'C', projectPath: projectB, status: 'running' }
+] });
+assert.throws(() => state.renameThread('a', '  '));
+assert.equal(state.renameThread('a', ' New title ').threads.find(t => t.id === 'a').title, 'New title');
+assert.equal(state.load().threads.find(t => t.id === 'a').messages[0].content, 'retained');
+assert.throws(() => state.deleteThread('c'), /停止/);
+assert.throws(() => state.removeProject(projectB), /停止/);
+assert.equal(state.recoverInterruptedThreads().threads.find(t => t.id === 'c').status, 'stopped');
+const afterRemoval = state.removeProject(projectA);
+assert.equal(fs.readFileSync(path.join(projectA, 'keep.txt'), 'utf8'), 'project source');
+assert.equal(afterRemoval.selectedProject, projectB);
+assert.equal(afterRemoval.threads.some(t => t.id === 'a'), false);
+assert.equal(afterRemoval.recentProjects.length, 1);
+state.save({ ...afterRemoval, threads: afterRemoval.threads.map(t => ({ ...t, status: 'completed' })) });
+const beforeFailure = fs.readFileSync(stateFile, 'utf8');
+const renameSync = fs.renameSync;
+try { fs.renameSync = () => { throw new Error('disk unavailable'); }; assert.throws(() => state.deleteThread('b'), /disk unavailable/); }
+finally { fs.renameSync = renameSync; }
+assert.equal(fs.readFileSync(stateFile, 'utf8'), beforeFailure, 'failed atomic replacement preserves history');
+assert.equal(fs.readdirSync(temporaryDirectory).some(name => name.endsWith('.tmp')), false);
+const empty = state.removeProject(projectB);
+assert.equal(empty.selectedProject, ''); assert.equal(empty.selectedThreadId, ''); assert.deepEqual(empty.threads, []);
+fs.writeFileSync(stateFile, '{broken');
+assert.throws(() => state.load(), /无法读取/);
+assert.throws(() => state.removeProject(projectB), /无法读取/);
+assert.equal(fs.readFileSync(stateFile, 'utf8'), '{broken');
+
 fs.rmSync(temporaryDirectory, { recursive: true, force: true });
 console.log("Desktop runtime boundary test passed");

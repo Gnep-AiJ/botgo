@@ -32,7 +32,13 @@ const pagesOrigin = (process.env.BOTGO_API_ORIGIN || buildTimeApiOrigin() || "")
 let mainWindow;
 let activeTask;
 let taskStarting = false;
+let terminalStarting = false, terminalRunning = false;
 let activeAuthorization;
+if (!app.requestSingleInstanceLock()) { app.quit(); return; }
+app.on('second-instance', () => {
+  if (mainWindow?.isMinimized()) mainWindow.restore();
+  mainWindow?.show(); mainWindow?.focus();
+});
 
 function requireApiOrigin() {
   if (!/^https:\/\//.test(pagesOrigin)) throw new Error("Desktop release is missing its BotGo service address. Contact BotGo support.");
@@ -202,6 +208,7 @@ function selectThread(threadId) {
 async function apiRequest(endpoint, { method = "GET", body, deviceToken } = {}) {
   const response = await fetch(`${requireApiOrigin()}/api${endpoint}`, {
     method,
+    signal: AbortSignal.timeout(20000),
     headers: {
       "content-type": "application/json",
       ...(deviceToken ? { authorization: `Bearer ${deviceToken}` } : {})
@@ -259,6 +266,8 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  try { state().recoverInterruptedThreads(); }
+  catch (error) { dialog.showErrorBox('无法读取本地记录', error.message); }
   ipcMain.handle("auth:start-web-authorization", async () => startBrowserAuthorization());
   ipcMain.handle("auth:cancel-web-authorization", async () => cancelBrowserAuthorization());
   ipcMain.handle("account:get", async () => {
@@ -275,6 +284,14 @@ app.whenReady().then(() => {
   ipcMain.handle("project:remember", async (_event, projectPath) => rememberProject(projectPath));
   ipcMain.handle("thread:create", async (_event, projectPath) => createThread(projectPath));
   ipcMain.handle("thread:select", async (_event, threadId) => selectThread(threadId));
+  for (const [channel, operation] of [
+    ['thread:rename', ({ id, title }) => state().renameThread(id, title)],
+    ['thread:delete', id => state().deleteThread(id)],
+    ['project:remove', projectPath => state().removeProject(projectPath)]
+  ]) ipcMain.handle(channel, (_event, payload) => {
+    if (activeTask || taskStarting) throw new Error('请先停止当前任务。');
+    return operation(payload);
+  });
   ipcMain.handle("runtime:prepare", async (_event, { confirmConfigReplace }) => prepareRuntime(confirmConfigReplace));
   ipcMain.handle("runtime:restore-config", async () => {
     const metadata = JSON.parse(fs.readFileSync(appPaths().metadata, "utf8"));
@@ -282,7 +299,7 @@ app.whenReady().then(() => {
     return { ok: true };
   });
   ipcMain.handle("task:start", async (_event, task) => {
-    if (activeTask || taskStarting) throw new Error("已有任务正在运行。");
+    if (activeTask || taskStarting || terminalStarting || terminalRunning) throw new Error("已有任务或终端正在运行。");
     if (!task || typeof task.prompt !== "string" || !task.prompt.trim() || typeof task.projectPath !== "string" || !fs.statSync(task.projectPath).isDirectory()) throw new Error("请选择项目并输入任务。");
     if (!["read-only", "workspace-write", "full-access"].includes(task.mode)) throw new Error("权限模式无效。");
     if (task.mode === "full-access" && !task.confirmedFullAccess) throw new Error("完全访问需要确认。");
@@ -299,7 +316,7 @@ app.whenReady().then(() => {
     const history = state().load();
     let thread = history.threads.find((item) => item.id === task.threadId && item.projectPath === task.projectPath);
     if (!thread) thread = { id: crypto.randomUUID(), projectPath: task.projectPath, title: task.prompt.slice(0, 64), sessionId: "", status: "idle", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
-    const entry = { ...thread, model: selectedModel, title: thread.messages.length ? thread.title : task.prompt.slice(0, 64), status: "running", updatedAt: new Date().toISOString(), messages: [...thread.messages, { id: crypto.randomUUID(), role: "user", kind: "message", content: task.prompt, files: [], createdAt: new Date().toISOString() }] };
+    const entry = { ...thread, model: selectedModel, title: thread.messages.length || thread.title !== '新对话' ? thread.title : task.prompt.slice(0, 64), status: "running", updatedAt: new Date().toISOString(), messages: [...thread.messages, { id: crypto.randomUUID(), role: "user", kind: "message", content: task.prompt, files: [], createdAt: new Date().toISOString() }] };
     state().save({ ...history, selectedProject: entry.projectPath, selectedThreadId: entry.id, recentProjects: [entry.projectPath, ...history.recentProjects.filter((item) => item !== entry.projectPath)], threads: [entry, ...history.threads.filter((item) => item.id !== entry.id)] });
     const runner = createCodexRunner({ command: nativeCommand(agentRoot) });
     activeTask = runner.start({
@@ -342,7 +359,9 @@ app.whenReady().then(() => {
     } finally { taskStarting = false; }
   });
   ipcMain.handle("runtime:open-terminal", async (_event, { projectPath, sessionId, model }) => {
-    if (activeTask) throw new Error("请先停止当前任务。");
+    if (activeTask || taskStarting || terminalStarting || terminalRunning) throw new Error("请先停止当前任务或关闭已打开的终端。");
+    terminalStarting = true;
+    try {
     if (!state().load().recentProjects.includes(projectPath)) throw new Error("请先选择项目。");
     const models=await apiRequest('/models');
     model=model||models.defaultModel;
@@ -350,7 +369,13 @@ app.whenReady().then(() => {
     await prepareRuntime();
     const current = await credential();
     const issued = await apiRequest("/desktop/key", { method: "POST", deviceToken: current.deviceToken });
-    return openNativeTerminal({ command: nativeCommand(agentRoot), projectPath, codexHome: appPaths().codexHome, relayKey: issued.key, relayOrigin: requireApiOrigin(), model, sessionId });
+    return await openNativeTerminal({ command: nativeCommand(agentRoot), projectPath, codexHome: appPaths().codexHome, relayKey: issued.key, relayOrigin: requireApiOrigin(), model, sessionId,
+      onStatus(status) {
+        terminalRunning = status.state === 'running';
+        if (!_event.sender.isDestroyed()) _event.sender.send('terminal:event', status);
+      }
+    });
+    } finally { terminalStarting = false; }
   });
   ipcMain.handle("task:stop", async () => { activeTask?.stop(); return { ok: true }; });
   ipcMain.handle("account:revoke-device", async () => {

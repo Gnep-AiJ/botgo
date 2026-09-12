@@ -9,14 +9,14 @@ function normalizeOrigin(value = DEFAULT_ORIGIN) {
   return url.origin;
 }
 
-function createApiClient({ origin = process.env.BOTGO_API_ORIGIN || DEFAULT_ORIGIN, fetchImpl = globalThis.fetch } = {}) {
+function createApiClient({ origin = process.env.BOTGO_API_ORIGIN || DEFAULT_ORIGIN, fetchImpl = globalThis.fetch, timeoutMs = 20000 } = {}) {
   if (typeof fetchImpl !== "function") throw new Error("This Node.js version does not provide fetch");
   const baseOrigin = normalizeOrigin(origin);
 
   async function request(endpoint, { method = "GET", body, deviceToken, signal } = {}) {
     const response = await fetchImpl(`${baseOrigin}/api${endpoint}`, {
       method,
-      signal,
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]) : AbortSignal.timeout(timeoutMs),
       headers: {
         accept: "application/json",
         ...(body === undefined ? {} : { "content-type": "application/json" }),

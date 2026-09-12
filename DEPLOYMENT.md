@@ -2,6 +2,8 @@
 
 当前证据：[Release 2026-09-12](docs/notes/Release%202026-09-12.md)。
 
+2026-09-12 本轮仅发布网站静态资源并准备 Desktop 1.2.1-preview.1 / CLI 0.2.1 候选；以下历史迁移流程不适用于本轮，不执行迁移或 Worker 更新。客户端真实验收未齐全前，不切换 current。自签名预览使用 `desktop/scripts/package-preview.ps1`，需保持当前用户个人证书库中的固定非导出私钥；不安装根信任证书。Windows 默认仍不信任该身份，可能出现 SmartScreen 警告。遇到 winCodeSign 解压 macOS 符号链接失败时，仅在项目缓存中提取 Windows 工具，不能通过关闭防护或更改全局权限解决。
+
 使用现有 Pages `botgo`、Worker `botgo-api`、D1 `botgo`、私有 R2 `botgo-desktop-releases`。网站域名 `https://botgo.win`，GitHub `Gnep-AiJ/botgo`。保留 Git 历史、应用身份和下载入口。
 
 现有 Secrets：`AUTH_SECRET`、`ADMIN_EMAIL`、`QQ_SMTP_USER`、`QQ_SMTP_AUTH_CODE`、`UPSTREAM_CONFIG_KEY`。`UPSTREAM_API_KEY` 为旧上游回退凭据；主要上游由后台加密配置并分别测试 Chat/Responses 路由。`UPSTREAM_CONFIG_KEY` 必须保留，否则无法解密已有配置。支付密钥按 `docs/ALIPAY_PAYMENT.md` 管理。

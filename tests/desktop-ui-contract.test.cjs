@@ -41,7 +41,7 @@ assert.match(html, /class="chat-header"[\s\S]*data-current-project[\s\S]*data-cu
 assert.match(html, /class="chat-header"[\s\S]*data-change-project/, "header must provide the lightweight project switch action");
 assert.match(html, /class="project-entry-path sr-only"[^>]*data-current-project-path/, "full project paths must not add visible header noise");
 assert.match(html, /class="composer-wrap"[\s\S]*class="composer"[\s\S]*data-mode/, "composer must remain the central task entry");
-assert.match(html, /src="assets\/botgo-desktop\.ico"/, "renderer logo must use the taskbar icon asset");
+assert.match(html, /class="brand-logo" viewBox="0 0 32 32"/, "renderer uses a scalable complete brand mark");
 assert.doesNotMatch(html, /class="thread-meta"/, "thread title and ready status must not occupy a visible header block");
 assert.doesNotMatch(html, /class="project-entry-icon"/, "the header must not add a repeated project icon");
 assert.doesNotMatch(html, /class="empty-mark"/, "the project-ready empty state must not repeat the brand logo");
@@ -68,7 +68,7 @@ assert.match(renderer, /account-summary-avatar/, "account trigger and popover sh
 assert.doesNotMatch(renderer, /restoreConfiguration|data-restore-config/, "renderer must not expose the legacy configuration restore action");
 assert.match(renderer, /balanceCents/, "desktop must display the authoritative monetary balance");
 assert.match(renderer, /if\(!ui\.account\)return openAccount\(/, "starting a task while signed out must prompt for login");
-assert.match(renderer, /refreshHistory\(\)\.catch\(render\)/, "the initial screen must render the project workspace");
+assert.match(renderer, /refreshHistory\(\)\.catch\(error=>\{render\(\);setMessage\(error.message,true\)\}\)/, "history load failure must keep the workspace visible and report the error");
 assert.doesNotMatch(styles, /botgo-city-clean-v2\.webp/, "desktop workspace must not use decorative city artwork");
 assert.match(styles, /#55b7ff/i, "desktop should use the BotGo blue accent token");
 assert.match(styles, /--line:/, "desktop must centralize borders with semantic tokens");

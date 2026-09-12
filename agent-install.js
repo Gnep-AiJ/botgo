@@ -22,3 +22,10 @@ document.querySelectorAll('[data-guide]').forEach(button=>{
 });
 const initialGuide=new URLSearchParams(location.search).get('guide')||'web';
 document.querySelector(`[data-guide="${['web','account','cli','faq'].includes(initialGuide)?initialGuide:'web'}"]`)?.click();
+
+document.querySelector('[data-copy-project]')?.addEventListener('click', async event => {
+  const text = event.currentTarget.previousElementSibling.textContent;
+  const status = document.querySelector('[data-install-status]');
+  try { await navigator.clipboard.writeText(text); status.textContent = '已复制目录示例，请替换为已有项目路径后运行。'; }
+  catch { status.textContent = '复制失败，请选中目录示例手动复制。'; }
+});

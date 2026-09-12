@@ -20,6 +20,14 @@
   let paymentWindow = null;
   let orderPollTimer = 0;
   let orderPollDeadline = 0;
+  let sessionEpoch = 0, pollInFlight = false;
+  window.addEventListener('botgo:logout', () => {
+    sessionEpoch++; stopOrderPolling(); clearCheckoutKey();
+    checkoutInFlight = false; pollInFlight = false;
+    // A payment already opened belongs to its order; do not cancel that order.
+    paymentWindow = null; formContainer.replaceChildren();
+    button.removeAttribute('aria-busy'); setStatus(''); syncAmountState();
+  });
 
   function setStatus(message = "", kind = "") {
     status.textContent = message;
@@ -90,6 +98,7 @@
   }
 
   async function loadPlan() {
+    const epoch = sessionEpoch;
     if (accountPreview) {
       amountInput.min = String(defaultRecharge.minAmountCents / 100);
       amountInput.max = String(defaultRecharge.maxAmountCents / 100);
@@ -101,6 +110,7 @@
     }
     try {
       const data = await readJson(await fetch("/api/billing/plan", { credentials: "same-origin", cache: "no-store" }));
+      if (epoch !== sessionEpoch) return;
       recharge = { ...defaultRecharge, ...(data.recharge || {}) };
       amountInput.min = String(recharge.minAmountCents / 100);
       amountInput.max = String(recharge.maxAmountCents / 100);
@@ -114,6 +124,7 @@
       if (!paymentAvailable && data.reason === "invalid_public_key_role") setStatus("充值暂不可用，请稍后重试。", "error");
       if (!paymentAvailable && data.reason === "invalid_key_material") setStatus("充值暂不可用，请稍后重试。", "error");
     } catch (error) {
+      if (epoch !== sessionEpoch) return;
       paymentAvailable = false;
       button.disabled = true;
       button.textContent = "暂不可充值";
@@ -171,10 +182,13 @@
   }
 
   async function pollOrder(outTradeNo) {
+    if (pollInFlight) return;
+    const epoch = sessionEpoch;
     if (!outTradeNo || Date.now() >= orderPollDeadline) {
       finishPayment("等待支付超时，请确认支付宝订单状态后重试。", "error");
       return;
     }
+    pollInFlight = true;
     try {
       const response = await fetch("/api/billing/query", {
         method: "POST",
@@ -184,6 +198,7 @@
         body: JSON.stringify({ outTradeNo })
       });
       const data = await readJson(response);
+      if (epoch !== sessionEpoch) return;
       const orderStatus = data.order?.status || data.paymentState;
       if (orderStatus === "paid" || data.paymentState === "paid") {
         finishPayment("充值成功，余额正在刷新。", "success", { resetKey: true });
@@ -193,6 +208,7 @@
         setStatus(paymentWindow?.closed ? "支付宝窗口已关闭，仍在等待订单结果…" : "请在新打开的支付宝窗口完成充值…");
       }
     } catch (error) {
+      if (epoch !== sessionEpoch) return;
       if (error.status === 401) {
         stopOrderPolling();
         checkoutInFlight = false;
@@ -200,7 +216,7 @@
         button.removeAttribute("aria-busy");
         setStatus("登录状态已失效，请重新登录后查询订单。", "error");
       }
-    }
+    } finally { if (epoch === sessionEpoch) pollInFlight = false; }
   }
 
   function watchOrder(outTradeNo) {
@@ -212,6 +228,7 @@
   }
 
   async function startCheckout() {
+    const epoch = sessionEpoch;
     const amountCents = syncAmountState();
     if (!amountIsValid(amountCents)) {
       setStatus(`请输入 ${formatCny(recharge.minAmountCents)} 至 ${formatCny(recharge.maxAmountCents)} 的充值金额。`, "error");
@@ -238,6 +255,7 @@
         body: JSON.stringify({ idempotencyKey: checkoutKey, amountCents })
       });
       const data = await readJson(response);
+      if (epoch !== sessionEpoch) { if (popup && !popup.closed) popup.close(); return; }
       const outTradeNo = data.order?.outTradeNo || "";
       if (data.paymentUrl) {
         setStatus("正在打开支付宝收银台…");
@@ -258,6 +276,7 @@
       else finishPayment("充值订单已创建，请查询支付状态。", "success");
     } catch (error) {
       if (popup && !paymentNavigationStarted && !popup.closed) popup.close();
+      if (epoch !== sessionEpoch) return;
       if (error.status === 401) {
         setStatus("请先登录 BotGo 账户，再继续充值。", "error");
         openLoginDialog();
@@ -265,6 +284,7 @@
         setStatus(error.message || "充值请求未完成，请稍后重试。", "error");
       }
     } finally {
+      if (epoch !== sessionEpoch) return;
       if (paymentNavigationStarted) return;
       checkoutInFlight = false;
       button.removeAttribute("aria-busy");

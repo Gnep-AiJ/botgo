@@ -138,12 +138,18 @@ svg {
   display: block;
   width: 28px;
   height: 28px;
-  border-radius: 8px;
+  flex: 0 0 28px;
+  overflow: visible;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.8;
   object-fit: contain;
 }
 
 .brand-copy {
   display: block;
+  flex-shrink: 0;
+  line-height: 1.4;
 }
 
 .new-thread {
@@ -376,15 +382,15 @@ svg {
 }
 
 .account-menu {
-  position: absolute;
+  position: fixed;
   z-index: 20;
-  right: 8px;
+  right: auto;
   bottom: calc(100% + 10px);
   left: 8px;
-  width: auto;
+  width: 320px;
   max-height: min(350px, calc(100vh - 88px));
   overflow: auto;
-  padding: 14px;
+  padding: 20px;
   border: 1px solid var(--line-strong);
   border-radius: 12px;
   background: var(--surface-raised);
@@ -962,6 +968,10 @@ svg {
 /* Conversation shell: context at the edge, work in the centre. */
 .chat-header { display:flex; align-items:center; gap:14px; }
 .running-state { margin-left:auto; color:var(--subtle); font-size:12px; }
+.running-state::before { content:""; display:inline-block; width:7px; height:7px; margin-right:7px; border-radius:50%; background:#26844c; }
+.running-state[data-state="starting"]::before { background:#bf8218; }
+.running-state[data-state="running"]::before { background:#368bd6; }
+.running-state[data-state="error"]::before { background:var(--danger); }
 .terminal-entry { min-height:40px; padding:0 10px; border:0; border-radius:8px; background:transparent; color:var(--muted); font-size:12px; }
 .terminal-entry:hover { background:var(--surface-hover); color:var(--text); }
 .conversation-empty h1 { font-size:30px; font-weight:500; letter-spacing:-.04em; }

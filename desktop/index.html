@@ -7,12 +7,13 @@
   <title>BotGo Desktop</title>
   <link rel="stylesheet" href="renderer.css">
   <link rel="stylesheet" href="assets/ui-kit.css">
+  <link rel="stylesheet" href="polish.css">
 </head>
 <body>
   <main class="desktop-shell" data-page="projects">
     <aside class="sidebar" aria-label="BotGo 导航">
       <div class="brand" aria-label="BotGo Desktop">
-        <img class="brand-logo" src="assets/botgo-desktop.ico" alt="">
+        <svg class="brand-logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4v5"/><circle cx="16" cy="3" r="1.5"/><rect x="4" y="9" width="24" height="19" rx="7"/><circle cx="11" cy="18" r="1.5"/><circle cx="21" cy="18" r="1.5"/></svg>
         <span class="brand-copy">BotGo</span>
       </div>
 
@@ -23,7 +24,7 @@
         <span>新对话</span>
       </button>
 
-      <section class="thread-panel" aria-label="项目对话">
+      <section class="thread-panel" aria-label="最近对话">
         <div class="section-label">最近</div>
         <div class="project-list" data-project-list>
           <p class="empty-copy">选择文件夹后开始</p>
@@ -48,17 +49,17 @@
               <span class="avatar account-summary-avatar">BG</span>
               <div>
                 <strong data-account-email>—</strong>
-                <small>余额 <span data-account-credits>—</span><span data-account-plan hidden></span></small>
+                <small>当前账户<span data-account-plan hidden></span></small>
               </div>
             </div>
+            <div class="account-balance"><span>可用余额</span><strong data-account-credits>—</strong></div>
             <p class="account-expiry" hidden>到期时间 <span data-account-expiry>—</span></p>
-            <details class="account-advanced">
-              <summary>账户设置</summary>
+            <section class="account-advanced" aria-label="账户操作">
               <div class="account-actions">
                 <button class="secondary" type="button" data-open-account>管理账户</button>
                 <button class="danger" type="button" data-revoke-device>退出此设备</button>
               </div>
-            </details>
+            </section>
           </div>
           <p class="form-message" data-account-message role="status" aria-live="polite"></p>
         </section>
@@ -88,7 +89,7 @@
           </span>
         </button>
         <span class="sr-only" data-thread-title>新对话</span>
-        <span class="running-state" data-running-state>就绪</span>
+        <span class="running-state" data-running-state data-state="idle" role="status" aria-live="polite">就绪</span>
         <button class="terminal-entry" type="button" data-open-terminal title="在原生终端中使用 Codex">在终端中打开 ↗</button>
       </header>
 
@@ -108,10 +109,10 @@
           <div class="composer-toolbar">
             <div class="context-controls">
               <select data-model aria-label="选择模型"><option value="gpt-5.6-sol">GPT-5.6 Sol</option></select>
-              <span class="project-chip" data-project-chip>未选择项目</span>
+              <button type="button" class="model-retry" data-model-retry hidden>重新加载模型</button>
               <label class="mode-select">
                 <span class="sr-only">权限模式</span>
-                <select data-mode>
+                <select data-mode aria-label="权限模式">
                   <option value="read-only">只读</option>
                   <option value="workspace-write" selected>工作区可写</option>
                   <option value="full-access">完全访问</option>
@@ -132,6 +133,21 @@
       </section>
     </section>
   </main>
+  <div class="context-menu" data-context-menu hidden role="menu" aria-label="对话操作"></div>
+  <section class="project-menu" data-project-menu hidden aria-label="切换项目">
+    <div class="menu-heading">项目</div>
+    <div data-project-options></div>
+    <button type="button" data-add-project>打开文件夹…</button>
+  </section>
+  <dialog class="edit-dialog" data-edit-dialog aria-labelledby="edit-title">
+    <form method="dialog" data-edit-form>
+      <h2 id="edit-title" data-edit-title></h2>
+      <p data-edit-description></p>
+      <label data-edit-label>对话名称<input data-edit-input maxlength="64" autocomplete="off"></label>
+      <p data-edit-error role="alert"></p>
+      <div class="dialog-actions"><button type="button" data-edit-cancel>取消</button><button class="primary" type="submit" data-edit-confirm>保存</button></div>
+    </form>
+  </dialog>
   <script src="assets/ui-kit.js"></script><script src="renderer.js"></script>
 </body>
 </html>

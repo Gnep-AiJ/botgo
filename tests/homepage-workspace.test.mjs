@@ -54,7 +54,7 @@ assert.match(workspace, /data-billing-balance/, "余额弹窗应展示当前金�
 assert.match(workspace, /data-recharge-option/, "余额弹窗应提供预设充值金额");
 assert.match(workspace, /data-subscription-upgrade[^>]*disabled/, "充值入口应在支付配置加载前禁用");
 assert.match(workspace, /BotGo Desktop/, "网页工作台应以 BotGo Desktop 作为本地开发入口");
-assert.match(workspace, /release-pending.*即将推出/, "桌面端暂不提供发布入口");
+assert.match(workspace, /data-desktop-open>查看已发布版本/, "下载入口读取实际发布元数据");
 assert.doesNotMatch(workspace, /API Key|Codex CLI|Claude Code|chatgpt\.com\/download/, "网页不应暴露凭据或第三方下载入口");
 assert.match(workspace, /复制安装命令/, "应用页应提供 BotGo CLI 安装入口");
 assert.doesNotMatch(workspace, /agent-setup-dialog/, "网页不应保留底层 Agent 配置弹窗");

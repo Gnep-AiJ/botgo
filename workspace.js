@@ -9,6 +9,8 @@
   const returnedOutTradeNo = params.get("out_trade_no") || "";
   let activeView = allowedViews.has(params.get("view")) ? params.get("view") : "chat";
   let account = null;
+  let authEpoch = 0, loggedOut = false, logoutPending = false;
+  const logoutChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('botgo-web-auth') : null;
   let messages = [];
   let conversationId = null, historyAccount = null, historyEpoch = 0, historyRows = [], historyLoading = false, conversationLoading = false;
   let verificationPurpose = "register";
@@ -96,6 +98,7 @@
   } catch {}
   syncThemeFromPreference();
   async function loadDesktopRelease() {
+    const epoch = authEpoch;
     const releasePanel = document.getElementById("desktop-release");
     const loginButton = document.getElementById("desktop-download-login");
     const status = document.getElementById("desktop-install-status");
@@ -108,12 +111,14 @@
     status.textContent = "正在获取最新版本…";
     try {
       const result = await api("/desktop/releases/current");
+      if (epoch !== authEpoch) return;
       if (!result.release) throw new Error("当前没有可下载的桌面版本。");
       const release = result.release;
       document.getElementById("desktop-download-link").href = release.downloadUrl;
       releasePanel.hidden = false;
-      status.textContent = "安装包已准备好。";
+      status.textContent = `安装包已准备好：${release.version || '当前发布版本'}。`;
     } catch (error) {
+      if (epoch !== authEpoch) return;
       status.textContent = error.message;
     }
   }
@@ -179,6 +184,8 @@
     } else {
       accountMenu.hidden = true;
       accountButton.setAttribute("aria-expanded", "false");
+      document.querySelectorAll('[data-account-email],[data-account-avatar]').forEach(node => { node.textContent = ''; });
+      accountStatus.textContent = '';
     }
     document.querySelectorAll("[data-billing-balance]").forEach((node) => { node.textContent = account ? balance : "—"; });
     document.querySelectorAll("[data-billing-account-state]").forEach((node) => { node.textContent = account ? "可用" : "未登录"; });
@@ -190,7 +197,47 @@
     const accountButton = document.getElementById("account-button");
     accountMenu.hidden = !open;
     accountButton.setAttribute("aria-expanded", String(open));
+    if (open) accountMenu.querySelector('button:not(:disabled)')?.focus();
   }
+
+  function clearWebSession() {
+    authEpoch++; loggedOut = true; account = null;
+    chatController?.abort(); chatController = null; chatSending = false;
+    renderAccountState();
+    chatInput.value = ''; latestButton.hidden = true;
+    const send = chatForm.querySelector('[type=submit]');
+    send.hidden = false; send.removeAttribute('aria-busy');
+    document.getElementById('stop-chat').hidden = true;
+    modelPicker.disabled = !availableModels.length; syncComposer();
+    for (const dialog of [subscriptionDialog, authDialog, desktopInstallDialog, historyDialog, deleteDialog]) if (dialog.open) dialog.close();
+    for (const form of [loginForm, registerForm, verifyForm]) form.reset();
+    document.getElementById('desktop-release').hidden = true;
+    document.getElementById('desktop-download-link').removeAttribute('href');
+    window.dispatchEvent(new Event('botgo:logout'));
+    document.getElementById('login-button').focus();
+  }
+
+  async function logout() {
+    if (logoutPending) return;
+    logoutPending = true;
+    const button = document.getElementById('logout-button');
+    button.disabled = true; button.setAttribute('aria-busy', 'true'); button.textContent = '正在退出…';
+    try {
+      if (!accountPreview) {
+        const response = await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', signal: AbortSignal.timeout(20000) });
+        if (!response.ok) throw new Error('退出未完成，请重试。');
+      }
+      clearWebSession();
+      logoutChannel?.postMessage('logout');
+      try { localStorage.setItem('botgo-web-logout', crypto.randomUUID()); } catch {}
+    } catch (error) {
+      document.getElementById('account-status').textContent = error.message || '退出未完成，请重试。';
+    } finally {
+      logoutPending = false; button.disabled = false; button.removeAttribute('aria-busy'); button.textContent = '退出登录';
+    }
+  }
+  logoutChannel?.addEventListener('message', event => { if (event.data === 'logout') clearWebSession(); });
+  window.addEventListener('storage', event => { if (event.key === 'botgo-web-logout' && event.newValue) clearWebSession(); });
 
   function openSubscriptionDialog() {
     setAccountMenu(false);
@@ -249,9 +296,11 @@
   }
 
   async function api(path, options) {
+    const epoch = authEpoch;
     const response = await fetch(`/api${path}`, { credentials: "same-origin", ...options });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) {const error=new Error(body.error || "请求未完成，请稍后重试。");error.status=response.status;if(response.status===401){account=null;renderAccountState();}throw error;}
+    if (epoch !== authEpoch) throw new DOMException('Account changed', 'AbortError');
+    if (!response.ok) {const error=new Error(body.error || "请求未完成，请稍后重试。");error.status=response.status;if(response.status===401 && account){clearWebSession();}throw error;}
     return body;
   }
 
@@ -331,7 +380,7 @@
       button.disabled=true;
       try{await api(`/conversations/${row.id}`,{method:'DELETE'});if(epoch!==historyEpoch)return;
         if(conversationId===row.id)resetConversation();historyRows=historyRows.filter(item=>item.id!==row.id);renderHistory();deleteDialog.close();loadHistory();
-      }catch(error){deleteDialog.querySelector('[role=status]').textContent=error.message;}finally{button.disabled=false;}
+      }catch(error){if(epoch===historyEpoch)deleteDialog.querySelector('[role=status]').textContent=error.message;}finally{button.disabled=false;}
     };
   }
   document.getElementById('history-retry').onclick=()=>loadHistory();
@@ -339,7 +388,7 @@
   historyDialog.querySelector('.mobile-history-retry').onclick=()=>loadHistory();
   historyDialog.querySelector('.mobile-history-more').onclick=()=>loadHistory(true);
 
-  async function consumeStream(response, target) {
+  async function consumeStream(response, target, epoch) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -354,6 +403,7 @@
     };
     while (true) {
       const { done, value } = await reader.read();
+      if (epoch !== historyEpoch) { await reader.cancel(); return ''; }
       buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
       const lines = buffer.split(/\r?\n/);
       buffer = lines.pop() || "";
@@ -396,10 +446,10 @@
       });
       if (!response.ok || !response.body) {
         const body = await response.json().catch(() => ({}));
-        if(response.status===401){account=null;renderAccountState();}
+        if(response.status===401 && requestEpoch===historyEpoch){clearWebSession();}
         throw new Error(body.error || "对话请求未完成。");
       }
-      const answer = await consumeStream(response, responseNode);
+      const answer = await consumeStream(response, responseNode, requestEpoch);
       if(requestEpoch!==historyEpoch)return;
       if (answer) {messages.push({ role: "assistant", content: answer, model:requestModel });finishMessage(answer);}
       else responseNode.textContent = "模型没有返回内容，请重试。";
@@ -408,6 +458,7 @@
       if(error.name==='AbortError'){const partial=responseNode.textContent;if(partial&&partial!=='正在连接模型…'){messages.push({role:'assistant',content:partial,model:requestModel});finishMessage(partial);}else responseNode.textContent='已停止';}
       else {responseNode.textContent=error.message;const retry=document.createElement('button');retry.type='button';retry.className='message-retry';retry.textContent='重试';retry.addEventListener('click',()=>{if(chatSending)return;if(messages.length!==requestIndex+1){chatInput.value=content;syncComposer();chatInput.focus();return;}messages.pop();responseNode.parentElement.previousElementSibling?.remove();responseNode.parentElement.remove();chatInput.value=content;syncComposer();chatForm.requestSubmit();});responseNode.after(retry);}
     } finally {
+      if(requestEpoch!==historyEpoch)return;
       chatSending = false;
       sendButton.disabled = false;
       sendButton.removeAttribute("aria-busy");
@@ -440,6 +491,7 @@
     const accountMenu = document.getElementById("account-menu");
     setAccountMenu(accountMenu.hidden);
   });
+  document.getElementById('logout-button').addEventListener('click', logout);
   document.querySelectorAll("[data-open-subscription]").forEach(button => button.addEventListener("click", () => {
     openSubscriptionDialog();
   }));
@@ -453,6 +505,11 @@
     if (event.key === "Escape" && !accountMenu.hidden) {
       setAccountMenu(false);
       document.getElementById("account-button").focus();
+    }
+    if (event.key === 'Tab' && !accountMenu.hidden) {
+      const buttons = [...accountMenu.querySelectorAll('button:not(:disabled)')];
+      if (event.shiftKey && document.activeElement === buttons[0]) { event.preventDefault(); buttons.at(-1)?.focus(); }
+      else if (!event.shiftKey && document.activeElement === buttons.at(-1)) { event.preventDefault(); buttons[0]?.focus(); }
     }
   });
   chatForm.addEventListener("submit", submitChat);
@@ -469,22 +526,37 @@
   });
 
   loginForm.addEventListener("submit", async (event) => {
-    event.preventDefault(); setStatus("login-status", "正在发送验证码…", false);
+    event.preventDefault();
+    const submit = loginForm.querySelector('[type=submit]');
+    if (submit.disabled) return;
+    submit.disabled = true; const epoch = authEpoch;
+    setStatus("login-status", "正在发送验证码…", false);
     const data = Object.fromEntries(new FormData(loginForm));
     try { await api("/auth/request-login-code", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(data) }); showVerification(data.email, "login"); setStatus("verify-status", "验证码已发送，请检查邮箱。", false); }
-    catch (error) { setStatus("login-status", error.message, true); }
+    catch (error) { if (epoch === authEpoch) setStatus("login-status", error.message, true); }
+    finally { submit.disabled = false; }
   });
   registerForm.addEventListener("submit", async (event) => {
-    event.preventDefault(); setStatus("register-status", "正在发送验证码…", false); const data = Object.fromEntries(new FormData(registerForm));
+    event.preventDefault();
+    const submit = registerForm.querySelector('[type=submit]');
+    if (submit.disabled) return;
+    submit.disabled = true; const epoch = authEpoch;
+    setStatus("register-status", "正在发送验证码…", false); const data = Object.fromEntries(new FormData(registerForm));
     try { await api("/auth/request-login-code", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(data) }); showVerification(data.email, "register"); setStatus("verify-status", "验证码已发送，请检查邮箱。", false); }
-    catch (error) { setStatus("register-status", error.message, true); }
+    catch (error) { if (epoch === authEpoch) setStatus("register-status", error.message, true); }
+    finally { submit.disabled = false; }
   });
   verifyForm.addEventListener("submit", async (event) => {
-    event.preventDefault(); setStatus("verify-status", "正在验证邮箱…", false);
+    event.preventDefault();
+    const submit = verifyForm.querySelector('[type=submit]');
+    if (submit.disabled) return;
+    submit.disabled = true; const epoch = authEpoch;
+    setStatus("verify-status", "正在验证邮箱…", false);
     const data = Object.fromEntries(new FormData(verifyForm));
     data.code = String(data.code || "").trim().replace(/[０-９]/g, (digit) => String(digit.charCodeAt(0) - 0xfee0));
-    try { const result = await api("/auth/login", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(data) }); account = result.account; renderAccountState(); authDialog.close(); }
-    catch (error) { setStatus("verify-status", error.message, true); }
+    try { const result = await api("/auth/login", { method:"POST", headers:{"content-type":"application/json"}, body:JSON.stringify(data) }); if (epoch !== authEpoch) return; loggedOut = false; authEpoch++; account = result.account; renderAccountState(); authDialog.close(); }
+    catch (error) { if (epoch === authEpoch) setStatus("verify-status", error.message, true); }
+    finally { submit.disabled = false; }
   });
 
   setView(activeView, true);
@@ -496,13 +568,16 @@
     openSubscriptionDialog();
   }
   async function refreshAccount() {
-    if (accountPreview) return;
+    if (accountPreview || loggedOut) return;
+    const epoch = authEpoch;
     try {
       if (returnedOutTradeNo) await reconcileReturnedOrder();
       const result = await api("/account");
+      if (epoch !== authEpoch) return;
       account = result.account;
       renderAccountState();
     } catch (error) {
+      if (epoch !== authEpoch) return;
       if(error.status===401)account=null;
       renderAccountState();
     }

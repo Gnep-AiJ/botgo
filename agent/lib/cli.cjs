@@ -13,7 +13,7 @@ const { writeCodexConfig, providerArguments } = require("./codex-config.cjs");
 const { createCodexRunner, defaultCommand } = require("./codex-runner.cjs");
 const { createSessionStore } = require("./session-store.cjs");
 const { applyCodexUpdate, inspectCodexUpdate, readInstalledCodexVersion } = require("./codex-update.cjs");
-const { nativeCommand, runtimeEnvironment } = require("./native.cjs");
+const { nativeCommand, interactiveEnvironment } = require("./native.cjs");
 const packageInfo = require("../package.json");
 
 const PERMISSIONS = ["read-only", "workspace-write", "full-access"];
@@ -82,88 +82,92 @@ function openBrowser(url) {
   return new Promise((resolve,reject)=>{child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});});
 }
 
-async function login(context, { openBrowserImpl = openBrowser, timeoutMs = 5 * 60 * 1000 } = {}) {
+async function login(context, { openBrowserImpl = openBrowser, timeoutMs = 5 * 60 * 1000, progressMs = 15000, input = process.stdin } = {}) {
   const proof = createProof();
-  let server;
-  let timeout;
-  let settled = false;
-  let resolveResult;
-  let rejectResult;
+  let server, timeout, progress, terminal, started, page;
+  let settled = false, exchanging = false, resolveResult, rejectResult;
+  const deadline = Date.now() + timeoutMs;
   const resultPromise = new Promise((resolve, reject) => { resolveResult = resolve; rejectResult = reject; });
+  // A timeout may arrive while the browser launcher or an API call is still pending.
+  resultPromise.catch(() => {});
   const close = () => {
-    if (timeout) clearTimeout(timeout);
+    clearTimeout(timeout); clearInterval(progress); terminal?.close();
     if (server?.listening) server.close();
-    process.removeListener('SIGINT',cancelLogin);
+    process.removeListener('SIGINT', cancelLogin);
   };
-  const cancelLogin=()=>{if(settled)return;settled=true;close();rejectResult(new Error('已取消浏览器登录。重新运行 botgo 可重试。'));};
+  const fail = error => { if (settled) return; settled = true; close(); rejectResult(error); };
+  const cancelLogin = () => fail(new Error('已取消浏览器登录。重新运行 botgo 可重试。'));
+  const waiting = () => outputLine(`等待网页登录确认 · 剩余 ${Math.max(0, Math.ceil((deadline - Date.now()) / 1000))} 秒`, context.output);
   server = http.createServer(async (request, response) => {
-    if(settled){response.writeHead(410);response.end('Authorization ended');return;}
-    if (request.method !== "GET" || new URL(request.url || "/", "http://127.0.0.1").pathname !== "/callback") {
-      response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-      response.end("Not found");
-      return;
-    }
-    let callbackValidated = false;
+    const send = (code, title, message) => {
+      response.writeHead(code, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
+      response.end(callbackPage(title, message));
+    };
+    if (settled) return send(410, '授权已结束', '请返回终端重新运行 botgo。');
+    if (request.method !== 'GET' || new URL(request.url || '/', 'http://127.0.0.1').pathname !== '/callback') return send(404, '页面不存在', '请使用当前登录链接。');
+    let callback;
+    try { callback = callbackResultFor(request.url || '/', proof.state); }
+    catch { return send(400, '回调无效', '请使用本次登录打开的浏览器页面。'); }
+    if (exchanging) return send(409, '正在完成登录', '请返回终端等待结果。');
+    exchanging = true;
     try {
-      const callback = callbackResultFor(request.url || "/", proof.state);
-      callbackValidated = true;
-      const exchanged = await context.api.exchangeAuthorization({ authorizationId: server.authorizationId, authorizationCode: callback.code, verifier: proof.verifier });
+      outputLine('收到网页授权，正在连接账户…', context.output);
+      const exchanged = await context.api.exchangeAuthorization({ authorizationId: started.authorizationId, authorizationCode: callback.code, verifier: proof.verifier });
+      if (settled) return send(410, '授权已结束', '请返回终端重新登录。');
+      if (!/^bgdt_[A-Za-z0-9_-]+$/.test(exchanged.deviceToken || '')) throw new Error('服务未返回有效的设备凭据。');
+      // Once exchange succeeds, finish the credential write as one non-cancellable step.
+      clearTimeout(timeout); process.removeListener('SIGINT', cancelLogin); terminal?.close();
       await context.credentialStore.save({ deviceToken: exchanged.deviceToken });
-      response.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-      response.end(callbackPage("BotGo Agent 已登录", "可以关闭此页面并返回终端。"));
-      if (!settled) { settled = true; close(); resolveResult(exchanged.account); }
+      settled = true; close();
+      send(200, 'BotGo Agent 已登录', '可以关闭此页面并返回终端。');
+      resolveResult(exchanged.account);
     } catch (error) {
-      response.writeHead(callbackValidated && !(error?.status >= 400 && error.status < 500) ? 500 : 400, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" });
-      response.end(callbackPage("授权未完成", error.message || "回调无效，请重试。"));
-      if (callbackValidated && !settled) {
-        settled = true;
-        close();
-        rejectResult(error);
-      }
+      send(error?.status >= 400 && error.status < 500 ? 400 : 500, '授权未完成', '请返回终端查看错误并重新登录。');
+      fail(error);
     }
   });
   try {
-    await new Promise((resolve, reject) => {
-      server.once("error", reject);
-      server.listen(0, "127.0.0.1", resolve);
-    });
-  } catch (error) {
-    close();
-    throw error;
-  }
-  let started;
-  try {
-    const address = server.address();
-    if (!address || typeof address === "string") throw new Error("Unable to reserve a local authorization callback");
-    started = await context.api.startAuthorization({ deviceLabel: `BotGo Agent CLI (${os.hostname()})`.slice(0, 80), verifier: proof.verifier });
-    server.authorizationId = started.authorizationId;
-    const callback = `http://127.0.0.1:${address.port}/callback`;
-    const page = new URL("/desktop-authorize.html", context.api.origin);
-    page.searchParams.set("request", started.authorizationId);
-    page.searchParams.set("state", proof.state);
-    page.searchParams.set("callback", callback);
-    page.searchParams.set("client", "agent");
-    process.once('SIGINT',cancelLogin);
-    await openBrowserImpl(page.toString());
-    outputLine(`已打开浏览器完成 BotGo 授权（${context.api.origin}）。`, context.output);
-    timeout = setTimeout(async () => {
-      if (settled) return;
-      try { await context.api.cancelAuthorization({ authorizationId: started.authorizationId, verifier: proof.verifier }); } catch {}
-      settled = true;
-      close();
-      rejectResult(new Error("浏览器授权已超时，请重新运行 botgo auth login"));
-    }, timeoutMs);
+    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+    process.once('SIGINT', cancelLogin);
+    timeout = setTimeout(() => fail(new Error('浏览器授权已超时。重新运行 botgo 可重试。')), timeoutMs);
+    outputLine('正在创建网页登录请求…', context.output);
+    started = await Promise.race([context.api.startAuthorization({ deviceLabel: `BotGo Agent CLI (${os.hostname()})`.slice(0, 80), verifier: proof.verifier }), resultPromise]);
+    if (settled) return await resultPromise;
+    const callback = `http://127.0.0.1:${server.address().port}/callback`;
+    page = new URL('/desktop-authorize.html', context.api.origin);
+    page.searchParams.set('request', started.authorizationId); page.searchParams.set('state', proof.state);
+    page.searchParams.set('callback', callback); page.searchParams.set('client', 'agent');
+    const reopen = async () => {
+      try { await Promise.race([openBrowserImpl(page.toString()), resultPromise]); }
+      catch (error) { if (settled) throw error; outputLine('无法自动打开浏览器，请使用下方链接。', context.output); }
+    };
+    if (!settled) {
+      outputLine('请在浏览器中登录并确认授权；完成后自动返回终端。', context.output);
+      outputLine(`登录链接：${page}`, context.output);
+      outputLine('按 Ctrl+C 取消；按 Enter 重新打开浏览器。', context.output);
+      waiting(); progress = setInterval(() => { if (!settled && !exchanging) waiting(); }, progressMs);
+      if (input?.isTTY) {
+        terminal = readline.createInterface({ input, terminal: false });
+        terminal.on('line', () => { if (!settled && !exchanging) reopen().catch(() => {}); });
+        terminal.on('SIGINT', cancelLogin);
+      }
+      // Browser launch can hang; the manual link and cancellation stay available.
+      reopen().catch(() => {});
+    }
     const account = await resultPromise;
-    outputLine(`已登录 ${account?.email || "BotGo 账户"}。`, context.output);
+    outputLine(`已登录 ${account?.email || 'BotGo 账户'}。`, context.output);
     return account;
   } catch (error) {
-    if (started?.authorizationId) {
-      try { await context.api.cancelAuthorization({ authorizationId: started.authorizationId, verifier: proof.verifier }); } catch {}
-    }
-    if (!settled) { settled = true; close(); rejectResult(error); }
-    try { await resultPromise; } catch (pendingError) { throw pendingError; }
+    fail(error);
+    // Local cleanup must not wait on a failed remote cancellation endpoint.
+    if (started?.authorizationId) Promise.resolve().then(() => context.api.cancelAuthorization({ authorizationId: started.authorizationId, verifier: proof.verifier })).catch(() => {});
     throw error;
-  }
+  } finally { close(); }
+}
+
+function accountSummary(account) {
+  const yuan = Number.isFinite(account.balanceCents) ? account.balanceCents / 100 : Number(account.credits);
+  return `${account.email} · 余额 ${Number.isFinite(yuan) ? new Intl.NumberFormat('zh-CN', { style: 'currency', currency: 'CNY' }).format(yuan) : '暂不可用'}`;
 }
 
 async function authCommand(context, action) {
@@ -388,7 +392,7 @@ async function main(argv = process.argv.slice(2), overrides = {}) {
     writeCodexConfig({ codexHome: context.paths.codexHome, relayOrigin: context.api.origin });
     const issued = await context.api.issueKey(credential.deviceToken);
     const child = (overrides.spawnImpl || spawn)(nativeCommand(context.paths.packageRoot), [...positional.slice(1), ...providerArguments(context.api.origin,model)], {
-      cwd: ensureProject(options.project), env: runtimeEnvironment(context.paths.codexHome, issued.key), stdio: "inherit", windowsHide: false
+      cwd: ensureProject(options.project), env: interactiveEnvironment(context.paths.codexHome, issued.key, overrides.baseEnv || process.env, { platform: context.paths.platform, isTTY: interactive }), stdio: "inherit", windowsHide: false
     });
     return new Promise((resolve, reject) => { child.once("error", reject); child.once("close", code => { process.exitCode = code ?? 1; resolve({ exitCode: code ?? 1 }); }); });
   }

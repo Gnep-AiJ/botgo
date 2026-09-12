@@ -3,6 +3,58 @@ const test = require("node:test");
 
 const { login } = require("../lib/cli.cjs");
 
+test('hung browser launch does not hide manual link or cancellation', async () => {
+  const lines = [];
+  const context = { api: { origin: 'https://botgo.win', async startAuthorization() { return { authorizationId: 'test' }; }, async cancelAuthorization() {} }, output(line) { lines.push(line); if (line.startsWith('登录链接')) setImmediate(() => process.emit('SIGINT')); } };
+  await assert.rejects(login(context, { openBrowserImpl: () => new Promise(() => {}) }), /取消/);
+  assert.ok(lines.some(line => /登录链接/.test(line)));
+});
+
+test('timeout is bounded even when remote cancellation never resolves', async () => {
+  let url;
+  const context = { api: { origin: 'https://botgo.win', async startAuthorization() { return { authorizationId: 'test' }; }, cancelAuthorization() { return new Promise(() => {}); } }, output() {} };
+  await assert.rejects(login(context, { timeoutMs: 40, openBrowserImpl: value => { url = value; } }), /超时/);
+  await assert.rejects(fetch(new URL(url).searchParams.get('callback')));
+});
+
+test('invalid state and duplicate callback never duplicate credential writes', async () => {
+  let url, release, exchanges = 0, saves = 0;
+  const gate = new Promise(resolve => { release = resolve; });
+  const context = { api: { origin: 'https://botgo.win', async startAuthorization() { return { authorizationId: 'test' }; }, async exchangeAuthorization() { exchanges++; await gate; return { deviceToken: 'bgdt_test', account: { email: 'test@example.invalid' } }; } }, credentialStore: { async save() { saves++; } }, output() {} };
+  const pending = login(context, { timeoutMs: 3000, openBrowserImpl: value => { url = value; } });
+  while (!url) await new Promise(resolve => setImmediate(resolve));
+  const page = new URL(url), callback = page.searchParams.get('callback');
+  assert.equal((await fetch(`${callback}?state=incorrect&code=bgac_test`)).status, 400);
+  assert.equal(exchanges, 0);
+  const address = `${callback}?state=${page.searchParams.get('state')}&code=bgac_test`;
+  const first = fetch(address);
+  while (!exchanges) await new Promise(resolve => setImmediate(resolve));
+  assert.equal((await fetch(address)).status, 409);
+  release(); assert.equal((await first).status, 200); await pending;
+  assert.equal(exchanges, 1); assert.equal(saves, 1);
+});
+
+test('browser launcher failure leaves a usable manual link and can be cancelled', async () => {
+  const lines = [];
+  const context = { api: { origin: 'https://botgo.win', async startAuthorization() { return { authorizationId: 'test' }; }, async cancelAuthorization() {} }, output(line) { lines.push(line); if (line.startsWith('登录链接')) setImmediate(() => process.emit('SIGINT')); } };
+  await assert.rejects(login(context, { openBrowserImpl() { throw Error('launcher failed'); } }), /取消/);
+  assert.ok(lines.some(line => /无法自动打开/.test(line)));
+  assert.ok(lines.some(line => /登录链接/.test(line)));
+});
+
+test('cancel during exchange prevents a late response from storing credentials', async () => {
+  let url, release, exchanges = 0, saves = 0;
+  const gate = new Promise(resolve => { release = resolve; });
+  const context = { api: { origin: 'https://botgo.win', async startAuthorization() { return { authorizationId: 'test' }; }, async exchangeAuthorization() { exchanges++; await gate; return { deviceToken: 'bgdt_test', account: {} }; }, async cancelAuthorization() {} }, credentialStore: { async save() { saves++; } }, output() {} };
+  const pending = login(context, { timeoutMs: 3000, openBrowserImpl: value => { url = value; } });
+  while (!url) await new Promise(resolve => setImmediate(resolve));
+  const page = new URL(url);
+  const response = fetch(`${page.searchParams.get('callback')}?state=${page.searchParams.get('state')}&code=bgac_test`);
+  while (!exchanges) await new Promise(resolve => setImmediate(resolve));
+  process.emit('SIGINT'); await assert.rejects(pending, /取消/);
+  release(); assert.equal((await response).status, 410); assert.equal(saves, 0);
+});
+
 for(const mode of ['timeout','cancel'])test(`browser login ${mode} closes callback and permits retry`,async()=>{
   let cancelled=0,url='';const count=process.listenerCount('SIGINT');
   const context={api:{origin:'https://botgo.win',async startAuthorization(){return {authorizationId:'test'};},async cancelAuthorization(){cancelled++;}},credentialStore:{save(){throw Error('must not save');}},output(){}};

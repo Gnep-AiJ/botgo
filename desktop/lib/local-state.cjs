@@ -65,10 +65,56 @@ function assertNoSensitiveFields(value) {
 }
 
 function createLocalStateStore({ filePath }) {
-  return {
-    load() { try { return normalise(JSON.parse(fs.readFileSync(filePath, "utf8"))); } catch { return normalise({}); } },
-    save(value) { assertNoSensitiveFields(value); fs.mkdirSync(path.dirname(filePath), { recursive: true }); fs.writeFileSync(filePath, JSON.stringify(normalise(value)), "utf8"); }
+  const store = {
+    load() {
+      try { return normalise(JSON.parse(fs.readFileSync(filePath, "utf8"))); }
+      catch (error) { if (error.code === 'ENOENT') return normalise({}); throw new Error('本地对话记录无法读取，原文件已保留。', { cause: error }); }
+    },
+    save(value) {
+      assertNoSensitiveFields(value);
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      const temporary = `${filePath}.${crypto.randomUUID()}.tmp`;
+      try { fs.writeFileSync(temporary, JSON.stringify(normalise(value)), "utf8"); fs.renameSync(temporary, filePath); }
+      finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); }
+    },
+    renameThread(id, title) {
+      if (typeof title !== 'string' || !title.trim() || title.trim().length > 64) throw new Error('请输入 1–64 字的对话名称。');
+      const value = store.load(), thread = value.threads.find(item => item.id === id);
+      if (!thread) throw new Error('对话不存在。');
+      thread.title = title.trim(); store.save(value); return store.load();
+    },
+    recoverInterruptedThreads() {
+      const value = store.load();
+      if (value.threads.some(thread => thread.status === 'running')) {
+        value.threads.forEach(thread => { if (thread.status === 'running') thread.status = 'stopped'; });
+        store.save(value);
+      }
+      return store.load();
+    },
+    deleteThread(id) {
+      const value = store.load(), thread = value.threads.find(item => item.id === id);
+      if (!thread) throw new Error('对话不存在。');
+      if (thread.status === 'running') throw new Error('请先停止当前任务。');
+      value.threads = value.threads.filter(item => item.id !== id);
+      return persistSelection(value);
+    },
+    removeProject(projectPath) {
+      const value = store.load();
+      if (!value.recentProjects.includes(projectPath)) throw new Error('项目不存在。');
+      if (value.threads.some(item => item.projectPath === projectPath && item.status === 'running')) throw new Error('请先停止当前任务。');
+      value.threads = value.threads.filter(item => item.projectPath !== projectPath);
+      value.recentProjects = value.recentProjects.filter(item => item !== projectPath);
+      if (value.selectedProject === projectPath) value.selectedProject = '';
+      return persistSelection(value);
+    }
   };
+  function persistSelection(value) {
+    const selected = value.threads.find(item => item.id === value.selectedThreadId) || value.threads[0];
+    value.selectedThreadId = selected?.id || '';
+    value.selectedProject = selected?.projectPath || value.selectedProject || value.recentProjects[0] || '';
+    store.save(value); return store.load();
+  }
+  return store;
 }
 
 module.exports = { createLocalStateStore };

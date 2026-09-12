@@ -12,8 +12,16 @@ contextBridge.exposeInMainWorld("botgo", Object.freeze({
   rememberProject: (projectPath) => invoke("project:remember", projectPath),
   createThread: (projectPath) => invoke("thread:create", projectPath),
   selectThread: (threadId) => invoke("thread:select", threadId),
+  renameThread: (id, title) => invoke('thread:rename', { id, title }),
+  deleteThread: (id) => invoke('thread:delete', id),
+  removeProject: (projectPath) => invoke('project:remove', projectPath),
   prepare: (confirmConfigReplace) => invoke("runtime:prepare", { confirmConfigReplace: Boolean(confirmConfigReplace) }),
   openTerminal: (context) => invoke("runtime:open-terminal", context),
+  onTerminalEvent: (listener) => {
+    const handler = (_event, value) => listener(value);
+    ipcRenderer.on('terminal:event', handler);
+    return () => ipcRenderer.removeListener('terminal:event', handler);
+  },
   startTask: (task) => invoke("task:start", task),
   stopTask: () => invoke("task:stop"),
   restoreConfiguration: () => invoke("runtime:restore-config"),
