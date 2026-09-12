@@ -10,6 +10,8 @@
   if (!button || !note || !status || !formContainer || !amountInput) return;
 
   const defaultRecharge = { minAmountCents: 1000, maxAmountCents: 999900, presetAmountCents: [1000, 5000, 10000] };
+  const localPreviewHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+  const accountPreview = localPreviewHost && new URLSearchParams(window.location.search).get("preview") === "account";
   let recharge = { ...defaultRecharge };
   let checkoutKey = "";
   let checkoutAmountCents = null;
@@ -88,6 +90,15 @@
   }
 
   async function loadPlan() {
+    if (accountPreview) {
+      amountInput.min = String(defaultRecharge.minAmountCents / 100);
+      amountInput.max = String(defaultRecharge.maxAmountCents / 100);
+      note.textContent = `最低 ${formatCny(defaultRecharge.minAmountCents)}，最高 ${formatCny(defaultRecharge.maxAmountCents)}，支持两位小数。`;
+      paymentAvailable = true;
+      button.textContent = "支付宝充值";
+      syncAmountState();
+      return;
+    }
     try {
       const data = await readJson(await fetch("/api/billing/plan", { credentials: "same-origin", cache: "no-store" }));
       recharge = { ...defaultRecharge, ...(data.recharge || {}) };
@@ -285,7 +296,9 @@
     const cents = parseAmountCents(amountInput.value);
     if (amountIsValid(cents)) amountInput.value = (cents / 100).toFixed(2);
   });
-  button.addEventListener("click", startCheckout);
+  button.addEventListener("click", accountPreview
+    ? () => setStatus("本地界面预览不会发起支付。")
+    : startCheckout);
   window.addEventListener("botgo:account-refresh", loadPlan);
   syncAmountState();
   loadPlan();

@@ -3,6 +3,8 @@
 
   const allowedViews = new Set(["chat", "agents", "tutorials"]);
   const params = new URLSearchParams(window.location.search);
+  const localPreviewHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+  const accountPreview = localPreviewHost && params.get("preview") === "account";
   const openedFromLegacySubscription = params.get("view") === "subscription";
   const returnedOutTradeNo = params.get("out_trade_no") || "";
   let activeView = allowedViews.has(params.get("view")) ? params.get("view") : "chat";
@@ -369,8 +371,15 @@
   });
 
   setView(activeView, true);
-  if (openedFromLegacySubscription) openSubscriptionDialog();
+  if (accountPreview) {
+    account = { email: "preview@botgo.local", balanceCents: 102000 };
+    renderAccountState();
+    openSubscriptionDialog();
+  } else if (openedFromLegacySubscription) {
+    openSubscriptionDialog();
+  }
   async function refreshAccount() {
+    if (accountPreview) return;
     try {
       if (returnedOutTradeNo) await reconcileReturnedOrder();
       const result = await api("/account");
