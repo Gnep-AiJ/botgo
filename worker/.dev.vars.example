@@ -5,3 +5,21 @@ DEV_TEST_MODE=1
 DEV_TEST_EMAIL=dev-test@botgo.local
 DEV_TEST_PASSWORD=choose-a-local-test-password-with-12-or-more-characters
 EMAIL_FROM=verify@your-domain.example
+
+# Alipay website payment (Worker Web Crypto, RSA2)
+# This is the supplied production App ID. Replace it with the sandbox App ID
+# whenever ALIPAY_GATEWAY points at the sandbox gateway.
+ALIPAY_APP_ID=2021006196695598
+ALIPAY_SIGN_TYPE=RSA2
+ALIPAY_GATEWAY=https://openapi-sandbox.dl.alipaydev.com/gateway.do
+ALIPAY_SELLER_ID=
+ALIPAY_SELLER_EMAIL=
+ALIPAY_PRIVATE_KEY=
+ALIPAY_PUBLIC_KEY=
+# Optional certificate mode: set all three values together, or leave all blank.
+ALIPAY_APP_CERT=
+ALIPAY_PUBLIC_CERT=
+ALIPAY_ROOT_CERT=
+# Set this only for a publicly reachable HTTPS callback in the target environment.
+ALIPAY_NOTIFY_URL=
+ALIPAY_RETURN_URL=

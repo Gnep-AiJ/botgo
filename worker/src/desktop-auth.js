@@ -1,4 +1,10 @@
 const textEncoder = new TextEncoder();
+const CREDIT_SCALE = 100;
+
+function publicBalance(account) {
+  const cents = Number(account.credit_balance) || 0;
+  return { credits: Math.round(cents) / CREDIT_SCALE, balanceCents: cents };
+}
 
 export class DesktopAuthError extends Error {
   constructor(message, status = 401) {
@@ -67,7 +73,7 @@ export async function issueDesktopSession(env, body, { sha256 = defaultSha256, r
   if (!consumed.meta?.changes) throw new DesktopAuthError("验证码无效或已过期。", 400);
   await env.DB.prepare("INSERT INTO device_tokens (token_hash, account_id, label, expires_at) VALUES (?, ?, ?, ?)")
     .bind(deviceTokenHash, account.id, label, new Date(Date.now() + 1000 * 60 * 60 * 24 * 90).toISOString()).run();
-  return { deviceToken, account: { email: account.email, credits: account.credit_balance } };
+  return { deviceToken, account: { email: account.email, ...publicBalance(account) } };
 }
 
 export async function startDesktopWebAuthorization(env, body, { sha256 = defaultSha256, requestId = defaultRequestId } = {}) {
@@ -133,7 +139,7 @@ export async function exchangeDesktopWebAuthorization(env, body, { sha256 = defa
       .bind(deviceTokenHash, expiresAt, authorization.id, deviceTokenHash)
   ]);
   if (!consumed.meta?.changes || !inserted.meta?.changes) throw new DesktopAuthError("桌面授权无效、已过期或已使用。", 400);
-  return { deviceToken, account: { email: account.email, credits: account.credit_balance } };
+  return { deviceToken, account: { email: account.email, ...publicBalance(account) } };
 }
 
 export async function cancelDesktopWebAuthorization(env, body, { sha256 = defaultSha256 } = {}) {

@@ -1,0 +1,48 @@
+name: BotGo Agent CLI
+
+on:
+  push:
+    paths:
+      - "agent/**"
+      - ".github/dependabot.yml"
+      - ".github/workflows/agent.yml"
+  pull_request:
+    paths:
+      - "agent/**"
+      - ".github/dependabot.yml"
+      - ".github/workflows/agent.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: agent/package-lock.json
+      - name: Install Agent dependencies
+        working-directory: agent
+        run: npm ci
+      - name: Check Agent source
+        working-directory: agent
+        run: npm run check
+      - name: Test Agent
+        working-directory: agent
+        run: npm test
+      - name: Package Windows release
+        working-directory: agent
+        run: npm run package:win
+      - name: Upload verified package
+        uses: actions/upload-artifact@v4
+        with:
+          name: botgo-agent-win-x64
+          path: |
+            agent/dist/*.zip
+            agent/dist/current.json

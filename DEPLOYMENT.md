@@ -1,37 +1,33 @@
-# BotGo 发布说明
+# BotGo 发布
 
-## Cloudflare 资源
+当前证据：[Release 2026-09-12](docs/notes/Release%202026-09-12.md)。
 
-1. 使用现有 D1 数据库 `botgo`，依次应用 `worker/migrations/0001_initial.sql` 至 `0011_upstream_routes.sql`。
-2. 使用 `worker/wrangler.jsonc` 部署 `botgo-api` Worker。
-3. 在 Worker 中交互式设置 `AUTH_SECRET`、`UPSTREAM_CONFIG_KEY`、`UPSTREAM_API_KEY`、`ADMIN_EMAIL`、`QQ_SMTP_USER` 与 `QQ_SMTP_AUTH_CODE`。`UPSTREAM_CONFIG_KEY` 必须是 32 字节随机值的 base64url 编码，用于加密管理后台保存的上游密钥。旧的 `UPSTREAM_API_KEY` 仅作为迁移期回退；密钥不得写入仓库、命令参数或日志。
-4. `wrangler.toml` 将 Pages Function 通过 `BOTGO_API` Service Binding 连接到私有 Worker。
-5. 创建私有 R2 bucket `botgo-desktop-releases`。不要开放 `r2.dev`；安装包只通过 Worker 的短时签名下载接口输出。
+使用现有 Pages `botgo`、Worker `botgo-api`、D1 `botgo`、私有 R2 `botgo-desktop-releases`。网站域名 `https://botgo.win`，GitHub `Gnep-AiJ/botgo`。保留 Git 历史、应用身份和下载入口。
 
-## 管理后台
+现有 Secrets：`AUTH_SECRET`、`ADMIN_EMAIL`、`QQ_SMTP_USER`、`QQ_SMTP_AUTH_CODE`、`UPSTREAM_CONFIG_KEY`。`UPSTREAM_API_KEY` 为旧上游回退凭据；主要上游由后台加密配置并分别测试 Chat/Responses 路由。`UPSTREAM_CONFIG_KEY` 必须保留，否则无法解密已有配置。支付密钥按 `docs/ALIPAY_PAYMENT.md` 管理。
 
-- 网页对话与桌面 Codex 使用独立路由。新上游必须分别通过 Chat Completions 或 Responses 真实能力测试，才能切换对应路由；系统不自动故障转移。
-- 首次升级可在“上游与路由”中导入 Worker 当前回退配置，随后分别测试并绑定两条路由。上游地址、模型映射和密钥不向用户端展示。
-- Pro 套餐固定为 30 天一期，价格和本期额度可配置。人工续期开通会重置本期额度，不累计旧额度，并从当前有效期末续 30 天。
-- 支付宝签名、同步跳转和异步通知尚未实现，因此用户端购买必须保持禁用。仅配置密钥不能视为支付可用。
-- 桌面端先将安装包上传到私有 R2，再用 `npm --prefix desktop run release:metadata -- <installer.exe>` 计算元数据，最后在后台登记并发布。
-
-## 发布与验证
+## 验证
 
 ```powershell
-npm run check
 npm test
-npm run deploy
+npm run check
+git diff --check
 ```
 
-- 生产网站使用 `botgo.win`，模型固定为 GPT-5.6。
-- 部署后验证健康接口、邮箱验证码登录、一次流式对话与额度刷新。
-- Windows 安装包使用最大压缩和文件白名单，但 Electron 运行时决定了体积不会大幅下降。当前安装包未签名，只适合受控内测；公开发布前必须完成代码签名和干净 Windows 机器安装验证。
+Wrangler 固定使用项目脚本指定的 4.125.0。发布前核对账户/绑定、远程迁移、当前版本，并将 D1 导出放入已忽略的 `.secrets/`。0013 只应用一次，将历史元单位余额转成分。
 
-## 当前受控发布
+## 顺序
 
-- Worker 版本：`426fbd35-4ca3-4221-a76d-734c3479c60d`。
-- Pages 验证部署：`https://21288a8e.botgo.pages.dev`，生产域名：`https://botgo.win`。
-- 当前已发布桌面版本仍为 `1.0.0`；新版源码版本为 `1.0.1`，必须在双路由和安装验证通过后再上传并发布。
-- 安装包 SHA-256：`0d0a918995f4b75d52cf2592067a0447bb18cb49d4a7aa164f4ae9d786273110`。
-- 支付宝应用审核期间，购买入口保持禁用，应用私钥不上传 Worker。
+1. 提交审查后的源码、测试与文档，验证 GitHub 远端提交。
+2. 备份 D1，再运行 `npm run migrate:worker` 与 `npm run deploy:worker`。
+3. `npm --prefix agent run package:win`；将 zip 上传到 R2 `agent/<version>/botgo-agent-win-x64.zip`。下载校验通过后才更新 `agent/current.json`。
+4. 桌面：设置 `BOTGO_API_ORIGIN=https://botgo.win` 后执行 `npm --prefix desktop run package:win`；签名及干净机器验证完成后计算最终哈希、上传 R2，再登记/激活发布元数据。
+5. `npm run build`、`npm run deploy:pages`；检查健康接口、账户、CLI 安装脚本与版本包、桌面下载、一次真实中转任务和余额。
+
+完整 `npm run deploy` 会执行迁移及 Worker/Pages 发布，不能在未完成备份与兼容核查时盲目执行。
+
+## 回滚与边界
+
+保留上一份 CLI manifest、安装目录和桌面发布记录。代码回滚不会回滚 D1，0013 后不能直接恢复使用元单位的旧 Worker；需要对应的兼容版本或按备份受控恢复。
+
+Worker Secrets 不进入仓库、参数或日志。支付宝配置及真实付款状态见支付文档和当前发布记录。未签名桌面包不能标记为正式签名版本；本地 HTTP、测试成功不代表生产登录/扣费/安装已通过。

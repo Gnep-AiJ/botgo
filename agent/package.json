@@ -1,0 +1,22 @@
+{
+  "name": "botgo-agent-cli",
+  "version": "0.1.1",
+  "private": true,
+  "description": "BotGo Agent CLI backed by the BotGo relay and Codex CLI",
+  "main": "bin/botgo.cjs",
+  "bin": {
+    "botgo": "bin/botgo.cjs"
+  },
+  "engines": {
+    "node": "^22.0.0 || ^24.0.0"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.cjs",
+    "check": "node scripts/check.cjs",
+    "package:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1"
+  },
+  "dependencies": {
+    "@openai/codex": "0.154.0",
+    "keytar": "7.9.0"
+  }
+}

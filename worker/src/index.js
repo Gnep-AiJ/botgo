@@ -6,6 +6,22 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 const SMTP_MAX_REPLY_BYTES = 16 * 1024;
 const BOTGO_MODEL = "gpt-5.6";
+// Balances are stored as integer fen (cents). One existing quota unit maps to
+// one yuan, so the migration keeps the old visible balance and request cost.
+const CREDIT_SCALE = 100;
+
+function balanceYuan(value) {
+  const cents = Number(value);
+  return Number.isFinite(cents) ? Math.round(cents) / CREDIT_SCALE : 0;
+}
+
+function publicAccount(account) {
+  return {
+    email: account.email,
+    credits: balanceYuan(account.credit_balance),
+    balanceCents: Number(account.credit_balance) || 0
+  };
+}
 
 function json(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), {
@@ -257,7 +273,7 @@ async function verifyEmail(request, env) {
   await env.DB.batch(statements);
   await audit(env, account.id, "account_created");
   const token = await createSession(account, env);
-  return json({ ok: true, account: { email, credits: invite.credits } }, 201, { "set-cookie": `botgo_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800` });
+  return json({ ok: true, account: publicAccount({ email, credit_balance: invite.credits }) }, 201, { "set-cookie": `botgo_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800` });
 }
 
 async function login(request, env) {
@@ -273,7 +289,7 @@ async function login(request, env) {
   await env.DB.prepare("UPDATE email_login_codes SET consumed_at = CURRENT_TIMESTAMP WHERE token_hash = ?").bind(tokenHash).run();
   const token = await createSession(account, env);
   await audit(env, account.id, "email_code_login");
-  return json({ ok: true, account: { email: account.email, credits: account.credit_balance } }, 200, { "set-cookie": `botgo_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800` });
+  return json({ ok: true, account: publicAccount(account) }, 200, { "set-cookie": `botgo_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800` });
 }
 
 async function requestLoginCode(request, env) {
@@ -305,7 +321,7 @@ async function accountInfo(request, env) {
   const account = await env.DB.prepare("SELECT email, credit_balance, status FROM accounts WHERE id = ?").bind(session.sub).first();
   if (!account || account.status !== "active") return json({ error: "账户不可用。" }, 403);
   const subscription = await activeSubscription(env, session.sub);
-  return json({ account: { email: account.email, credits: account.credit_balance, plan: subscription?.plan || "free", subscriptionStatus: subscription?.status || "inactive", subscriptionExpiresAt: subscription?.expires_at || null } });
+  return json({ account: { ...publicAccount(account), plan: subscription?.plan || "free", subscriptionStatus: subscription?.status || "inactive", subscriptionExpiresAt: subscription?.expires_at || null } });
 }
 
 async function activeAdminFor(request, env) {
@@ -322,7 +338,7 @@ async function devTestLogin(request, env) {
   const email = env.DEV_TEST_EMAIL.trim().toLowerCase();
   let account = await env.DB.prepare("SELECT id, email, credit_balance, status FROM accounts WHERE email = ?").bind(email).first();
   if (!account) {
-    account = { id: requestId(), email, credit_balance: 100, status: "active" };
+    account = { id: requestId(), email, credit_balance: 100 * CREDIT_SCALE, status: "active" };
     await env.DB.batch([
       env.DB.prepare("INSERT INTO accounts (id, email, password_hash, credit_balance, verified_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)").bind(account.id, email, "email-code-v1", account.credit_balance),
       env.DB.prepare("INSERT INTO subscriptions (account_id, plan, status) VALUES (?, 'free', 'active')").bind(account.id),
@@ -332,7 +348,7 @@ async function devTestLogin(request, env) {
   if (account.status !== "active") return json({ error: "测试账户不可用。" }, 403);
   const token = await createSession(account, env);
   await audit(env, account.id, "dev_test_login");
-  return json({ ok: true, account: { email: account.email, credits: account.credit_balance } }, 200, { "set-cookie": `botgo_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800` });
+  return json({ ok: true, account: publicAccount(account) }, 200, { "set-cookie": `botgo_session=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=604800` });
 }
 
 async function adminOverview(request, env) {
@@ -346,7 +362,7 @@ async function adminOverview(request, env) {
   ]);
   return json({
     overview: { accounts: Number(accounts?.count || 0), active: Number(active?.count || 0), pendingVerifications: Number(verifications?.count || 0) },
-    accounts: recent.results || [],
+    accounts: (recent.results || []).map((row) => ({ ...row, credit_balance: balanceYuan(row.credit_balance), credit_balance_cents: Number(row.credit_balance) || 0 })),
     admin: { email: admin.email }
   });
 }
@@ -364,7 +380,7 @@ async function adminInvites(request, env) {
   if (!admin) return json({ error: "需要管理员权限。" }, 403);
   if (request.method === "GET") {
     const rows = await env.DB.prepare("SELECT code_hash, label, credits, expires_at, redeemed_at FROM invite_codes ORDER BY redeemed_at IS NULL DESC, expires_at DESC LIMIT 100").all();
-    return json({ invites: rows.results || [] });
+    return json({ invites: (rows.results || []).map((row) => ({ ...row, credits: balanceYuan(row.credits), creditsCents: Number(row.credits) || 0 })) });
   }
   const body = await bodyOf(request);
   const label = typeof body?.label === "string" ? body.label.trim().slice(0, 48) : "";
@@ -372,7 +388,7 @@ async function adminInvites(request, env) {
   if (!label || !Number.isInteger(credits) || credits < 0 || credits > 1000000) return json({ error: "请填写邀请码名称和有效额度。" }, 400);
   const code = inviteCode();
   const codeHash = await sha256(code);
-  await env.DB.prepare("INSERT INTO invite_codes (code_hash, label, credits) VALUES (?, ?, ?)").bind(codeHash, label, credits).run();
+  await env.DB.prepare("INSERT INTO invite_codes (code_hash, label, credits) VALUES (?, ?, ?)").bind(codeHash, label, credits * CREDIT_SCALE).run();
   await audit(env, admin.id, "invite_created", { label, credits });
   return json({ invite: { code, label, credits } }, 201);
 }
@@ -439,7 +455,7 @@ async function desktopAuthorizationRequest(request, env, authorizationId) {
       activeSessionAccount(request, env),
       desktopWebAuthorizationFor(env, authorizationId)
     ]);
-    return json({ account: { email: account.email, credits: account.credit_balance }, authorization: { id: authorization.id, deviceLabel: authorization.device_label, expiresAt: authorization.expires_at, approved: Boolean(authorization.approved_at) } });
+    return json({ account: publicAccount(account), authorization: { id: authorization.id, deviceLabel: authorization.device_label, expiresAt: authorization.expires_at, approved: Boolean(authorization.approved_at) } });
   } catch (error) {
     return desktopFailure(error);
   }
@@ -480,7 +496,7 @@ async function desktopAccount(request, env) {
   try {
     const credential = await desktopCredentialFor(env, bearerToken(request));
     await env.DB.prepare("UPDATE device_tokens SET last_used_at = CURRENT_TIMESTAMP WHERE token_hash = ?").bind(credential.tokenHash).run();
-    return json({ account: { email: credential.account.email, credits: credential.account.credit_balance, plan: credential.subscription.plan } });
+    return json({ account: { ...publicAccount({ email: credential.account.email, credit_balance: credential.account.credit_balance }), plan: credential.subscription.plan } });
   } catch (error) {
     return desktopFailure(error);
   }
@@ -542,7 +558,7 @@ async function credentialFor(request, env, includeDesktop = false) {
 }
 
 async function reserveRelayUsage(env, accountId, model) {
-  const debit = await env.DB.prepare("UPDATE accounts SET credit_balance = credit_balance - 1 WHERE id = ? AND credit_balance >= 1").bind(accountId).run();
+  const debit = await env.DB.prepare("UPDATE accounts SET credit_balance = credit_balance - ? WHERE id = ? AND credit_balance >= ?").bind(CREDIT_SCALE, accountId, CREDIT_SCALE).run();
   if (!debit.meta.changes) return null;
   const ledgerId = requestId();
   await env.DB.prepare("INSERT INTO usage_ledger (id, account_id, provider, model, units, outcome) VALUES (?, ?, 'botgo-codex', ?, 1, 'reserved')").bind(ledgerId, accountId, model || "codex").run();
@@ -552,7 +568,7 @@ async function reserveRelayUsage(env, accountId, model) {
 async function refundRelayUsage(env, accountId, ledgerId) {
   if (!ledgerId) return;
   await env.DB.batch([
-    env.DB.prepare("UPDATE accounts SET credit_balance = credit_balance + 1 WHERE id = ?").bind(accountId),
+    env.DB.prepare("UPDATE accounts SET credit_balance = credit_balance + ? WHERE id = ?").bind(CREDIT_SCALE, accountId),
     env.DB.prepare("UPDATE usage_ledger SET outcome = 'refunded' WHERE id = ?").bind(ledgerId)
   ]);
 }
@@ -605,7 +621,7 @@ async function streamChat(request, env) {
   if (!upstreamConfigValue) return json({ error: "上游服务尚未配置。" }, 503);
   const account = await env.DB.prepare("SELECT id, credit_balance, status FROM accounts WHERE id = ?").bind(session.sub).first();
   if (!account || account.status !== "active") return json({ error: "账户不可用。" }, 403);
-  const debit = await env.DB.prepare("UPDATE accounts SET credit_balance = credit_balance - 1 WHERE id = ? AND credit_balance >= 1").bind(account.id).run();
+  const debit = await env.DB.prepare("UPDATE accounts SET credit_balance = credit_balance - ? WHERE id = ? AND credit_balance >= ?").bind(CREDIT_SCALE, account.id, CREDIT_SCALE).run();
   if (!debit.meta.changes) return json({ error: "额度不足。" }, 402);
   const ledgerId = requestId();
   await env.DB.prepare("INSERT INTO usage_ledger (id, account_id, provider, model, units, outcome) VALUES (?, ?, ?, ?, 1, 'reserved')").bind(ledgerId, account.id, "botgo", BOTGO_MODEL).run();
@@ -621,7 +637,7 @@ async function streamChat(request, env) {
     return new Response(upstream.body, { status: 200, headers: { "content-type": "text/event-stream", "cache-control": "no-store", "x-content-type-options": "nosniff" } });
   } catch {
     await env.DB.batch([
-      env.DB.prepare("UPDATE accounts SET credit_balance = credit_balance + 1 WHERE id = ?").bind(account.id),
+      env.DB.prepare("UPDATE accounts SET credit_balance = credit_balance + ? WHERE id = ?").bind(CREDIT_SCALE, account.id),
       env.DB.prepare("UPDATE usage_ledger SET outcome = 'refunded' WHERE id = ?").bind(ledgerId)
     ]);
     await audit(env, account.id, "chat_refunded", { provider: "botgo", model: BOTGO_MODEL });
@@ -629,10 +645,14 @@ async function streamChat(request, env) {
   }
 }
 
+import { handleAgentRelease } from "./agent-releases.js";
+
 export default {
   async fetch(request, env) {
     if (!env.DB || !env.AUTH_SECRET) return json({ error: "后端绑定尚未配置。" }, 503);
     const path = new URL(request.url).pathname;
+    const agentRelease = await handleAgentRelease(request, env, path);
+    if (agentRelease) return agentRelease;
     const platformResponse = await handlePlatformRoute(request, env, path, { activeAdminFor, audit, sessionFor });
     if (platformResponse) return platformResponse;
     if (request.method === "GET" && path === "/health") return json({ ok: true, service: "botgo-api" });

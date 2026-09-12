@@ -3,19 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>授权 BotGo Desktop</title>
+  <title data-client-title>授权 BotGo Desktop</title>
   <link rel="stylesheet" href="./desktop-authorize.css">
 </head>
 <body>
   <main class="authorization-shell">
     <section class="authorization-card" aria-labelledby="authorization-title">
-      <p class="eyebrow">BOTGO DESKTOP</p>
-      <h1 id="authorization-title">在浏览器中确认登录</h1>
+      <p class="eyebrow"><span data-client-label>BOTGO DESKTOP</span></p>
+      <h1 id="authorization-title" data-client-heading>在浏览器中确认登录</h1>
       <p class="lead" data-authorization-copy>正在检查授权请求…</p>
 
       <section class="account-state" data-account-state hidden>
         <span class="account-avatar" aria-hidden="true">BG</span>
-        <div><strong data-account-email></strong><small>将连接到桌面端</small></div>
+        <div><strong data-account-email></strong><small data-client-connection>将连接到桌面端</small></div>
       </section>
 
       <section class="device-state" data-device-state hidden>
@@ -24,7 +24,7 @@
 
       <div class="actions" data-approval-actions hidden>
         <button class="primary" type="button" data-approve>授权 BotGo Desktop</button>
-        <p>确认后返回桌面应用。</p>
+        <p data-client-return>确认后返回桌面应用。</p>
       </div>
 
       <section class="login-panel" data-login-panel hidden aria-labelledby="login-title">

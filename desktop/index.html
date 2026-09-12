@@ -9,14 +9,16 @@
 </head>
 <body>
   <main class="desktop-shell" data-page="projects">
-    <aside class="sidebar">
+    <aside class="sidebar" aria-label="BotGo 导航">
       <div class="brand" aria-label="BotGo Desktop">
         <img class="brand-logo" src="assets/botgo-desktop.ico" alt="">
-        <span class="brand-copy">BotGo<small>DESKTOP</small></span>
+        <span class="brand-copy">BotGo</span>
       </div>
 
       <button class="new-thread" type="button" data-new-thread>
-        <span class="new-thread-icon" aria-hidden="true">＋</span>
+        <span class="new-thread-icon" aria-hidden="true">
+          <svg viewBox="0 0 20 20" focusable="false"><path d="M10 4v12M4 10h12"></path></svg>
+        </span>
         <span>新对话</span>
       </button>
 
@@ -30,11 +32,10 @@
       <div class="sidebar-account">
         <section class="account-menu" data-account-menu hidden role="dialog" aria-modal="true" aria-labelledby="account-menu-title">
           <div class="account-heading">
-            <div>
-              <p class="eyebrow">BOTGO ACCOUNT</p>
-              <h2 id="account-menu-title" data-account-menu-title tabindex="-1">登录 BotGo</h2>
-            </div>
-            <button class="icon-button" type="button" data-account-close aria-label="关闭账户菜单">×</button>
+            <h2 id="account-menu-title" data-account-menu-title tabindex="-1">登录 BotGo</h2>
+            <button class="icon-button" type="button" data-account-close aria-label="关闭账户菜单">
+              <svg viewBox="0 0 20 20" focusable="false"><path d="m5 5 10 10M15 5 5 15"></path></svg>
+            </button>
           </div>
           <div data-account-guest>
             <p>在浏览器中登录并确认这台设备。</p>
@@ -46,15 +47,14 @@
               <span class="avatar account-summary-avatar">BG</span>
               <div>
                 <strong data-account-email>—</strong>
-                <small><span data-account-plan>Free</span> · <span data-account-credits>—</span> 额度</small>
+                <small>余额 <span data-account-credits>—</span><span data-account-plan hidden></span></small>
               </div>
             </div>
-            <p class="account-expiry">到期时间 <span data-account-expiry>—</span></p>
+            <p class="account-expiry" hidden>到期时间 <span data-account-expiry>—</span></p>
             <details class="account-advanced">
-              <summary>更多账户操作</summary>
+              <summary>账户设置</summary>
               <div class="account-actions">
                 <button class="secondary" type="button" data-open-account>管理账户</button>
-                <button class="secondary" type="button" data-restore-config>恢复原配置</button>
                 <button class="danger" type="button" data-revoke-device>退出此设备</button>
               </div>
             </details>
@@ -68,28 +68,33 @@
             <strong data-account-name>登录 BotGo</strong>
             <small data-account-state>同步账户与额度</small>
           </span>
-          <span class="account-chevron" aria-hidden="true">⌃</span>
+          <span class="account-chevron" aria-hidden="true">
+            <svg viewBox="0 0 20 20" focusable="false"><path d="m7 4 6 6-6 6"></path></svg>
+          </span>
         </button>
       </div>
     </aside>
 
-    <section class="chat-workspace">
+    <section class="chat-workspace" aria-label="BotGo 工作区">
       <header class="chat-header">
-        <button class="project-entry" type="button" data-change-project hidden>
+        <button class="project-entry" type="button" data-change-project hidden aria-label="切换本地项目">
           <span class="project-entry-copy">
             <strong data-current-project>选择文件夹</strong>
             <small class="project-entry-path sr-only" data-current-project-path>打开本地项目</small>
           </span>
-          <span class="project-entry-chevron" aria-hidden="true">⌄</span>
+          <span class="project-entry-chevron" aria-hidden="true">
+            <svg viewBox="0 0 20 20" focusable="false"><path d="m7 4 6 6-6 6"></path></svg>
+          </span>
         </button>
         <span class="sr-only" data-thread-title>新对话</span>
-        <span class="sr-only" data-running-state>就绪</span>
+        <span class="running-state" data-running-state>就绪</span>
+        <button class="terminal-entry" type="button" data-open-terminal title="在原生终端中使用 Codex">在终端中打开 ↗</button>
       </header>
 
       <section class="conversation" data-conversation aria-live="polite">
         <div class="conversation-empty" data-conversation-empty>
           <h1>从你的项目开始</h1>
-          <p>选择本地文件夹，描述要完成的工作。BotGo 会在该项目中执行并持续保留对话。</p>
+          <p>选择文件夹，开始对话。</p>
           <button class="primary" type="button" data-empty-choose-project>选择文件夹</button>
         </div>
       </section>
@@ -103,7 +108,7 @@
             <div class="context-controls">
               <span class="project-chip" data-project-chip>未选择项目</span>
               <label class="mode-select">
-                <span class="sr-only">权限</span>
+                <span class="sr-only">权限模式</span>
                 <select data-mode>
                   <option value="read-only">只读</option>
                   <option value="workspace-write" selected>工作区可写</option>
@@ -112,12 +117,16 @@
               </label>
             </div>
             <div class="composer-actions">
-              <button class="stop-button" type="button" data-stop-task hidden aria-label="停止执行">■</button>
-              <button class="send-button" type="submit" data-start-task aria-label="发送任务">↑</button>
+              <button class="stop-button" type="button" data-stop-task hidden aria-label="停止执行">
+                <svg viewBox="0 0 20 20" focusable="false"><rect x="6" y="6" width="8" height="8" rx="1"></rect></svg>
+              </button>
+              <button class="send-button" type="submit" data-start-task aria-label="发送任务">
+                <svg viewBox="0 0 20 20" focusable="false"><path d="M4 10h11M10 5l5 5-5 5"></path></svg>
+              </button>
             </div>
           </div>
         </form>
-        <p class="composer-note">Enter 发送 · Shift+Enter 换行 · 文件仅保留在本机</p>
+        <p class="composer-note">Enter 发送 · Shift+Enter 换行</p>
       </section>
     </section>
   </main>

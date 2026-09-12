@@ -18,6 +18,11 @@
     }
   ],
   "vars": {
-    "UPSTREAM_BASE_URL": "https://www.lvzhouai.cc/v1"
+    "UPSTREAM_BASE_URL": "https://www.lvzhouai.cc/v1",
+    "ALIPAY_APP_ID": "2021006196695598",
+    "ALIPAY_SIGN_TYPE": "RSA2",
+    "ALIPAY_GATEWAY": "https://openapi.alipay.com/gateway.do",
+    "ALIPAY_NOTIFY_URL": "https://botgo.win/api/billing/notify",
+    "ALIPAY_RETURN_URL": "https://botgo.win/api/billing/return"
   }
 }

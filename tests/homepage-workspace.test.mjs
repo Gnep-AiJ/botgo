@@ -50,9 +50,9 @@ assert.match(workspace, /id="account-menu"[^>]*hidden[^>]*role="dialog"/, "账�
 assert.match(workspace, /id="account-status"[^>]*role="status"[^>]*aria-atomic="true"/, "账户小框应以单一可访问状态提示计划与额度");
 assert.match(workspace, /data-open-subscription/, "账户小框应可打开账户与订阅管理");
 assert.match(workspace, /<dialog id="subscription-dialog"/, "账户管理应使用独立对话框");
-assert.match(workspace, /data-subscription-plan/, "订阅弹窗应展示当前计划");
-assert.match(workspace, /data-subscription-credits/, "订阅弹窗应展示剩余额度");
-assert.match(workspace, /data-subscription-upgrade[^>]*disabled/, "升级入口在未接入支付前必须禁用");
+assert.match(workspace, /data-billing-balance/, "余额弹窗应展示当前金额余额");
+assert.match(workspace, /data-recharge-option/, "余额弹窗应提供预设充值金额");
+assert.match(workspace, /data-subscription-upgrade[^>]*disabled/, "充值入口应在支付配置加载前禁用");
 assert.match(workspace, /BotGo Desktop/, "网页工作台应以 BotGo Desktop 作为本地开发入口");
 assert.match(workspace, /data-desktop-open/, "桌面端入口应使用独立对话框说明");
 assert.doesNotMatch(workspace, /API Key|复制安装命令|Codex CLI|Claude Code|chatgpt\.com\/download/, "网页不应暴露 Key、命令、CLI 或第三方官方下载入口");
@@ -71,12 +71,12 @@ assert.ok(fs.existsSync(workspaceScriptPath), "工作区应提供独立交互脚
 const workspaceScript = read("workspace.js");
 const workspaceStyles = read("workspace.css");
 assert.match(workspaceScript, /const allowedViews = new Set\(\["chat", "agents", "tutorials"\]\)/, "脚本应限制顶层视图参数");
-assert.match(workspaceScript, /const summary = `\$\{plan\} · \$\{credits\} 额度`/, "登录状态栏应显示计划与剩余额度");
+assert.match(workspaceScript, /const summary = account \? `余额 \$\{balance\}`/, "登录状态栏应显示金额余额");
 assert.match(workspaceScript, /function setAccountMenu\(open\)/, "账户小框应由单一状态函数控制开关");
 assert.match(workspaceScript, /function openSubscriptionDialog\(\)/, "账户管理弹窗应由单一函数打开");
 assert.match(workspaceScript, /params\.get\("view"\) === "subscription"/, "旧订阅链接应被兼容处理");
 assert.match(workspaceScript, /event\.key === "Escape" && !accountMenu\.hidden/, "账户小框应支持 Escape 关闭");
-assert.match(workspaceScript, /data-subscription-plan/, "订阅页应与账户状态同步");
+assert.match(workspaceScript, /data-billing-balance/, "余额页应与账户状态同步");
 assert.match(workspaceScript, /params\.get\("view"\).*: "chat"/, "脚本应将 BotGo AI 作为工作台默认视图");
 assert.match(workspaceScript, /authDialog\.showModal\(\)/, "认证按钮应打开认证对话框");
 assert.match(workspaceScript, /api\("\/auth\/request-login-code"/, "登录提交应先请求邮箱验证码");

@@ -1,6 +1,6 @@
 {
   "name": "botgo-desktop",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "private": true,
   "description": "BotGo Desktop for Windows",
   "main": "main.cjs",
@@ -58,6 +58,16 @@
       {
         "from": "licenses/Apache-2.0.txt",
         "to": "licenses/Apache-2.0.txt"
+      },
+      {
+        "from": "../agent",
+        "to": "agent",
+        "filter": [
+          "lib/**",
+          "node_modules/@openai/codex-win32-x64/**",
+          "node_modules/@openai/codex/LICENSE",
+          "node_modules/@openai/codex/NOTICE"
+        ]
       }
     ]
   }

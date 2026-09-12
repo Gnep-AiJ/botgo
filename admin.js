@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const titles = { overview: "概览", upstreams: "上游与路由", accounts: "用户与邀请码", billing: "订阅", releases: "桌面发布", audit: "审计日志" };
+  const titles = { overview: "概览", upstreams: "上游与路由", accounts: "用户与邀请码", billing: "充值", releases: "桌面发布", audit: "审计日志" };
   const state = { admin: null, overview: null, invites: [], accountPage: 1 };
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];

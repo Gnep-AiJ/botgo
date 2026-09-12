@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("botgo", Object.freeze({
   createThread: (projectPath) => invoke("thread:create", projectPath),
   selectThread: (threadId) => invoke("thread:select", threadId),
   prepare: (confirmConfigReplace) => invoke("runtime:prepare", { confirmConfigReplace: Boolean(confirmConfigReplace) }),
+  openTerminal: (context) => invoke("runtime:open-terminal", context),
   startTask: (task) => invoke("task:start", task),
   stopTask: () => invoke("task:stop"),
   restoreConfiguration: () => invoke("runtime:restore-config"),

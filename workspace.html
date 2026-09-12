@@ -37,7 +37,7 @@
                   <div><p class="account-menu-label">BOTGO ACCOUNT</p><p class="account-menu-email" data-account-email></p></div>
                 </div>
                 <p class="account-menu-status" id="account-status" role="status" aria-live="polite" aria-atomic="true"></p>
-                <button class="account-menu-link" type="button" data-open-subscription><span>账户与订阅</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" /></svg></button>
+                <button class="account-menu-link" type="button" data-open-subscription><span>账户与余额</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" /></svg></button>
               </section>
             </div>
           </div>
@@ -79,6 +79,7 @@
               <p class="view-lead">选择文件夹后开始。</p>
               <div class="agent-choices" aria-label="选择本地 Agent">
                 <article class="agent-choice agent-choice--desktop"><p class="agent-label">WINDOWS APP</p><h2>BotGo Desktop</h2><p>账户、项目和任务在一个界面内完成。</p><button type="button" class="setup-primary" data-desktop-open>了解桌面端</button></article>
+                <article class="agent-choice agent-choice--cli"><p class="agent-label">WINDOWS TERMINAL</p><h2>BotGo Agent CLI</h2><p>在 PowerShell 中粘贴，自动准备安装环境。</p><div class="install-command"><code>irm https://botgo.win/install.ps1 | iex</code><button type="button" data-copy-install aria-label="复制 CLI 安装命令">复制</button></div><p class="cli-install-status" role="status" data-install-status></p><details><summary>接下来怎么用</summary><ol><li>运行 <code>botgo auth login</code>，在浏览器登录。</li><li>进入项目目录，运行 <code>botgo codex</code> 开始对话。</li></ol><p>已安装？再次运行安装命令即可更新。</p></details></article>
               </div>
             </div>
           </section>
@@ -90,7 +91,7 @@
               <ol class="tutorial-list">
                 <li><span>01</span><div><h2>登录账户</h2><p>使用邮箱验证码完成验证。</p></div></li>
                 <li><span>02</span><div><h2>开始对话</h2><p>输入目标，开始协作。</p></div></li>
-                <li><span>03</span><div><h2>查看账户</h2><p>在右上角查看计划与剩余额度。</p></div></li>
+                <li><span>03</span><div><h2>管理余额</h2><p>在右上角查看余额并进行充值。</p></div></li>
               </ol>
             </div>
           </section>
@@ -112,21 +113,33 @@
 
     <dialog id="subscription-dialog" class="subscription-dialog" aria-labelledby="subscription-title">
       <div class="subscription-dialog-header">
-        <div><p>BOTGO ACCOUNT</p><h2 id="subscription-title">账户与订阅</h2></div>
-        <button class="dialog-close" id="subscription-close" type="button" aria-label="关闭账户与订阅">关闭</button>
+        <h2 id="subscription-title">账户</h2>
+        <button class="dialog-close" id="subscription-close" type="button" aria-label="关闭账户余额">×</button>
       </div>
       <section class="subscription-dialog-body">
         <p class="subscription-email" data-account-email>登录后查看</p>
-        <div class="subscription-summary" aria-label="当前订阅状态">
-          <div><span>当前计划</span><strong data-subscription-plan>Free</strong></div>
-          <div><span>剩余额度</span><strong data-subscription-credits>—</strong></div>
-          <div><span>到期时间</span><strong data-subscription-expiry>—</strong></div>
+        <div class="billing-balance-card" aria-label="账户余额">
+          <div>
+            <span class="billing-balance-label">可用余额</span>
+            <strong data-billing-balance>￥0.00</strong>
+          </div>
+          <span class="billing-account-state" data-billing-account-state hidden>未登录</span>
         </div>
-        <p class="subscription-status" data-subscription-status>登录后查看。</p>
-        <div class="subscription-upgrade">
-          <div><strong data-pro-name>Pro</strong><p id="subscription-upgrade-note">正在读取套餐…</p></div>
-          <button type="button" data-subscription-upgrade disabled aria-describedby="subscription-upgrade-note">暂不可购买</button>
-        </div>
+        <p class="subscription-status" data-subscription-status hidden>登录后查看。</p>
+        <section class="recharge-panel" aria-labelledby="recharge-title">
+          <div class="recharge-heading"><h3 id="recharge-title">充值</h3><span>支付宝</span></div>
+          <div class="recharge-options" role="radiogroup" aria-label="预设充值金额">
+            <button type="button" role="radio" data-recharge-option data-amount-cents="1000" aria-checked="true" tabindex="0">￥10</button>
+            <button type="button" role="radio" data-recharge-option data-amount-cents="5000" aria-checked="false" tabindex="-1">￥50</button>
+            <button type="button" role="radio" data-recharge-option data-amount-cents="10000" aria-checked="false" tabindex="-1">￥100</button>
+          </div>
+          <label class="recharge-input-label" for="recharge-amount">自定义金额</label>
+          <div class="recharge-input-wrap"><span aria-hidden="true">￥</span><input id="recharge-amount" type="number" min="10" max="9999" step="0.01" value="10.00" inputmode="decimal" autocomplete="off" aria-describedby="subscription-upgrade-note"></div>
+          <p id="subscription-upgrade-note" class="recharge-help">最低 ￥10，最高 ￥9999，支持两位小数。</p>
+          <button class="recharge-submit" type="button" data-subscription-upgrade disabled aria-describedby="subscription-upgrade-note">支付宝充值</button>
+        </section>
+        <p id="subscription-payment-status" class="subscription-status" role="status" aria-live="polite" aria-atomic="true"></p>
+        <div id="alipay-form-container" hidden aria-hidden="true"></div>
       </section>
     </dialog>
 
@@ -154,6 +167,6 @@
         <p class="form-status" id="verify-status" aria-live="polite"></p><button class="primary-auth-button" type="submit">验证邮箱</button>
       </form>
     </dialog>
-  <script src="./workspace.js"></script><script src="./workspace-billing.js"></script>
+    <script src="./workspace.js"></script><script src="./workspace-billing.js"></script><script src="./agent-install.js"></script>
 </body>
 </html>

@@ -1,8 +1,13 @@
 dist/
 node_modules/
 .wrangler/
+.npm-cache/
 worker/.dev.vars
 .secrets/
+/.alipay-sandbox.json
+*.csr
+*.pem
+*.key
 .DS_Store
 
 # 仅提交网站实际使用的生产图片

@@ -1,5 +1,13 @@
+import { handleAlipayRoute } from "./alipay-routes.js";
+
 const encoder = new TextEncoder();
 const CHANNELS = new Set(["web_chat", "desktop_codex"]);
+const CREDIT_SCALE = 100;
+
+function balanceYuan(value) {
+  const cents = Number(value);
+  return Number.isFinite(cents) ? Math.round(cents) / CREDIT_SCALE : 0;
+}
 
 function json(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store", ...headers } });
@@ -212,7 +220,6 @@ async function upstreamRoutes(request, env, path, admin, audit) {
 }
 
 async function billingAdminRoutes(request, env, path, admin, audit) {
-  if (path === "/admin/billing/plan" && request.method === "GET") return json({ plan: await env.DB.prepare("SELECT id, name, price_cents, included_credits, period_days, updated_at FROM billing_settings WHERE id = 'pro'").first(), paymentAvailable: false, paymentConfigurationDetected: Boolean(env.ALIPAY_APP_ID && env.ALIPAY_PRIVATE_KEY && env.ALIPAY_PUBLIC_KEY) });
   if (path === "/admin/billing/plan" && request.method === "PUT") {
     const body = await bodyOf(request); const price = Number(body?.priceCents); const credits = Number(body?.includedCredits);
     if (!Number.isInteger(price) || price < 1 || price > 100000000 || !Number.isInteger(credits) || credits < 1 || credits > 100000000) return json({ error: "价格或额度不正确。" }, 400);
@@ -222,7 +229,7 @@ async function billingAdminRoutes(request, env, path, admin, audit) {
   if (grant && request.method === "POST") {
     const accountId = decodeURIComponent(grant[1]); const plan = await env.DB.prepare("SELECT included_credits, period_days FROM billing_settings WHERE id = 'pro'").first(); if (!plan) return json({ error: "Pro 套餐尚未配置。" }, 503);
     const current = await env.DB.prepare("SELECT expires_at FROM subscriptions WHERE account_id = ?").bind(accountId).first(); const currentExpiry = Date.parse(current?.expires_at || ""); const periodStart = Number.isFinite(currentExpiry) && currentExpiry > Date.now() ? currentExpiry : Date.now(); const expiresAt = new Date(periodStart + plan.period_days * 86400000).toISOString();
-    const result = await env.DB.prepare("UPDATE accounts SET credit_balance = ? WHERE id = ?").bind(plan.included_credits, accountId).run(); if (!result.meta?.changes) return json({ error: "账户不存在。" }, 404);
+    const result = await env.DB.prepare("UPDATE accounts SET credit_balance = ? WHERE id = ?").bind(plan.included_credits * CREDIT_SCALE, accountId).run(); if (!result.meta?.changes) return json({ error: "账户不存在。" }, 404);
     await env.DB.prepare("INSERT INTO subscriptions (account_id, plan, status, expires_at, updated_at) VALUES (?, 'pro', 'active', ?, CURRENT_TIMESTAMP) ON CONFLICT(account_id) DO UPDATE SET plan = 'pro', status = 'active', expires_at = excluded.expires_at, updated_at = CURRENT_TIMESTAMP").bind(accountId, expiresAt).run(); await audit(env, admin.id, "subscription_granted", { accountId, expiresAt, credits: plan.included_credits }); return json({ ok: true, expiresAt, credits: plan.included_credits });
   }
   return null;
@@ -233,7 +240,7 @@ async function operationsRoutes(request, env, path) {
     const url = new URL(request.url); const query = `%${(url.searchParams.get("query") || "").trim().slice(0, 100)}%`; const status = url.searchParams.get("status") || "all"; const page = Math.max(1, Number(url.searchParams.get("page")) || 1); const limit = 25; const offset = (page - 1) * limit;
     const where = status === "active" || status === "suspended" ? "WHERE a.email LIKE ? AND a.status = ?" : "WHERE a.email LIKE ?"; const bindings = status === "active" || status === "suspended" ? [query, status] : [query];
     const rows = await env.DB.prepare(`SELECT a.id, a.email, a.role, a.status, a.credit_balance, a.created_at, s.plan, s.expires_at FROM accounts a LEFT JOIN subscriptions s ON s.account_id = a.id ${where} ORDER BY a.created_at DESC LIMIT ? OFFSET ?`).bind(...bindings, limit, offset).all();
-    const total = await env.DB.prepare(`SELECT COUNT(*) AS count FROM accounts a ${where}`).bind(...bindings).first(); return json({ accounts: rows.results || [], page, pages: Math.max(1, Math.ceil(Number(total?.count || 0) / limit)), total: Number(total?.count || 0) });
+    const total = await env.DB.prepare(`SELECT COUNT(*) AS count FROM accounts a ${where}`).bind(...bindings).first(); return json({ accounts: (rows.results || []).map((row) => ({ ...row, credit_balance: balanceYuan(row.credit_balance), credit_balance_cents: Number(row.credit_balance) || 0 })), page, pages: Math.max(1, Math.ceil(Number(total?.count || 0) / limit)), total: Number(total?.count || 0) });
   }
   if (path === "/admin/audit" && request.method === "GET") {
     const url = new URL(request.url); const event = (url.searchParams.get("event") || "").trim().slice(0, 80); const page = Math.max(1, Number(url.searchParams.get("page")) || 1); const limit = 40; const offset = (page - 1) * limit;
@@ -258,9 +265,17 @@ async function releaseAdminRoutes(request, env, path, admin, audit) {
 async function signedDownloadToken(env, releaseId, accountId, expires) { const key = await crypto.subtle.importKey("raw", encoder.encode(env.AUTH_SECRET), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]); return base64url(new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(`${releaseId}.${accountId}.${expires}`)))); }
 
 export async function handlePlatformRoute(request, env, path, helpers) {
-  if (path.startsWith("/admin/")) { const admin = await helpers.activeAdminFor(request, env); if (!admin) return json({ error: "需要管理员权限。" }, 403); return await upstreamRoutes(request, env, path, admin, helpers.audit) || await billingAdminRoutes(request, env, path, admin, helpers.audit) || await releaseAdminRoutes(request, env, path, admin, helpers.audit) || await operationsRoutes(request, env, path); }
-  if (path === "/billing/plan" && request.method === "GET") { const plan = await env.DB.prepare("SELECT id, name, price_cents, included_credits, period_days FROM billing_settings WHERE id = 'pro'").first(); return json({ plan, paymentAvailable: false }); }
-  if (path === "/billing/checkout" && request.method === "POST") return json({ error: "支付宝支付尚未配置，当前不能创建订单。" }, 503);
+  if (path.startsWith("/admin/")) {
+    const admin = await helpers.activeAdminFor(request, env);
+    if (!admin) return json({ error: "需要管理员权限。" }, 403);
+    return await upstreamRoutes(request, env, path, admin, helpers.audit)
+      || await handleAlipayRoute(request, env, path, { ...helpers, admin })
+      || await billingAdminRoutes(request, env, path, admin, helpers.audit)
+      || await releaseAdminRoutes(request, env, path, admin, helpers.audit)
+      || await operationsRoutes(request, env, path);
+  }
+  const alipayResponse = await handleAlipayRoute(request, env, path, helpers);
+  if (alipayResponse) return alipayResponse;
   if (path === "/desktop/releases/current" && request.method === "GET") { const session = await helpers.sessionFor(request, env); if (!session) return json({ error: "请先登录。" }, 401); const row = await env.DB.prepare("SELECT id, version, file_name, size_bytes, sha256, notes, published_at FROM desktop_releases WHERE platform = 'win-x64' AND status = 'published' LIMIT 1").first(); if (!row) return json({ release: null }); const expires = Math.floor(Date.now() / 1000) + 300; const token = await signedDownloadToken(env, row.id, session.sub, expires); return json({ release: { ...row, downloadUrl: `/api/desktop/releases/${row.id}/download?account=${encodeURIComponent(session.sub)}&expires=${expires}&token=${token}` } }); }
   const download = path.match(/^\/desktop\/releases\/([0-9a-f-]+)\/download$/i);
   if (download && request.method === "GET") { const url = new URL(request.url); const account = url.searchParams.get("account") || ""; const expires = Number(url.searchParams.get("expires")); const token = url.searchParams.get("token") || ""; if (!account || !Number.isInteger(expires) || expires < Math.floor(Date.now() / 1000) || token !== await signedDownloadToken(env, download[1], account, expires)) return json({ error: "下载链接无效或已过期。" }, 403); const row = await env.DB.prepare("SELECT object_key, file_name FROM desktop_releases WHERE id = ? AND status = 'published'").bind(download[1]).first(); if (!row || !env.DESKTOP_RELEASES) return json({ error: "安装包不可用。" }, 404); const object = await env.DESKTOP_RELEASES.get(row.object_key); if (!object) return json({ error: "安装包不存在。" }, 404); const safeName = row.file_name.replace(/[^A-Za-z0-9._-]/g, "_") || "BotGo-Desktop.exe"; return new Response(object.body, { headers: { "content-type": "application/vnd.microsoft.portable-executable", "content-disposition": `attachment; filename="${safeName}"`, "content-length": String(object.size), "cache-control": "private, no-store", "x-content-type-options": "nosniff" } }); }

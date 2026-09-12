@@ -8,7 +8,7 @@ function messageOf(message) {
   return {
     id: String(message?.id || crypto.randomUUID()),
     role: ["user", "assistant", "system"].includes(message?.role) ? message.role : "system",
-    content: String(message?.content || "").slice(0, 50000),
+    content: String(message?.content || ""),
     kind: ["message", "progress", "error", "files"].includes(message?.kind) ? message.kind : "message",
     files: Array.isArray(message?.files) ? message.files.filter((file) => typeof file === "string").slice(0, 200) : [],
     createdAt: String(message?.createdAt || now())

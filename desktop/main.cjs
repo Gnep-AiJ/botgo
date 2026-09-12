@@ -1,17 +1,30 @@
 const { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } = require("electron");
 const { spawn, execFile } = require("node:child_process");
+
+// Chromium starts its GPU process before runtime command-line changes are applied on
+// affected Windows hosts. Relaunch once with the switches already on process.argv;
+// the renderer sandbox remains enabled in the child process.
+const gpuFallbackArgs = ["--disable-gpu", "--disable-gpu-compositing"];
+if (process.platform === "win32" && !process.argv.includes("--disable-gpu")) {
+  const relaunch = spawn(process.execPath, [...gpuFallbackArgs, ...process.argv.slice(1)], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: false
+  });
+  relaunch.unref();
+  app.exit(0);
+}
 const { promisify } = require("node:util");
 const http = require("node:http");
 const path = require("node:path");
 const fs = require("node:fs");
 const { createCredentialStore } = require("./lib/credential-store.cjs");
 const { createLocalStateStore } = require("./lib/local-state.cjs");
-const { prepareBotGoConfig, restoreOriginalConfig } = require("./lib/codex-config.cjs");
-const { createTaskRunner } = require("./lib/task-runner.cjs");
+const { restoreOriginalConfig } = require("./lib/codex-config.cjs");
 const { callbackResultFor, createWebAuthorizationProof } = require("./lib/web-auth.cjs");
 
 const execFileAsync = promisify(execFile);
-const CODEX_CLI_VERSION = "0.91.0";
+const { agentRoot, nativeCommand, openNativeTerminal, createCodexRunner, writeCodexConfig } = require("./lib/agent-runtime.cjs");
 function buildTimeApiOrigin() {
   try { return require("./runtime-config.cjs").apiOrigin || ""; } catch { return ""; }
 }
@@ -32,7 +45,8 @@ function appPaths() {
     history: path.join(data, "state.json"),
     backups: path.join(data, "backups"),
     metadata: path.join(data, "runtime.json"),
-    codexConfig: path.join(app.getPath("home"), ".codex", "config.toml")
+    codexConfig: path.join(app.getPath("home"), ".codex", "config.toml"),
+    codexHome: path.join(data, "codex")
   };
 }
 
@@ -204,23 +218,28 @@ async function credential() {
   return value;
 }
 
-async function codexIsAvailable() {
-  try { await execFileAsync("codex", ["--version"], { windowsHide: true }); return true; } catch { return false; }
-}
-
-async function prepareRuntime(confirmConfigReplace) {
+async function prepareRuntime() {
   const paths = appPaths();
-  if (!(await codexIsAvailable())) {
-    await execFileAsync("npm", ["install", "--global", `@openai/codex@${CODEX_CLI_VERSION}`], { windowsHide: false });
-  }
-  const prepared = prepareBotGoConfig({
-    configPath: paths.codexConfig,
-    backupDirectory: paths.backups,
-    relayUrl: requireApiOrigin(),
-    confirmed: confirmConfigReplace
-  });
-  fs.writeFileSync(paths.metadata, JSON.stringify({ backupPath: prepared.backupPath || null }), "utf8");
-  return { ready: true, existingConfigurationBackedUp: Boolean(prepared.backupPath) };
+  const command = nativeCommand(agentRoot);
+  await execFileAsync(command, ["--version"], { windowsHide: true });
+  // Preserve resumable sessions belonging to BotGo's known local threads only.
+  const oldSessions = path.join(app.getPath("home"), ".codex", "sessions");
+  const ids = new Set(state().load().threads.map(t => t.sessionId).filter(Boolean));
+  const copySessions = directory => {
+    if (!fs.existsSync(directory)) return;
+    for (const item of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (item.isSymbolicLink()) continue;
+      const source = path.join(directory, item.name);
+      if (item.isDirectory()) copySessions(source);
+      else if (item.name.endsWith(".jsonl") && [...ids].some(id => item.name.includes(id))) {
+        const target = path.join(paths.codexHome, "sessions", path.relative(oldSessions, source));
+        if (!fs.existsSync(target)) { fs.mkdirSync(path.dirname(target), { recursive: true }); fs.copyFileSync(source, target, fs.constants.COPYFILE_EXCL); }
+      }
+    }
+  };
+  if (ids.size) copySessions(oldSessions);
+  writeCodexConfig({ codexHome: paths.codexHome, relayOrigin: requireApiOrigin() });
+  return { ready: true };
 }
 
 function createWindow() {
@@ -230,12 +249,12 @@ function createWindow() {
     height: 780,
     minWidth: 760,
     minHeight: 650,
-    backgroundColor: "#07182d",
+    backgroundColor: "#1b1c1f",
     icon: path.join(__dirname, "assets", "botgo-desktop.ico"),
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   mainWindow.setMenuBarVisibility(false);
-  mainWindow.loadFile("index.html");
+  mainWindow.loadFile(path.join(__dirname, "index.html"));
 }
 
 app.whenReady().then(() => {
@@ -262,25 +281,30 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("task:start", async (_event, task) => {
     if (activeTask) throw new Error("已有任务正在运行。");
+    if (!task || typeof task.prompt !== "string" || !task.prompt.trim() || typeof task.projectPath !== "string" || !fs.statSync(task.projectPath).isDirectory()) throw new Error("请选择项目并输入任务。");
+    if (!["read-only", "workspace-write", "full-access"].includes(task.mode)) throw new Error("权限模式无效。");
+    if (task.mode === "full-access" && !task.confirmedFullAccess) throw new Error("完全访问需要确认。");
     const current = await credential();
     const account = await apiRequest("/desktop/account", { deviceToken: current.deviceToken });
     if (!Number.isFinite(account.account?.credits) || account.account.credits < 1) throw new Error("额度不足。请前往 BotGo 网站管理账户。");
     const issued = await apiRequest("/desktop/key", { method: "POST", deviceToken: current.deviceToken });
-    credentials().save({ ...current, desktopKey: issued.key });
+    await prepareRuntime();
     const history = state().load();
     let thread = history.threads.find((item) => item.id === task.threadId && item.projectPath === task.projectPath);
     if (!thread) thread = { id: crypto.randomUUID(), projectPath: task.projectPath, title: task.prompt.slice(0, 64), sessionId: "", status: "idle", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     const entry = { ...thread, title: thread.messages.length ? thread.title : task.prompt.slice(0, 64), status: "running", updatedAt: new Date().toISOString(), messages: [...thread.messages, { id: crypto.randomUUID(), role: "user", kind: "message", content: task.prompt, files: [], createdAt: new Date().toISOString() }] };
     state().save({ ...history, selectedProject: entry.projectPath, selectedThreadId: entry.id, recentProjects: [entry.projectPath, ...history.recentProjects.filter((item) => item !== entry.projectPath)], threads: [entry, ...history.threads.filter((item) => item.id !== entry.id)] });
-    const runner = createTaskRunner({ spawn });
+    const runner = createCodexRunner({ command: nativeCommand(agentRoot) });
     activeTask = runner.start({
       id: entry.id,
       projectPath: entry.projectPath,
-      prompt: entry.prompt,
-      mode: task.mode,
+      prompt: task.prompt,
+      permission: task.mode,
       confirmedFullAccess: task.confirmedFullAccess,
       sessionId: entry.sessionId,
-      environment: { BOTGO_CODEX_API_KEY: issued.key },
+      codexHome: appPaths().codexHome,
+      relayKey: issued.key,
+      relayOrigin: requireApiOrigin(),
       onEvent(event) {
         if (event.type === "session") entry.sessionId = event.sessionId;
         if (event.type === "progress" && event.message) entry.messages.push({ id: crypto.randomUUID(), role: "assistant", kind: "message", content: event.message, files: [], createdAt: new Date().toISOString() });
@@ -308,6 +332,14 @@ app.whenReady().then(() => {
     });
     return { id: entry.id };
   });
+  ipcMain.handle("runtime:open-terminal", async (_event, { projectPath, sessionId }) => {
+    if (activeTask) throw new Error("请先停止当前任务。");
+    if (!state().load().recentProjects.includes(projectPath)) throw new Error("请先选择项目。");
+    await prepareRuntime();
+    const current = await credential();
+    const issued = await apiRequest("/desktop/key", { method: "POST", deviceToken: current.deviceToken });
+    return openNativeTerminal({ command: nativeCommand(agentRoot), projectPath, codexHome: appPaths().codexHome, relayKey: issued.key, relayOrigin: requireApiOrigin(), sessionId });
+  });
   ipcMain.handle("task:stop", async () => { activeTask?.stop(); return { ok: true }; });
   ipcMain.handle("account:revoke-device", async () => {
     const current = await credential();
@@ -322,4 +354,4 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-app.on("before-quit", () => { closeActiveAuthorization(); });
+app.on("before-quit", () => { activeTask?.stop(); closeActiveAuthorization(); });

@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import { handleAgentRelease } from '../worker/src/agent-releases.js';
+const calls=[];const env={DESKTOP_RELEASES:{async get(key){calls.push(key);return {body:'data',size:4}}}};
+let response=await handleAgentRelease(new Request('https://test/agent/releases/current'),env,'/agent/releases/current');
+assert.equal(response.status,200);assert.equal(response.headers.get('cache-control'),'no-store');assert.equal(calls.at(-1),'agent/current.json');
+response=await handleAgentRelease(new Request('https://test/agent/releases/0.1.0/download'),env,'/agent/releases/0.1.0/download');
+assert.equal(calls.at(-1),'agent/0.1.0/botgo-agent-win-x64.zip');assert.equal(response.headers.get('content-type'),'application/zip');
+for(const path of ['/agent/releases/../../private','/agent/releases/1.2.3%2fsecret/download','/agent/releases/1.2.3/other'])assert.equal((await handleAgentRelease(new Request('https://test/'),env,path)).status,404);
+response=await handleAgentRelease(new Request('https://test/',{method:'POST'}),env,'/agent/releases/current');assert.equal(response.status,405);
+console.log('Agent public artifact boundary tests passed');

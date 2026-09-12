@@ -4,6 +4,7 @@
   const allowedViews = new Set(["chat", "agents", "tutorials"]);
   const params = new URLSearchParams(window.location.search);
   const openedFromLegacySubscription = params.get("view") === "subscription";
+  const returnedOutTradeNo = params.get("out_trade_no") || "";
   let activeView = allowedViews.has(params.get("view")) ? params.get("view") : "chat";
   let account = null;
   let messages = [];
@@ -112,6 +113,12 @@
     if (updateHistory) updateUrl();
   }
 
+  function formatBalance(balanceCents) {
+    const cents = Number(balanceCents);
+    if (!Number.isFinite(cents)) return "—";
+    return `￥${(Math.round(cents) / 100).toLocaleString("zh-CN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
   function renderAccountState() {
     const accountButton = document.getElementById("account-button");
     const accountPopover = document.getElementById("account-popover");
@@ -119,9 +126,9 @@
     const accountStatus = document.getElementById("account-status");
     const loginButton = document.getElementById("login-button");
     const registerButton = document.getElementById("register-button");
-    const plan = account?.plan === "free" || !account?.plan ? "Free" : account.plan;
-    const credits = account?.credits ?? 0;
-    const summary = `${plan} · ${credits} 额度`;
+    const balanceCents = account ? Number(account.balanceCents ?? Math.round(Number(account.credits || 0) * 100)) : 0;
+    const balance = account ? formatBalance(balanceCents) : "—";
+    const summary = account ? `余额 ${balance}` : "登录后开始对话";
     composerNote.textContent = account ? summary : "登录后开始对话";
     accountPopover.hidden = !account;
     loginButton.hidden = Boolean(account);
@@ -136,10 +143,9 @@
       accountMenu.hidden = true;
       accountButton.setAttribute("aria-expanded", "false");
     }
-    document.querySelectorAll("[data-subscription-plan]").forEach((node) => { node.textContent = plan; });
-    document.querySelectorAll("[data-subscription-credits]").forEach((node) => { node.textContent = account ? String(credits) : "—"; });
-    document.querySelectorAll("[data-subscription-expiry]").forEach((node) => { node.textContent = account?.subscriptionExpiresAt ? new Date(account.subscriptionExpiresAt).toLocaleDateString("zh-CN") : "—"; });
-    document.querySelectorAll("[data-subscription-status]").forEach((node) => { node.textContent = account ? summary : "登录后查看。"; });
+    document.querySelectorAll("[data-billing-balance]").forEach((node) => { node.textContent = account ? balance : "—"; });
+    document.querySelectorAll("[data-billing-account-state]").forEach((node) => { node.textContent = account ? "可用" : "未登录"; });
+    document.querySelectorAll("[data-subscription-status]").forEach((node) => { node.textContent = account ? "余额可用于网页对话与桌面端任务。" : "登录后查看余额并充值。"; });
   }
 
   function setAccountMenu(open) {
@@ -152,6 +158,15 @@
   function openSubscriptionDialog() {
     setAccountMenu(false);
     if (!subscriptionDialog.open) subscriptionDialog.showModal();
+  }
+
+  async function reconcileReturnedOrder() {
+    if (!returnedOutTradeNo) return;
+    await api("/billing/query", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ outTradeNo: returnedOutTradeNo })
+    });
   }
 
   function resetStatuses() {
@@ -355,5 +370,16 @@
 
   setView(activeView, true);
   if (openedFromLegacySubscription) openSubscriptionDialog();
-  api("/account").then((result) => { account = result.account; renderAccountState(); }).catch(renderAccountState);
+  async function refreshAccount() {
+    try {
+      if (returnedOutTradeNo) await reconcileReturnedOrder();
+      const result = await api("/account");
+      account = result.account;
+      renderAccountState();
+    } catch {
+      renderAccountState();
+    }
+  }
+  window.addEventListener("botgo:account-refresh", refreshAccount);
+  refreshAccount();
 })();

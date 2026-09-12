@@ -1,0 +1,11 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /agent
+    schedule:
+      interval: daily
+    versioning-strategy: increase
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - botgo-agent

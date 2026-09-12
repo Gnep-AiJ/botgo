@@ -16,7 +16,7 @@
         <a href="#overview" data-admin-nav="overview"><svg aria-hidden="true"><use href="#icon-grid"/></svg>概览</a>
         <a href="#upstreams" data-admin-nav="upstreams"><svg aria-hidden="true"><use href="#icon-route"/></svg>上游与路由</a>
         <a href="#accounts" data-admin-nav="accounts"><svg aria-hidden="true"><use href="#icon-users"/></svg>用户与邀请码</a>
-        <a href="#billing" data-admin-nav="billing"><svg aria-hidden="true"><use href="#icon-card"/></svg>订阅</a>
+        <a href="#billing" data-admin-nav="billing"><svg aria-hidden="true"><use href="#icon-card"/></svg>充值</a>
         <a href="#releases" data-admin-nav="releases"><svg aria-hidden="true"><use href="#icon-download"/></svg>桌面发布</a>
         <a href="#audit" data-admin-nav="audit"><svg aria-hidden="true"><use href="#icon-list"/></svg>审计日志</a>
       </nav>
@@ -54,7 +54,7 @@
         </section>
 
         <section class="admin-view" data-admin-view="billing" hidden>
-          <div class="settings-layout"><section class="panel"><div class="panel-heading"><div><p>当前套餐</p><h2>Pro 订阅</h2></div><span class="status-pill warning" id="payment-state">购买未开放</span></div><form id="billing-form" class="settings-form"><label>套餐名称<input value="Pro" disabled></label><div class="field-row"><label>30 天价格（元）<input name="priceYuan" type="number" min="0.01" step="0.01" required></label><label>每期额度<input name="includedCredits" type="number" min="1" required></label></div><p class="form-help">保存只调整套餐配置，不会自动向已有账户扣款。</p><div class="form-actions"><button class="button primary" type="submit">保存套餐</button></div></form><p class="action-status" id="billing-status" role="status" aria-live="polite"></p></section><aside class="context-panel"><h2>生效规则</h2><ul><li>订阅周期固定为 30 天。</li><li>人工开通会使用本期额度。</li><li>支付回调完成前购买保持关闭。</li></ul></aside></div>
+          <div class="settings-layout"><section class="panel"><div class="panel-heading"><div><p>支付宝收款</p><h2>按量充值</h2></div><span class="status-pill warning" id="payment-state">充值未开放</span></div><form id="billing-form" class="settings-form"><label>计费模式<input value="按量余额" disabled></label><div class="field-row"><label>兼容价格（元）<input name="priceYuan" type="number" min="0.01" step="0.01" required></label><label>兼容额度<input name="includedCredits" type="number" min="1" required></label></div><p class="form-help">工作台充值金额由用户选择 ￥10–￥9999；这里仅保留旧订阅数据的兼容配置。</p><div class="form-actions"><button class="button primary" type="submit">保存兼容配置</button></div></form><p class="action-status" id="billing-status" role="status" aria-live="polite"></p></section><aside class="context-panel"><h2>生效规则</h2><ul><li>用户充值金额由工作台实时选择。</li><li>支付回调完成后才增加账户余额。</li><li>历史 Pro 配置不再作为新的充值套餐。</li></ul></aside></div>
         </section>
 
         <section class="admin-view" data-admin-view="releases" hidden>
