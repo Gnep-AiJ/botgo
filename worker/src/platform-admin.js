@@ -105,7 +105,7 @@ export async function probeProfile(env, row, channel, modelId) {
   let capability = { ok: false, status: 0, latencyMs: 0, errorCode: "network_error" };
   try {
     const started=Date.now();
-    const response = await fetch(`${row.base_url}/${endpoint}`, { method: "POST", headers, body: JSON.stringify(payload),signal:AbortSignal.timeout(45000),redirect:'error' });
+    const response = await fetch(`${row.base_url}/${endpoint}`, { method: "POST", headers, body: JSON.stringify(payload),signal:AbortSignal.timeout(45000),redirect:'manual' });
     capability = { ok:false, status:response.status,latencyMs:Date.now()-started,errorCode:classifyFailure(response.status) };
     if(response.ok&&response.headers.get('content-type')?.includes('text/event-stream')){
       const observer=usageObserver(),reader=response.body.getReader(),decoder=new TextDecoder();let text='',size=0;
@@ -119,14 +119,14 @@ export async function probeProfile(env, row, channel, modelId) {
         const call=output.find(i=>i.type==='function_call'&&i.name==='botgo_probe');
         if(!call?.call_id){capability.ok=false;capability.errorCode='missing_tool_call';}
         else{
-          const resumed=await fetch(`${row.base_url}/responses`,{method:'POST',headers,signal:AbortSignal.timeout(45000),redirect:'error',body:JSON.stringify({model:modelId,stream:true,max_output_tokens:32,input:[{role:'user',content:'Call botgo_probe with value OK.'},...output,{type:'function_call_output',call_id:call.call_id,output:'OK'}],tools:payload.tools})});
+          const resumed=await fetch(`${row.base_url}/responses`,{method:'POST',headers,signal:AbortSignal.timeout(45000),redirect:'manual',body:JSON.stringify({model:modelId,stream:true,max_output_tokens:32,input:[{role:'user',content:'Call botgo_probe with value OK.'},...output,{type:'function_call_output',call_id:call.call_id,output:'OK'}],tools:payload.tools})});
           if(!resumed.ok||!resumed.headers.get('content-type')?.includes('text/event-stream')){await resumed.body?.cancel();capability.ok=false;capability.errorCode='tool_resume_failed';}
           else{const meter=usageObserver(),r=resumed.body.getReader();let bytes=0;for(;;){const {done,value}=await r.read();if(done)break;bytes+=value.length;if(bytes>1024*1024){await r.cancel();throw new Error('probe_too_large');}meter.push(value);}if(!meter.finish()){capability.ok=false;capability.errorCode='resume_missing_usage';}}
         }
       }
       capability.latencyMs=Date.now()-started;
     }else await response.body?.cancel();
-  } catch (error) { capability.errorCode = error?.name === "AbortError" ? "timeout" : "network_error"; }
+  } catch (error) { capability.errorCode = ['AbortError','TimeoutError'].includes(error?.name) ? "timeout" : /redirect/i.test(error?.message||'') ? 'redirect_error' : error?.name==='TypeError' ? 'request_type_error' : "network_error"; }
 
   await env.DB.prepare("INSERT INTO upstream_route_probes (profile_id, channel, model_id, status, http_status, latency_ms, error_code, tested_at, metering_verified) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1) ON CONFLICT(profile_id, channel, model_id) DO UPDATE SET status = excluded.status, http_status = excluded.http_status, latency_ms = excluded.latency_ms, error_code = excluded.error_code, tested_at = CURRENT_TIMESTAMP, metering_verified=1")
     .bind(row.id, channel, modelId, capability.ok ? "ok" : "failed", capability.status, capability.latencyMs, capability.errorCode).run();

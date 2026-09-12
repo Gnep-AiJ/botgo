@@ -13,7 +13,7 @@ function window(options={}){const win=new BrowserWindow({width:1440,height:1000,
 app.whenReady().then(async()=>{
  try{
   const web=window();
-  for(const width of [1440,390,360])for(const theme of ['light','dark']){
+  for(const width of [1920,1440,768,390,360])for(const theme of ['light','dark']){
     web.setContentSize(width,900);await web.loadURL('http://127.0.0.1:4173/workspace.html?preview=chat');
     await pause(250);await run(web,`localStorage.setItem('botgo-theme','${theme}');if(document.documentElement.dataset.theme!=='${theme}')document.querySelector('#theme-toggle').click();document.querySelector('#model-picker').click()`);
     const menu=await run(web,`(()=>{const m=document.querySelector('.botgo-menu:not([hidden])'),r=m.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,count:m.querySelectorAll('button').length,width:innerWidth,height:innerHeight,overflow:document.documentElement.scrollWidth>innerWidth}})()`);
@@ -24,8 +24,15 @@ app.whenReady().then(async()=>{
     await run(web,`document.querySelector('#chat-input').value='展示代码示例';document.querySelector('#chat-input').dispatchEvent(new Event('input'));document.querySelector('#chat-form').requestSubmit()`);
     await pause(200);assert.equal(await run(web,`document.querySelectorAll('.message-body pre code').length`),1);
     await shot(web,`web-chat-${width}-${theme}`);results.push({type:'web',width,theme,menu,markdown:true});
+    for(const selector of ['#account-button','#account-menu [data-open-subscription]']){
+      const point=await run(web,`(()=>{const e=document.querySelector('${selector}'),r=e.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2),hit:e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}})()`);
+      assert.equal(point.hit,true,`${selector} blocked at ${width}`);
+      web.webContents.sendInputEvent({type:'mouseDown',x:point.x,y:point.y,button:'left',clickCount:1});web.webContents.sendInputEvent({type:'mouseUp',x:point.x,y:point.y,button:'left',clickCount:1});await pause(80);
+    }
+    assert.equal(await run(web,`document.querySelector('#subscription-dialog').open`),true);
+    await run(web,`document.querySelector('#subscription-dialog').close()`);
   }
-  for(const view of ['agents','tutorials']){web.setContentSize(390,900);await web.loadURL(`http://127.0.0.1:4173/workspace.html?view=${view}`);await shot(web,'web-'+view);assert.equal(await run(web,'document.documentElement.scrollWidth>innerWidth'),false);}
+  for(const width of [1440,390])for(const theme of ['light','dark'])for(const view of ['agents','tutorials']){web.setContentSize(width,900);await web.loadURL(`http://127.0.0.1:4173/workspace.html?view=${view}`);await run(web,`if(document.documentElement.dataset.theme!=='${theme}')document.querySelector('#theme-toggle').click()`);await shot(web,`web-${view}-${width}-${theme}`);assert.equal(await run(web,'document.documentElement.scrollWidth>innerWidth'),false);}
   await web.loadURL('http://127.0.0.1:4173/workspace.html?preview=account');await shot(web,'web-account');assert.equal(await run(web,`document.querySelector('#subscription-dialog').open`),true);web.destroy();
   const models=['gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna','gpt-5.5','gpt-5.4','gpt-6-astra'].map(id=>({id,name:id,enabled:id!=='gpt-6-astra',agent:true}));
   ipcMain.handle('models:get',()=>({defaultModel:models[0].id,models}));ipcMain.handle('account:get',()=>({account:{email:'preview@botgo.local',credits:20,balanceCents:2000}}));

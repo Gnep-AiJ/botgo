@@ -290,11 +290,11 @@ export function publicPaymentConfiguration(env = {}) {
 export async function publicPaymentDiagnostics(env = {}) {
   const configuration = alipayPaymentConfiguration(env);
   if (!configuration.available) return { privateKey: "not_checked", publicKey: "not_checked" };
-  return diagnoseAlipayKeyMaterial({
-    privateKey: configuration.privateKey,
-    publicKey: configuration.alipayPublicKey,
-    publicCertificate: configuration.publicCert
-  });
+  const signing = await diagnoseAlipayKeyMaterial({ privateKey: configuration.privateKey });
+  const verification = await diagnoseAlipayKeyMaterial({ publicKey: configuration.alipayPublicKey, publicCertificate: configuration.publicCert });
+  // The merchant signs with its private key; Alipay signs with a different key.
+  // Comparing these unrelated key pairs produces a false configuration alarm.
+  return { privateKey: signing.privateKey, publicKey: verification.publicKey, keyPair: 'not_applicable' };
 }
 
 // Kept exported for deterministic unit tests and diagnostics without exposing key material.

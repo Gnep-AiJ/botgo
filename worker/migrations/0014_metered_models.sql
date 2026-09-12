@@ -27,10 +27,10 @@ CREATE TABLE metered_requests (
 );
 CREATE INDEX metered_account_time ON metered_requests(account_id,created_at);
 CREATE TRIGGER metering_reserve BEFORE INSERT ON metered_requests BEGIN
- SELECT CASE WHEN NEW.state <> 'reserved' OR NOT EXISTS(
+ SELECT RAISE(ABORT,'BILLING_INSUFFICIENT') WHERE NEW.state <> 'reserved' OR NOT EXISTS(
   SELECT 1 FROM accounts WHERE id=NEW.account_id AND status='active' AND billing_blocked=0
   AND credit_balance*10000+credit_remainder_micros-billing_reserved_micros>=NEW.reserved_micros
- ) THEN RAISE(ABORT,'BILLING_INSUFFICIENT') END;
+ );
  UPDATE accounts SET billing_reserved_micros=billing_reserved_micros+NEW.reserved_micros WHERE id=NEW.account_id;
 END;
 CREATE TRIGGER metering_settle AFTER UPDATE OF state ON metered_requests

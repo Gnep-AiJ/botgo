@@ -99,7 +99,7 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
   const timeout=setTimeout(()=>abort.abort(),180000);
   let response;
   try {
-    response=await fetch(`${upstream.baseUrl}/${chat?'chat/completions':'responses'}`,{method:'POST',headers:{authorization:`Bearer ${upstream.apiKey}`,'content-type':'application/json'},body:JSON.stringify(payload),signal:abort.signal,redirect:'error'});
+    response=await fetch(`${upstream.baseUrl}/${chat?'chat/completions':'responses'}`,{method:'POST',headers:{authorization:`Bearer ${upstream.apiKey}`,'content-type':'application/json'},body:JSON.stringify(payload),signal:abort.signal,redirect:'manual'});
     if(!response.ok||!response.body){clearTimeout(timeout);await settle(env,id,null,snapshot,'refunded');return reply({error:'模型请求未完成，本次未扣费。'},response.status===429?429:502);}
   } catch {clearTimeout(timeout);await settle(env,id,null,snapshot,'refunded');return reply({error:'无法连接模型服务，本次未扣费。'},502);}
   const headers={'content-type':response.headers.get('content-type')||'application/json','cache-control':'no-store','x-botgo-request-id':id};

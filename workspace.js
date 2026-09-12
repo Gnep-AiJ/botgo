@@ -38,7 +38,21 @@
   latestButton.addEventListener('click',()=>{scrollArea.scrollTop=scrollArea.scrollHeight;latestButton.hidden=true;});
   scrollArea.addEventListener('scroll',()=>{latestButton.hidden=nearBottom();});
   BotGoUI.menu(modelPicker,()=>availableModels.map(m=>({value:m.id,label:m.name,selected:m.id===selectedModel,disabled:!m.enabled||!m.web})),id=>{selectedModel=id;modelPicker.textContent=`${availableModels.find(m=>m.id===id).name} ⌄`;try{localStorage.setItem('botgo-model',id)}catch{}},{label:'选择模型',up:true});
-  async function loadModels(){try{const data=accountPreview?{defaultModel:'gpt-5.6-sol',models:['gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna','gpt-5.5','gpt-5.4','gpt-6-astra'].map(id=>({id,name:id.replace('gpt-','GPT-'),enabled:id!=='gpt-6-astra',web:true}))}:await api('/models');availableModels=data.models;let saved;try{saved=localStorage.getItem('botgo-model')}catch{}selectedModel=availableModels.some(m=>m.id===saved&&m.enabled&&m.web)?saved:data.defaultModel;const selected=availableModels.find(m=>m.id===selectedModel);modelPicker.textContent=`${selected?.name||'模型暂不可用'} ⌄`;modelPicker.disabled=!availableModels.length;}catch{modelPicker.textContent='模型暂不可用';modelPicker.disabled=true;}}
+  const modelRetry=document.createElement('button');modelRetry.type='button';modelRetry.className='model-retry';modelRetry.textContent='重试';modelRetry.hidden=true;modelPicker.after(modelRetry);
+  async function loadModels(){
+    modelRetry.hidden=true;modelPicker.textContent='加载模型…';modelPicker.disabled=true;
+    try{
+      const data=accountPreview?{defaultModel:'gpt-5.6-sol',models:['gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna','gpt-5.5','gpt-5.4','gpt-6-astra'].map(id=>({id,name:id.replace('gpt-','GPT-'),enabled:id!=='gpt-6-astra',web:true}))}:await api('/models');
+      if(!Array.isArray(data.models))throw new Error('Invalid model catalog');
+      availableModels=data.models;
+      let saved;try{saved=localStorage.getItem('botgo-model')}catch{}
+      const usable=availableModels.filter(m=>m.enabled&&m.web);
+      const selected=usable.find(m=>m.id===saved)||usable.find(m=>m.id===data.defaultModel)||usable[0];
+      selectedModel=selected?.id||'';modelPicker.textContent=selected?`${selected.name} ⌄`:'暂无可用模型';
+      modelPicker.disabled=!availableModels.length;modelRetry.hidden=!!selected;
+    }catch{availableModels=[];selectedModel='';modelPicker.textContent='模型加载失败';modelPicker.disabled=true;modelRetry.hidden=false;}
+  }
+  modelRetry.addEventListener('click',loadModels);
   loadModels();
   document.getElementById('stop-chat').addEventListener('click',()=>chatController?.abort());
   function syncComposer(){chatInput.style.height='auto';chatInput.style.height=`${Math.min(168,chatInput.scrollHeight)}px`;chatForm.querySelector('[type=submit]').disabled=chatSending||!chatInput.value.trim();}
@@ -144,7 +158,8 @@
     const balanceCents = account ? Number(account.balanceCents ?? Math.round(Number(account.credits || 0) * 100)) : 0;
     const balance = account ? formatBalance(balanceCents) : "—";
     const summary = account ? `余额 ${balance}` : "登录后开始对话";
-    composerNote.textContent = account ? summary : "登录后开始对话";
+    composerNote.textContent = account ? "" : "登录后开始对话";
+    document.getElementById('header-balance').hidden = !account;
     accountPopover.hidden = !account;
     loginButton.hidden = Boolean(account);
     registerButton.hidden = Boolean(account);
@@ -282,7 +297,7 @@
     const content = chatInput.value.trim();
     if (!content) return;
     if (!account) { showAuth("login"); return; }
-    if (!availableModels.some(m=>m.id===selectedModel&&m.enabled&&m.web)) return;
+    if (!availableModels.some(m=>m.id===selectedModel&&m.enabled&&m.web)) { modelRetry.hidden=false;modelPicker.textContent='请重试加载模型';return; }
     welcomeView.hidden = true;
     chatInput.value = "";
     const requestIndex=messages.length;
@@ -344,9 +359,9 @@
     const accountMenu = document.getElementById("account-menu");
     setAccountMenu(accountMenu.hidden);
   });
-  document.querySelector("[data-open-subscription]").addEventListener("click", () => {
+  document.querySelectorAll("[data-open-subscription]").forEach(button => button.addEventListener("click", () => {
     openSubscriptionDialog();
-  });
+  }));
   document.addEventListener("click", (event) => {
     const accountPopover = document.getElementById("account-popover");
     const accountMenu = document.getElementById("account-menu");

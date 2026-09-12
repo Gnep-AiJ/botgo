@@ -12,7 +12,7 @@ const worker = read("worker/src/index.js");
 const migration = read("worker/migrations/0002_codex_access.sql");
 
 assert.match(workspace, /BotGo Desktop/, "网页应保留 BotGo Desktop 产品说明");
-assert.match(workspace, /data-desktop-open/, "网页应保留独立的桌面端说明入口");
+assert.match(workspace, /release-pending.*即将推出/, "桌面端暂不发布");
 assert.match(workspace, /id="desktop-install-dialog"/, "桌面端说明应使用独立对话框");
 assert.match(client, /desktopInstallDialog\.showModal\(\)/, "客户端应打开桌面端说明对话框");
 assert.doesNotMatch(workspace, /\/downloads\/BotGo-Desktop-Setup\.exe/, "未托管安装包不应在网页提供下载入口");

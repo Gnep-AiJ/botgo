@@ -13,6 +13,7 @@ import {
   normalizeAmountCents,
   paidTradeNotification,
   paymentUrls,
+  publicPaymentDiagnostics,
   queryTrade,
   RECHARGE_MAX_CENTS,
   RECHARGE_MIN_CENTS,
@@ -134,6 +135,7 @@ const paymentUrl = await createPaymentUrl(testPaymentEnv, new Request("https://b
   amountCents: 1,
   subject: "BotGo GET 测试订单"
 });
+assert.deepEqual(await publicPaymentDiagnostics(testPaymentEnv), {privateKey:'valid',publicKey:'valid',keyPair:'not_applicable'}, 'merchant signing key and Alipay verification key must not be compared as one pair');
 const paymentUrlObject = new URL(paymentUrl);
 const paymentUrlParams = Object.fromEntries(paymentUrlObject.searchParams.entries());
 assert.equal(paymentUrlObject.origin, "https://openapi.example.invalid");

@@ -9,6 +9,7 @@ const env={BOTGO_MAINTENANCE:'1',BOTGO_RELEASE_BOOTSTRAP:'2026-09-12',UPSTREAM_B
 let calls=0;const originalFetch=globalThis.fetch;
 globalThis.fetch=async(url,init)=>{
  calls++;
+ assert.notEqual(init.redirect,'error','Workers runtime rejects redirect:error');
  if(url.endsWith('/models'))return Response.json({data:[]});
  const body=JSON.parse(init.body);
  if(['gpt-5.4','gpt-6-astra'].includes(body.model))return new Response('',{status:429});

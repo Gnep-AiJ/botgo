@@ -507,3 +507,66 @@ body { text-rendering:optimizeLegibility; }
 
 :root { color-scheme: light dark; --ink:#0b3150; --muted:#55758d; --line:rgb(92 151 189 / 24%); --blue:#0878f7; --cyan:#18c4ef; --surface:rgb(255 255 255 / 78%); --surface-strong:rgb(250 254 255 / 92%); --shadow:0 24px 70px rgb(20 87 127 / 17%); --stage-scrim:linear-gradient(100deg,rgb(236 249 255 / 94%),rgb(222 245 255 / 81%) 48%,rgb(205 238 255 / 69%)); --panel-fill:rgb(255 255 255 / 68%); --panel-strong:#f9fdff; font-family:"Microsoft YaHei UI","PingFang SC",system-ui,sans-serif; }
 * { box-sizing:border-box; }
+/* Header owns the overlay layer at every viewport width. */
+.workspace-header { position:relative; z-index:20; }
+.workspace-main { position:relative; z-index:0; }
+.auth-actions .header-balance { display:inline-flex; align-items:center; gap:8px; padding:0 12px; border:1px solid var(--line); background:var(--panel-strong); color:var(--ink); font-size:12px; font-weight:400; border-radius:12px; }
+.header-balance strong { font-size:13px; font-variant-numeric:tabular-nums; font-weight:600; }
+.auth-actions .header-balance[hidden] { display:none; }
+body:not([data-active-view="chat"]) { --ink:#252b32; --muted:#68717b; --panel-strong:#fff; --line:#dfe3e7; --copy-strong:var(--ink); --copy-muted:var(--muted); }
+:root body:not([data-active-view="chat"]) .workspace-main { background:transparent; }
+:root body:not([data-active-view="chat"]) .agent-choice { background:var(--panel-strong); border-color:var(--line); max-width:none; }
+:root body:not([data-active-view="chat"]) .content-panel { background:none; }
+body:not([data-active-view="chat"]) .content-panel :is(p,li,code) { font-weight:400; color:var(--muted); }
+body:not([data-active-view="chat"]) .content-panel :is(h1,h2) { color:var(--ink); }
+.model-retry { border:0; padding:8px; background:transparent; color:var(--blue); cursor:pointer; }
+.model-retry[hidden] { display:none; }
+:root[data-theme] body:not([data-active-view="chat"]) .workspace-stage { background:#f7f7f5; }
+:root[data-theme] body:not([data-active-view="chat"]) .workspace-scrim,
+:root[data-theme] body:not([data-active-view="chat"]) .workspace-main { background:none; }
+:root[data-theme] body:not([data-active-view="chat"]) .workspace-header { background:#f7f7f5; backdrop-filter:none; }
+body:not([data-active-view="chat"]) .content-panel { width:min(100%,1040px); padding:0; border:0; background:none; box-shadow:none; backdrop-filter:none; }
+body:not([data-active-view="chat"]) .workspace-view { align-content:start; padding:64px 32px 80px; }
+body:not([data-active-view="chat"]) .content-panel h1 { font-size:42px; font-weight:600; letter-spacing:-.035em; line-height:1.2; }
+body:not([data-active-view="chat"]) .view-lead { margin:14px 0 0; font-size:15px; }
+.agent-panel .agent-choices { display:flex; flex-direction:column; gap:20px; margin-top:36px; width:100%; }
+.agent-panel .agent-choice { min-height:0; padding:32px; background:var(--panel-strong); border:1px solid var(--line); border-radius:16px; box-shadow:none; }
+.agent-panel .agent-choice h2 { font-size:26px; font-weight:600; letter-spacing:-.035em; margin:12px 0; }
+.agent-panel .agent-choice p { color:var(--muted); }
+.agent-panel .agent-choice--desktop { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:24px 32px; }
+.release-pending { flex-shrink:0; padding:6px 12px; border-radius:20px; background:#eef0f2; color:#68717b; font-size:12px; }
+.agent-panel .install-command { display:flex; align-items:center; gap:16px; max-width:720px; margin-top:24px; padding:16px 18px; border:1px solid var(--line); border-radius:10px; background:#f7f8fa; }
+.agent-panel .install-command code { flex:1; font:14px/1.6 Consolas,monospace; overflow-wrap:anywhere; }
+.agent-panel .install-command button { flex-shrink:0; min-height:40px; padding:0 14px; border:1px solid var(--line); border-radius:8px; color:var(--ink); background:var(--panel-strong); cursor:pointer; }
+.agent-panel .install-steps { display:flex; gap:32px; margin-top:24px; padding:0; list-style:none; counter-reset:install; font-size:14px; }
+.agent-panel .install-steps li { flex:1; counter-increment:install; }
+.agent-panel .install-steps li::before { content:counter(install); display:block; color:var(--muted); margin-bottom:8px; font-size:12px; }
+.cli-install-status:empty { display:none; }
+.guide-layout { display:grid; grid-template-columns:180px minmax(0,1fr); gap:56px; margin-top:40px; }
+.guide-layout .guide-tabs { display:flex; flex-direction:column; align-self:start; gap:4px; margin:0; padding:0 20px 0 0; border:0; border-right:1px solid var(--line); }
+.guide-layout .guide-tabs button { text-align:left; border:0; border-radius:8px; padding:12px; font-size:14px; color:var(--muted); }
+.guide-layout .guide-tabs [aria-selected="true"] { color:#0868c7; background:#e9f1fa; font-weight:600; }
+.guide-content { min-width:0; max-width:680px; }
+.guide-content h2 { font-size:26px; margin:0 0 24px; font-weight:600; letter-spacing:-.03em; }
+.guide-content .install-steps { padding-left:22px; font-size:15px; line-height:1.9; }
+.guide-content .install-steps li { padding:8px 0 16px 8px; }
+.guide-note { font-size:14px; color:var(--muted); line-height:1.8; }
+.guide-content .guide-faq { margin-top:0; }
+:root[data-theme="dark"] body:not([data-active-view="chat"]) { --ink:#e8eaed; --muted:#a1a7af; --panel-strong:#24282d; --line:#393e45; }
+:root[data-theme="dark"] body:not([data-active-view="chat"]) .workspace-stage,
+:root[data-theme="dark"] body:not([data-active-view="chat"]) .workspace-header { background:#1b1e22; }
+:root[data-theme="dark"] .agent-panel .install-command { background:#1b1e22; }
+:root[data-theme="dark"] .guide-layout .guide-tabs [aria-selected="true"] { background:#25394c; color:#9aceff; }
+@media(max-width:760px) {
+ .header-balance span { display:none; }
+ .auth-actions .header-balance { padding:0 8px; }
+ body:not([data-active-view="chat"]) .workspace-view { padding:36px 20px 56px; }
+ .guide-layout { grid-template-columns:1fr; gap:28px; margin-top:28px; }
+ .guide-layout .guide-tabs { flex-direction:row; flex-wrap:wrap; padding:0 0 12px; border-right:0; border-bottom:1px solid var(--line); }
+ .guide-layout .guide-tabs button { padding:10px; }
+ .agent-panel .agent-choice { padding:24px; }
+ .agent-panel .install-steps { flex-direction:column; gap:0; }
+ .agent-panel .install-steps li::before { display:inline; margin-right:10px; }
+ .agent-panel .agent-choice--desktop { align-items:flex-start; padding:24px; }
+ body:not([data-active-view="chat"]) .content-panel h1 { font-size:34px; }
+}
