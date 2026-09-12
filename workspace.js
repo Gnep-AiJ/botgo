@@ -10,6 +10,7 @@
   let activeView = allowedViews.has(params.get("view")) ? params.get("view") : "chat";
   let account = null;
   let messages = [];
+  let conversationId = null, historyAccount = null, historyEpoch = 0, historyRows = [], historyLoading = false, conversationLoading = false;
   let verificationPurpose = "register";
 
   const authDialog = document.getElementById("auth-dialog");
@@ -42,7 +43,7 @@
   async function loadModels(){
     modelRetry.hidden=true;modelPicker.textContent='加载模型…';modelPicker.disabled=true;
     try{
-      const data=accountPreview?{defaultModel:'gpt-5.6-sol',models:['gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna','gpt-5.5','gpt-5.4','gpt-6-astra'].map(id=>({id,name:id.replace('gpt-','GPT-'),enabled:id!=='gpt-6-astra',web:true}))}:await api('/models');
+      const data=accountPreview?{defaultModel:'gpt-5.6-sol',models:['gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna','gpt-5.5','gpt-6-astra'].map(id=>({id,name:id.replace('gpt-','GPT-'),enabled:true,web:true}))}:await api('/models');
       if(!Array.isArray(data.models))throw new Error('Invalid model catalog');
       availableModels=data.models;
       let saved;try{saved=localStorage.getItem('botgo-model')}catch{}
@@ -149,6 +150,12 @@
   }
 
   function renderAccountState() {
+    const nextHistoryAccount=account?.id||account?.email||null;
+    if(nextHistoryAccount!==historyAccount){
+      historyAccount=nextHistoryAccount;historyEpoch++;historyLoading=false;conversationLoading=false;chatController?.abort();
+      conversationId=null;messages=[];historyRows=[];chatLog.textContent='';welcomeView.hidden=false;renderHistory();
+      if(account&&!accountPreview)loadHistory();
+    }
     const accountButton = document.getElementById("account-button");
     const accountPopover = document.getElementById("account-popover");
     const accountMenu = document.getElementById("account-menu");
@@ -244,7 +251,7 @@
   async function api(path, options) {
     const response = await fetch(`/api${path}`, { credentials: "same-origin", ...options });
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error || "请求未完成，请稍后重试。");
+    if (!response.ok) {const error=new Error(body.error || "请求未完成，请稍后重试。");error.status=response.status;if(response.status===401){account=null;renderAccountState();}throw error;}
     return body;
   }
 
@@ -258,13 +265,79 @@
   }
 
   function resetConversation() {
-    if(chatSending)return;
+    if(chatSending||conversationLoading){historyStatus('请先停止生成或等待对话加载完成。');return;}
+    conversationId=null;
     messages = [];
     chatLog.textContent = "";
     welcomeView.hidden = false;
     setView("chat", true);
     chatInput.focus();
+    historyDialog.close();renderHistory();
   }
+
+  const historyDialog=document.createElement('dialog');historyDialog.className='history-dialog';
+  historyDialog.innerHTML='<div class="history-dialog-heading"><strong>历史对话</strong><button type="button" aria-label="关闭历史对话">关闭</button></div><button type="button" class="mobile-new-chat">新建对话</button><div class="mobile-history-list"></div><p class="mobile-history-status" role="status"></p><button type="button" class="mobile-history-retry" hidden>重试</button><button type="button" class="mobile-history-more" hidden>加载更多</button>';
+  document.body.append(historyDialog);
+  historyDialog.querySelector('.history-dialog-heading button').onclick=()=>historyDialog.close();
+  historyDialog.querySelector('.mobile-new-chat').onclick=resetConversation;
+  const historyOpen=document.createElement('button');historyOpen.type='button';historyOpen.className='history-open';historyOpen.textContent='历史对话';
+  historyOpen.onclick=()=>{historyDialog.showModal();if(account&&!accountPreview)loadHistory();};
+  document.querySelector('.workspace-view--chat').prepend(historyOpen);
+  const deleteDialog=document.createElement('dialog');deleteDialog.className='history-dialog';
+  deleteDialog.innerHTML='<h2>删除这段对话？</h2><p>删除后无法恢复。</p><div class="history-delete-actions"><button type="button" data-cancel>取消</button><button type="button" data-confirm>删除</button></div><p role="status"></p>';
+  document.body.append(deleteDialog);
+  deleteDialog.querySelector('[data-cancel]').onclick=()=>deleteDialog.close();
+  function historyStatus(text){document.getElementById('history-status').textContent=text;historyDialog.querySelector('.mobile-history-status').textContent=text;}
+  function historyControls(retry,more){document.getElementById('history-retry').hidden=!retry;document.getElementById('history-more').hidden=!more;historyDialog.querySelector('.mobile-history-retry').hidden=!retry;historyDialog.querySelector('.mobile-history-more').hidden=!more;}
+  function renderHistory(){
+    for(const list of [document.getElementById('history-list'),historyDialog.querySelector('.mobile-history-list')]){
+      list.replaceChildren();
+      for(const row of historyRows){
+        const item=document.createElement('div');item.className='history-row';
+        const open=document.createElement('button');open.type='button';open.className='history-title';open.textContent=row.title;open.title=row.title;open.setAttribute('aria-current',String(row.id===conversationId));open.onclick=()=>openConversation(row.id);
+        const remove=document.createElement('button');remove.type='button';remove.className='history-delete';remove.textContent='×';remove.setAttribute('aria-label',`删除对话：${row.title}`);remove.onclick=()=>confirmDelete(row);
+        item.append(open,remove);list.append(item);
+      }
+    }
+    historyStatus(account?(historyRows.length?'':'暂无历史对话'):'登录后查看历史对话');
+    if(!account)historyControls(false,false);
+  }
+  async function loadHistory(more=false){
+    if(!account||accountPreview||historyLoading)return;
+    const epoch=historyEpoch;historyLoading=true;historyStatus('正在加载…');historyControls(false,false);
+    try{const data=await api(`/conversations?offset=${more?historyRows.length:0}`);if(epoch!==historyEpoch)return;
+      historyRows=more?[...historyRows,...data.conversations.filter(row=>!historyRows.some(old=>old.id===row.id))]:data.conversations;renderHistory();historyControls(false,data.hasMore);
+    }catch(error){if(epoch===historyEpoch){historyStatus(error.message);historyControls(true,false);}}
+    finally{if(epoch===historyEpoch)historyLoading=false;}
+  }
+  async function openConversation(id){
+    if(chatSending||conversationLoading){historyStatus('请先停止生成或等待对话加载完成。');return;}
+    const epoch=historyEpoch;conversationLoading=true;historyStatus('正在打开…');
+    try{const data=await api(`/conversations/${id}`);if(epoch!==historyEpoch)return;
+      conversationId=id;messages=data.messages;chatLog.replaceChildren();welcomeView.hidden=messages.length>0;
+      for(const message of messages){const node=appendMessage(message.role,message.content);if(message.role==='assistant'){
+        BotGoUI.markdown(node,message.content||({running:'正在生成，请稍后重新打开',stopped:'已停止',failed:'请求未完成'}[message.state]||'没有返回内容'));
+        const detail=document.createElement('div');detail.className='message-tools';detail.textContent=[message.model,({running:'生成中',stopped:'已停止',failed:'未完成'}[message.state])].filter(Boolean).join(' · ');
+        if(message.content){const copy=document.createElement('button');copy.type='button';copy.textContent='复制';copy.onclick=()=>BotGoUI.copyText(message.content,copy);detail.append(copy);}node.after(detail);
+      }}
+      setView('chat',true);historyDialog.close();renderHistory();scrollArea.scrollTop=scrollArea.scrollHeight;
+    }catch(error){if(epoch===historyEpoch)historyStatus(error.message);}
+    finally{if(epoch===historyEpoch)conversationLoading=false;}
+  }
+  function confirmDelete(row){
+    if(chatSending||conversationLoading){historyStatus('请先停止生成或等待对话加载完成，再删除。');return;}
+    const epoch=historyEpoch;deleteDialog.querySelector('h2').textContent=`删除“${row.title}”？`;deleteDialog.querySelector('[role=status]').textContent='';deleteDialog.showModal();
+    const button=deleteDialog.querySelector('[data-confirm]');button.onclick=async()=>{
+      button.disabled=true;
+      try{await api(`/conversations/${row.id}`,{method:'DELETE'});if(epoch!==historyEpoch)return;
+        if(conversationId===row.id)resetConversation();historyRows=historyRows.filter(item=>item.id!==row.id);renderHistory();deleteDialog.close();loadHistory();
+      }catch(error){deleteDialog.querySelector('[role=status]').textContent=error.message;}finally{button.disabled=false;}
+    };
+  }
+  document.getElementById('history-retry').onclick=()=>loadHistory();
+  document.getElementById('history-more').onclick=()=>loadHistory(true);
+  historyDialog.querySelector('.mobile-history-retry').onclick=()=>loadHistory();
+  historyDialog.querySelector('.mobile-history-more').onclick=()=>loadHistory(true);
 
   async function consumeStream(response, target) {
     const reader = response.body.getReader();
@@ -293,7 +366,7 @@
 
   async function submitChat(event) {
     event.preventDefault();
-    if (chatSending) return;
+    if (chatSending || conversationLoading) return;
     const content = chatInput.value.trim();
     if (!content) return;
     if (!account) { showAuth("login"); return; }
@@ -301,6 +374,7 @@
     welcomeView.hidden = true;
     chatInput.value = "";
     const requestIndex=messages.length;
+    const requestEpoch=historyEpoch;
     messages.push({ role: "user", content });
     appendMessage("user", content);
     const responseNode = appendMessage("assistant", "正在连接模型…");
@@ -312,19 +386,25 @@
     const finishMessage=(answer)=>{BotGoUI.markdown(responseNode,answer);const tools=document.createElement('div');tools.className='message-tools';const copy=document.createElement('button');copy.type='button';copy.className='message-copy';copy.textContent='复制';copy.addEventListener('click',()=>BotGoUI.copyText(answer,copy));const model=document.createElement('span');model.className='message-model';model.textContent=requestModel;tools.append(copy,model);responseNode.after(tools);};
     try {
       if(accountPreview){const answer='这是本地对话预览。\n\n**模型和菜单**可以直接体验，不会发起真实请求。\n\n```powershell\nbotgo\n```';finishMessage(answer);messages.push({role:'assistant',content:answer,model:requestModel});return;}
+      const epoch=historyEpoch;
+      if(!conversationId){const created=await api('/conversations',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({title:content})});if(epoch!==historyEpoch)return;conversationId=created.id;}
+      if(chatController.signal.aborted)throw new DOMException('Stopped','AbortError');
       const response = await fetch("/api/chat/stream", {
         method: "POST", credentials: "same-origin", headers: { "content-type": "application/json" },
         signal:chatController.signal,
-        body: JSON.stringify({ model: requestModel, messages:messages.map(({role,content})=>({role,content})) })
+        body: JSON.stringify({ model: requestModel, conversationId, requestId:crypto.randomUUID(), content })
       });
       if (!response.ok || !response.body) {
         const body = await response.json().catch(() => ({}));
+        if(response.status===401){account=null;renderAccountState();}
         throw new Error(body.error || "对话请求未完成。");
       }
       const answer = await consumeStream(response, responseNode);
+      if(requestEpoch!==historyEpoch)return;
       if (answer) {messages.push({ role: "assistant", content: answer, model:requestModel });finishMessage(answer);}
       else responseNode.textContent = "模型没有返回内容，请重试。";
     } catch (error) {
+      if(requestEpoch!==historyEpoch)return;
       if(error.name==='AbortError'){const partial=responseNode.textContent;if(partial&&partial!=='正在连接模型…'){messages.push({role:'assistant',content:partial,model:requestModel});finishMessage(partial);}else responseNode.textContent='已停止';}
       else {responseNode.textContent=error.message;const retry=document.createElement('button');retry.type='button';retry.className='message-retry';retry.textContent='重试';retry.addEventListener('click',()=>{if(chatSending)return;if(messages.length!==requestIndex+1){chatInput.value=content;syncComposer();chatInput.focus();return;}messages.pop();responseNode.parentElement.previousElementSibling?.remove();responseNode.parentElement.remove();chatInput.value=content;syncComposer();chatForm.requestSubmit();});responseNode.after(retry);}
     } finally {
@@ -333,6 +413,7 @@
       sendButton.removeAttribute("aria-busy");
       sendButton.hidden=false;document.getElementById('stop-chat').hidden=true;modelPicker.disabled=false;chatController=null;syncComposer();window.dispatchEvent(new Event('botgo:account-refresh'));
       chatInput.focus();
+      if(account&&!accountPreview)loadHistory();
     }
   }
 
@@ -421,7 +502,8 @@
       const result = await api("/account");
       account = result.account;
       renderAccountState();
-    } catch {
+    } catch (error) {
+      if(error.status===401)account=null;
       renderAccountState();
     }
   }

@@ -510,10 +510,27 @@ body { text-rendering:optimizeLegibility; }
 /* Header owns the overlay layer at every viewport width. */
 .workspace-header { position:relative; z-index:20; }
 .workspace-main { position:relative; z-index:0; }
+.conversation-history { min-height:0; overflow-y:auto; }
+.history-row { display:flex; align-items:center; gap:4px; margin:3px 0; border-radius:10px; }
+.conversation-history .history-title,.history-dialog .history-title { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; padding:10px; }
+.history-row:has([aria-current="true"]),.history-row:hover { background:rgb(70 158 218 / 14%); }
+.conversation-history .history-delete,.history-dialog .history-delete { flex:none; width:40px; min-height:40px; padding:0; font-size:22px; }
+.history-open { display:none; }
+.history-dialog { width:min(440px,calc(100% - 32px)); max-height:80dvh; padding:24px; border:1px solid var(--line); border-radius:20px; background:var(--panel-strong); color:var(--ink); }
+.history-dialog-heading,.history-delete-actions { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.history-dialog h2 { font-size:20px; overflow-wrap:anywhere; }
+.history-dialog button { min-height:44px; border:0; border-radius:10px; background:transparent; color:inherit; cursor:pointer; padding:8px 12px; }
+.history-dialog button:hover { background:rgb(70 158 218 / 14%); }
+.history-dialog [data-confirm] { color:#c24444; }
+.history-dialog [hidden],.conversation-history [hidden] { display:none; }
+.history-dialog [role="status"],#history-status { font-size:12px; color:var(--muted); line-height:1.6; }
+.history-dialog::backdrop { background:rgb(4 30 52 / 42%); }
+@media(max-width:760px) {
+ .history-open { display:block; position:absolute; top:8px; left:14px; z-index:2; min-height:36px; padding:6px 12px; border:1px solid var(--line); border-radius:10px; background:var(--panel-strong); color:var(--ink); cursor:pointer; }
+}
 .auth-actions .header-balance { display:inline-flex; align-items:center; gap:8px; padding:0 12px; border:1px solid var(--line); background:var(--panel-strong); color:var(--ink); font-size:12px; font-weight:400; border-radius:12px; }
 .header-balance strong { font-size:13px; font-variant-numeric:tabular-nums; font-weight:600; }
 .auth-actions .header-balance[hidden] { display:none; }
-body:not([data-active-view="chat"]) { --ink:#252b32; --muted:#68717b; --panel-strong:#fff; --line:#dfe3e7; --copy-strong:var(--ink); --copy-muted:var(--muted); }
 :root body:not([data-active-view="chat"]) .workspace-main { background:transparent; }
 :root body:not([data-active-view="chat"]) .agent-choice { background:var(--panel-strong); border-color:var(--line); max-width:none; }
 :root body:not([data-active-view="chat"]) .content-panel { background:none; }
@@ -521,10 +538,6 @@ body:not([data-active-view="chat"]) .content-panel :is(p,li,code) { font-weight:
 body:not([data-active-view="chat"]) .content-panel :is(h1,h2) { color:var(--ink); }
 .model-retry { border:0; padding:8px; background:transparent; color:var(--blue); cursor:pointer; }
 .model-retry[hidden] { display:none; }
-:root[data-theme] body:not([data-active-view="chat"]) .workspace-stage { background:#f7f7f5; }
-:root[data-theme] body:not([data-active-view="chat"]) .workspace-scrim,
-:root[data-theme] body:not([data-active-view="chat"]) .workspace-main { background:none; }
-:root[data-theme] body:not([data-active-view="chat"]) .workspace-header { background:#f7f7f5; backdrop-filter:none; }
 body:not([data-active-view="chat"]) .content-panel { width:min(100%,1040px); padding:0; border:0; background:none; box-shadow:none; backdrop-filter:none; }
 body:not([data-active-view="chat"]) .workspace-view { align-content:start; padding:64px 32px 80px; }
 body:not([data-active-view="chat"]) .content-panel h1 { font-size:42px; font-weight:600; letter-spacing:-.035em; line-height:1.2; }
@@ -534,8 +547,8 @@ body:not([data-active-view="chat"]) .view-lead { margin:14px 0 0; font-size:15px
 .agent-panel .agent-choice h2 { font-size:26px; font-weight:600; letter-spacing:-.035em; margin:12px 0; }
 .agent-panel .agent-choice p { color:var(--muted); }
 .agent-panel .agent-choice--desktop { display:flex; align-items:center; justify-content:space-between; gap:24px; padding:24px 32px; }
-.release-pending { flex-shrink:0; padding:6px 12px; border-radius:20px; background:#eef0f2; color:#68717b; font-size:12px; }
-.agent-panel .install-command { display:flex; align-items:center; gap:16px; max-width:720px; margin-top:24px; padding:16px 18px; border:1px solid var(--line); border-radius:10px; background:#f7f8fa; }
+.release-pending { flex-shrink:0; padding:6px 12px; border-radius:20px; background:var(--surface); color:var(--muted); font-size:12px; }
+.agent-panel .install-command { display:flex; align-items:center; gap:16px; max-width:720px; margin-top:24px; padding:16px 18px; border:1px solid var(--line); border-radius:10px; background:var(--surface); }
 .agent-panel .install-command code { flex:1; font:14px/1.6 Consolas,monospace; overflow-wrap:anywhere; }
 .agent-panel .install-command button { flex-shrink:0; min-height:40px; padding:0 14px; border:1px solid var(--line); border-radius:8px; color:var(--ink); background:var(--panel-strong); cursor:pointer; }
 .agent-panel .install-steps { display:flex; gap:32px; margin-top:24px; padding:0; list-style:none; counter-reset:install; font-size:14px; }
@@ -552,10 +565,6 @@ body:not([data-active-view="chat"]) .view-lead { margin:14px 0 0; font-size:15px
 .guide-content .install-steps li { padding:8px 0 16px 8px; }
 .guide-note { font-size:14px; color:var(--muted); line-height:1.8; }
 .guide-content .guide-faq { margin-top:0; }
-:root[data-theme="dark"] body:not([data-active-view="chat"]) { --ink:#e8eaed; --muted:#a1a7af; --panel-strong:#24282d; --line:#393e45; }
-:root[data-theme="dark"] body:not([data-active-view="chat"]) .workspace-stage,
-:root[data-theme="dark"] body:not([data-active-view="chat"]) .workspace-header { background:#1b1e22; }
-:root[data-theme="dark"] .agent-panel .install-command { background:#1b1e22; }
 :root[data-theme="dark"] .guide-layout .guide-tabs [aria-selected="true"] { background:#25394c; color:#9aceff; }
 @media(max-width:760px) {
  .header-balance span { display:none; }

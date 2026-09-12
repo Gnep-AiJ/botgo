@@ -48,7 +48,10 @@
           <button class="new-chat-button" id="new-chat-button" type="button">新建对话</button>
           <div class="conversation-history" aria-label="最近对话">
             <p>最近对话</p>
-            <button type="button" data-history-item>从一个问题开始</button>
+            <div id="history-list"></div>
+            <p id="history-status" role="status">登录后查看历史对话</p>
+            <button id="history-retry" type="button" hidden>重试</button>
+            <button id="history-more" type="button" hidden>加载更多</button>
           </div>
           <a class="back-to-home" href="./index.html"><span aria-hidden="true">←</span> 返回 BotGo 首页</a>
         </aside>

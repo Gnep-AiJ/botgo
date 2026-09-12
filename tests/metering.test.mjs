@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { MODEL_SEEDS, costMicros, normalizedUsage, usageObserver, meteredProxy, settle } from '../worker/src/metering.js';
+import { startConversationTurn } from '../worker/src/conversations.js';
 
 const sql=new DatabaseSync(':memory:');
 for(const name of fs.readdirSync('worker/migrations').filter(n=>n.endsWith('.sql')).sort()) sql.exec(fs.readFileSync(`worker/migrations/${name}`,'utf8'));
@@ -46,8 +47,12 @@ globalThis.fetch=async(_url,init)=>{calls++;const payload=JSON.parse(init.body);
 const makeRequest=()=>new Request('https://botgo.test/chat/stream',{method:'POST',headers:{'idempotency-key':'same-request-123456'}});
 const options={accountId:'test',channel:'web_chat',body:{model:snapshot.model,messages:[{role:'user',content:'hi'}]},upstream:{profileId:'test-profile',baseUrl:'https://upstream.invalid/v1',apiKey:'test-only'}};
 try{
-  const response=await meteredProxy(makeRequest(),env,{waitUntil:p=>jobs.push(p)},options);
+  const conversationId=crypto.randomUUID();sql.prepare('INSERT INTO web_conversations(id,account_id,title) VALUES(?,?,?)').run(conversationId,'test','Integration');
+  const persisted=await startConversationTurn(env,'test',{conversationId,requestId:'same-request-123456',content:'hi',model:snapshot.model});
+  const response=await meteredProxy(makeRequest(),env,{waitUntil:p=>jobs.push(p)},{...options,body:persisted.body,history:persisted.history});
   assert.equal(response.status,200);assert.match(await response.text(),/OK/);await Promise.all(jobs);assert.equal(balance(),9987400);
+  assert.equal(sql.prepare('SELECT answer FROM web_chat_turns WHERE request_id=?').get('same-request-123456').answer,'OK');
+  assert.equal(sql.prepare('SELECT state FROM web_chat_turns WHERE request_id=?').get('same-request-123456').state,'completed');
   const duplicate=await meteredProxy(makeRequest(),env,{waitUntil:p=>jobs.push(p)},options);assert.equal(duplicate.status,409);assert.equal(calls,1);assert.equal(account().billing_reserved_micros,0);
   const invalid=await meteredProxy(makeRequest(),env,{}, {...options,body:{...options.body,model:'unknown'}});assert.equal(invalid.status,400);
   globalThis.fetch=async()=>new Response('data: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}});
@@ -55,8 +60,11 @@ try{
   sql.prepare('UPDATE model_catalog SET enabled=1 WHERE id=?').run(snapshot.model);
   let upstreamCancelled=false;
   globalThis.fetch=async()=>new Response(new ReadableStream({start(controller){controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'));},cancel(){upstreamCancelled=true;}}),{headers:{'content-type':'text/event-stream'}});
-  const stopped=await meteredProxy(new Request('https://botgo.test/chat/stream'),env,{waitUntil:p=>jobs.push(p)},options);
+  const interrupted=await startConversationTurn(env,'test',{conversationId,requestId:'interrupted-request-123456',content:'continue',model:snapshot.model});
+  const stopped=await meteredProxy(new Request('https://botgo.test/chat/stream'),env,{waitUntil:p=>jobs.push(p)},{...options,history:interrupted.history});
   const downstream=stopped.body.getReader();await downstream.read();await downstream.cancel();await Promise.all(jobs);
   assert.equal(upstreamCancelled,true);assert.equal(account().billing_reserved_micros,0);assert.equal(balance(),9987400,'cancel without usage does not invent a fee');
+  assert.equal(sql.prepare('SELECT answer FROM web_chat_turns WHERE request_id=?').get('interrupted-request-123456').answer,'partial');
+  assert.equal(sql.prepare('SELECT state FROM web_chat_turns WHERE request_id=?').get('interrupted-request-123456').state,'stopped');
 }finally{globalThis.fetch=originalFetch;sql.close();}
 console.log('Metering: migrations, precision, cache, reasoning, long context, atomic reserves, overrun, idempotency and SSE passed');

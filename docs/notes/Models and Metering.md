@@ -6,6 +6,8 @@ tags: [botgo, models, billing, agent]
 ---
 # 模型与实际用量计费
 
+最新变更：迁移 0015 已移除 GPT-5.4 当前目录；种子不再创建它，历史账单价格快照和旧探测证据保留。以下价格说明包含历史版本依据，不表示该模型仍可选择。
+
 上级：[[../PROJECT_MAP]] · 相关：[[Account and Billing]] · [[Desktop and CLI]] · [[Release 2026-09-12]]
 
 ## 入口与契约

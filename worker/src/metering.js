@@ -4,14 +4,13 @@ export const MODEL_SEEDS = [
   ['gpt-5.6-terra','GPT-5.6 Terra',2,.2,2.5,12],
   ['gpt-5.6-luna','GPT-5.6 Luna',.2,.02,.25,1.2],
   ['gpt-5.5','GPT-5.5',5,.5,5,30],
-  ['gpt-5.4','GPT-5.4',2.5,.25,2.5,15],
   ['gpt-6-astra','GPT-6 Astra',10,1,12.5,50]
 ].map(([id,name,input,cached,write,output]) => ({id,name,price:{input,cached,write,output,longThreshold:272000,longInput:2,longOutput:1.5,source:'https://developers.openai.com/api/docs/pricing',date:'2026-09-12',tier:'default'}}));
 
 export const reply = (body,status=200) => Response.json(body,{status,headers:{'cache-control':'no-store'}});
 export async function catalog(env) {
   const [rows,settings] = await Promise.all([
-    env.DB.prepare('SELECT * FROM model_catalog ORDER BY rowid').all(),
+    env.DB.prepare("SELECT * FROM model_catalog WHERE id<>'gpt-5.4' ORDER BY rowid").all(),
     env.DB.prepare('SELECT * FROM metering_settings WHERE id=1').first()
   ]);
   return {models:(rows.results||[]).map(r=>({...r,price:JSON.parse(r.price_json)})),settings};
@@ -63,7 +62,7 @@ export async function settle(env,id,usage,snapshot,state='completed') {
   await env.DB.prepare("UPDATE metered_requests SET state=?,cost_micros=?,usage_json=? WHERE id=? AND state='reserved'").bind(state,cost,usage?JSON.stringify(usage):null,id).run();
   if(state==='review') await env.DB.prepare("UPDATE model_catalog SET enabled=0 WHERE id=?").bind(snapshot.model).run();
 }
-export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstream}) {
+export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstream,history}) {
   // Recover abandoned reservations only after the upstream timeout has elapsed.
   await env.DB.batch([
     env.DB.prepare("UPDATE model_catalog SET enabled=0 WHERE id IN (SELECT model FROM metered_requests WHERE account_id=? AND state='reserved' AND created_at<datetime('now','-10 minutes'))").bind(accountId),
@@ -110,6 +109,7 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
       const bytes=new Uint8Array(size);let at=0;for(const c of chunks){bytes.set(c,at);at+=c.length;}
       const result=JSON.parse(new TextDecoder().decode(bytes));
       await settle(env,id,result.usage,snapshot);
+      if(history)await history.result(result);
       return new Response(bytes,{headers});
     } catch {await settle(env,id,null,snapshot,'review');return reply({error:'用量待核对，本次尚未扣费。'},502);}
     finally {clearTimeout(timeout);}
@@ -118,8 +118,8 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
   // A downstream cancel must interrupt an idle upstream read as well as a write.
   writer.closed.catch(()=>{abort.abort();return reader.cancel().catch(()=>{});});
   const pipeline=(async()=>{
-    try {for(;;){const {done,value}=await reader.read();if(done)break;observer.push(value);await writer.write(value);}await settle(env,id,observer.finish(),snapshot);await writer.close();}
-    catch(error){abort.abort();await reader.cancel().catch(()=>{});await settle(env,id,observer.latest(),snapshot,observer.latest()?'completed':'review');await writer.abort(error).catch(()=>{});}
+    try {for(;;){const {done,value}=await reader.read();if(done)break;observer.push(value);if(history)await history.push(value);await writer.write(value);}await settle(env,id,observer.finish(),snapshot);if(history)await history.finish('completed');await writer.close();}
+    catch(error){abort.abort();await reader.cancel().catch(()=>{});try{await settle(env,id,observer.latest(),snapshot,observer.latest()?'completed':'review');if(history)await history.finish(abort.signal.aborted?'stopped':'failed');}finally{await writer.abort(error).catch(()=>{});}}
     finally {clearTimeout(timeout);}
   })();
   ctx.waitUntil(pipeline);

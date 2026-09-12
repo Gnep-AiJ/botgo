@@ -1,6 +1,7 @@
 import { connect } from "cloudflare:sockets";
 import { DesktopAuthError, approveDesktopWebAuthorization, cancelDesktopWebAuthorization, desktopCredentialFor, desktopRelayCredentialFor, desktopWebAuthorizationFor, exchangeDesktopWebAuthorization, issueDesktopKey, revokeDesktopDevice, startDesktopWebAuthorization } from "./desktop-auth.js";
 import { handlePlatformRoute, resolveUpstreamConfig } from "./platform-admin.js";
+import { conversationRoute, startConversationTurn } from "./conversations.js";
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -577,15 +578,30 @@ export default {
     if (!env.DB || !env.AUTH_SECRET) return json({ error: "后端绑定尚未配置。" }, 503);
     const path = new URL(request.url).pathname;
     if (request.method === 'GET' && path === '/models') return json(publicCatalog(await catalog(env)));
+    if (path === '/conversations' || path.startsWith('/conversations/')) {
+      const identity = await sessionFor(request, env);
+      return await conversationRoute(request, env, identity?.sub, path) || json({error:'对话不存在。'},404);
+    }
     if (request.method === 'POST' && (path === '/v1/responses' || path === '/chat/stream')) {
       const channel = path === '/chat/stream' ? 'web_chat' : 'desktop_codex';
       const identity = channel === 'web_chat' ? await sessionFor(request, env) : await credentialFor(request, env, true);
       if (!identity) return json({error:'请先登录 BotGo。'},401);
       const body = await bodyOf(request);
-      if (!body || typeof body.model !== 'string' || (channel === 'web_chat' && !Array.isArray(body.messages))) return json({error:'请求不完整。'},400);
+      if (!body || typeof body.model !== 'string' || (channel === 'web_chat' && !body.conversationId && !Array.isArray(body.messages))) return json({error:'请求不完整。'},400);
       const upstream = await resolveUpstreamConfig(env, channel);
       if (!upstream) return json({error:'上游服务尚未配置。'},503);
-      return meteredProxy(request, env, ctx, {accountId:identity.sub || identity.account_id, channel, body, upstream});
+      const accountId=identity.sub || identity.account_id;
+      if(channel==='web_chat' && body.conversationId) {
+        const turn=await startConversationTurn(env,accountId,body);
+        if(turn.response)return turn.response;
+        try {
+          const headers=new Headers(request.headers);headers.set('idempotency-key',body.requestId);
+          const response=await meteredProxy(new Request(request.url,{method:request.method,headers,signal:request.signal}),env,ctx,{accountId,channel,body:turn.body,upstream,history:turn.history});
+          if(!response.ok)await turn.history.finish('failed');
+          return response;
+        } catch(error) {await turn.history.finish('failed');throw error;}
+      }
+      return meteredProxy(request, env, ctx, {accountId, channel, body, upstream});
     }
     const agentRelease = await handleAgentRelease(request, env, path);
     if (agentRelease) return agentRelease;

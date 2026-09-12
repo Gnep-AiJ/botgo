@@ -17,7 +17,7 @@ app.whenReady().then(async()=>{
     web.setContentSize(width,900);await web.loadURL('http://127.0.0.1:4173/workspace.html?preview=chat');
     await pause(250);await run(web,`localStorage.setItem('botgo-theme','${theme}');if(document.documentElement.dataset.theme!=='${theme}')document.querySelector('#theme-toggle').click();document.querySelector('#model-picker').click()`);
     const menu=await run(web,`(()=>{const m=document.querySelector('.botgo-menu:not([hidden])'),r=m.getBoundingClientRect();return {left:r.left,right:r.right,top:r.top,bottom:r.bottom,count:m.querySelectorAll('button').length,width:innerWidth,height:innerHeight,overflow:document.documentElement.scrollWidth>innerWidth}})()`);
-    assert.equal(menu.count,6);assert.ok(menu.left>=0&&menu.right<=menu.width&&menu.top>=0&&menu.bottom<=menu.height,JSON.stringify(menu));assert.equal(menu.overflow,false);
+    assert.equal(menu.count,5);assert.ok(menu.left>=0&&menu.right<=menu.width&&menu.top>=0&&menu.bottom<=menu.height,JSON.stringify(menu));assert.equal(menu.overflow,false);
     await shot(web,`web-menu-${width}-${theme}`);
     await run(web,`document.querySelector('.botgo-menu:not([hidden])').dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}))`);
     assert.equal(await run(web,`document.activeElement.id`),'model-picker');
