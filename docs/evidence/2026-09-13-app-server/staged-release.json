@@ -1,0 +1,20 @@
+{
+  "id": "a26db6c6-e173-4516-bd77-07954634734d",
+  "version": "1.2.1-preview.5",
+  "objectKey": "desktop/1.2.1-preview.5/BotGo-Setup-1.2.1-preview.5.exe",
+  "previousDesktop": {
+    "id": "cfb5988a-f4da-455e-a89c-7fdf377e9ad3",
+    "version": "1.2.1-preview.3",
+    "status": "published",
+    "object_key": "desktop/1.2.1-preview.3/BotGo-Setup-1.2.1-preview.3.exe",
+    "file_name": "BotGo Desktop Setup 1.2.1-preview.3.exe",
+    "sha256": "8119bcfc9181808c5d8696dbfe9a7ecf763e74e313fd79552c21d7fbb374317e",
+    "size_bytes": 182232224
+  },
+  "workerPreviousVersion": "cc31272c-7b3a-4b96-add6-5e0e3677d7a0",
+  "workerCron": [
+    "17 * * * *"
+  ],
+  "workerChange": "Desktop device auth for release current only",
+  "activation": "not executed; awaiting explicit Worker approval"
+}
