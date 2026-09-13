@@ -1,0 +1,130 @@
+{
+  "sourceCommit": "60d48f9d2c10d68aa8d090413538eef69510dda3",
+  "current": {
+    "cli": "0.2.2",
+    "desktop": "1.2.1-preview.3",
+    "pages": "bb4da74d-bbf9-4718-9800-43fd7ab10cc7"
+  },
+  "previous": {
+    "cli": "0.2.0",
+    "desktop": "1.0.0 (prior published; runtime and installer acceptance unverified)",
+    "pages": "0362a5bb-3cf0-4fff-a2c0-f79809398ff2"
+  },
+  "deleted": {
+    "r2Objects": 13,
+    "r2Bytes": 994789380,
+    "pagesDeployments": 14,
+    "githubWorkflowRuns": 15,
+    "githubArtifacts": 10,
+    "remoteBranches": 1,
+    "localBranches": 1,
+    "localTargets": 16
+  },
+  "retained": {
+    "r2": [
+      {
+        "key": "agent/0.2.0/botgo-agent-win-x64.zip",
+        "size": 138193876
+      },
+      {
+        "key": "agent/0.2.0/manifest.json",
+        "size": 248
+      },
+      {
+        "key": "agent/0.2.2/botgo-agent-win-x64.zip",
+        "size": 138196821
+      },
+      {
+        "key": "agent/0.2.2/manifest.json",
+        "size": 248
+      },
+      {
+        "key": "agent/current.json",
+        "size": 248
+      },
+      {
+        "key": "agent/previous.json",
+        "size": 248
+      },
+      {
+        "key": "desktop/1.2.1-preview.3/BotGo-Setup-1.2.1-preview.3.exe",
+        "size": 182232224
+      },
+      {
+        "key": "desktop/1.2.1-preview.3/manifest.json",
+        "size": 622
+      },
+      {
+        "key": "win/BotGo-Desktop-Setup-1.0.0.exe",
+        "size": 88395571
+      }
+    ],
+    "pages": [
+      {
+        "id": "bb4da74d-bbf9-4718-9800-43fd7ab10cc7",
+        "url": "https://bb4da74d.botgo.pages.dev",
+        "source": "60d48f9"
+      },
+      {
+        "id": "0362a5bb-3cf0-4fff-a2c0-f79809398ff2",
+        "url": "https://0362a5bb.botgo.pages.dev",
+        "source": "7142b4b"
+      }
+    ],
+    "githubWorkflowRuns": [
+      {
+        "conclusion": "success",
+        "databaseId": 34742376916,
+        "headSha": "60d48f9d2c10d68aa8d090413538eef69510dda3",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "databaseId": 34741081924,
+        "headSha": "5ae2a8f4b3d602e65ce0b2ccd620ff111a8cd212",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "databaseId": 34697655182,
+        "headSha": "7142b4b6ecf4f29c9a3fc41b0befd39b8458538f",
+        "status": "completed"
+      },
+      {
+        "conclusion": "success",
+        "databaseId": 34687450959,
+        "headSha": "4f645d10ec625cbb53fd16d43e3c84e955ec40b0",
+        "status": "completed"
+      }
+    ],
+    "githubArtifacts": [
+      {
+        "id": 10313551117,
+        "source": "60d48f9d2c10d68aa8d090413538eef69510dda3"
+      },
+      {
+        "id": 10312845493,
+        "source": "5ae2a8f4b3d602e65ce0b2ccd620ff111a8cd212"
+      },
+      {
+        "id": 10298983300,
+        "source": "7142b4b6ecf4f29c9a3fc41b0befd39b8458538f"
+      },
+      {
+        "id": 10295773669,
+        "source": "4f645d10ec625cbb53fd16d43e3c84e955ec40b0"
+      }
+    ],
+    "branches": [
+      "main",
+      "ui/botgo-desktop-redesign-draft"
+    ]
+  },
+  "limits": [
+    "Desktop install/upgrade/uninstall/history on another device pending",
+    "No accepted previous Desktop rollback; preview.2 retained locally as runtime-verified candidate",
+    "Authenticated website Desktop download not manually accepted",
+    "First/expired CLI authorization verified using fixtures; real existing credentials reached native TUI",
+    "Cloudflare analytics beacon blocked by existing CSP; application errors empty"
+  ]
+}

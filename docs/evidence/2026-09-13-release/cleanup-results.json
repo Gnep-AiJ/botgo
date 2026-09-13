@@ -1,0 +1,362 @@
+[
+  {
+    "kind": "r2",
+    "target": "agent/0.1.1/botgo-agent-win-x64.zip",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "r2",
+    "target": "agent/0.1.1/manifest.json",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "r2",
+    "target": "agent/0.1.2/botgo-agent-win-x64.zip",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "r2",
+    "target": "agent/0.1.2/manifest.json",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "r2",
+    "target": "agent/0.1.3/botgo-agent-win-x64.zip",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "r2",
+    "target": "agent/0.1.3/manifest.json",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "r2",
+    "target": "agent/0.2.1/botgo-agent-win-x64.zip",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "r2",
+    "target": "agent/0.2.1/manifest.json",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "r2",
+    "target": "desktop/1.1.0/BotGo-Setup-1.1.0.exe",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "r2",
+    "target": "desktop/1.1.1/BotGo-Setup-1.1.1.exe",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "r2",
+    "target": "desktop/1.1.2/BotGo-Setup-1.1.2.exe",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "r2",
+    "target": "desktop/1.2.0/BotGo-Setup-1.2.0.exe",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "r2",
+    "target": "desktop/1.2.1-preview.1/BotGo-Setup-1.2.1-preview.1.exe",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "pages",
+    "target": "90fdf2bf-50f2-430d-8e3b-b1b463bea7ba",
+    "status": "cli-skipped",
+    "detail": "Wrangler noninteractive fallback declined confirmation despite exit code 0; see pages-deletion-results.json for actual API results"
+  },
+  {
+    "kind": "pages",
+    "target": "dba3ebb5-12ca-4183-b2d8-4ab97a95ef52",
+    "status": "cli-skipped",
+    "detail": "Wrangler noninteractive fallback declined confirmation despite exit code 0; see pages-deletion-results.json for actual API results"
+  },
+  {
+    "kind": "pages",
+    "target": "a866fe34-0e36-4e0a-b6a3-6bda9c60918b",
+    "status": "cli-skipped",
+    "detail": "Wrangler noninteractive fallback declined confirmation despite exit code 0; see pages-deletion-results.json for actual API results"
+  },
+  {
+    "kind": "pages",
+    "target": "eb52ec3e-12f1-4bd4-be70-ef82622a56b1",
+    "status": "cli-skipped",
+    "detail": "Wrangler noninteractive fallback declined confirmation despite exit code 0; see pages-deletion-results.json for actual API results"
+  },
+  {
+    "kind": "pages",
+    "target": "2eb02ee6-8026-47d4-9694-d5564cd17d9a",
+    "status": "cli-skipped",
+    "detail": "Wrangler noninteractive fallback declined confirmation despite exit code 0; see pages-deletion-results.json for actual API results"
+  },
+  {
+    "kind": "pages",
+    "target": "79758c43-d9d6-4b66-9124-6707237c3932",
+    "status": "cli-skipped",
+    "detail": "Wrangler noninteractive fallback declined confirmation despite exit code 0; see pages-deletion-results.json for actual API results"
+  },
+  {
+    "kind": "pages",
+    "target": "85e695ac-12a2-41fe-a8e4-7552099ca4fe",
+    "status": "cli-skipped",
+    "detail": "Wrangler noninteractive fallback declined confirmation despite exit code 0; see pages-deletion-results.json for actual API results"
+  },
+  {
+    "kind": "pages",
+    "target": "43e35bc3-fae8-4083-88ad-5cc83e87902f",
+    "status": "cli-skipped",
+    "detail": "Wrangler noninteractive fallback declined confirmation despite exit code 0; see pages-deletion-results.json for actual API results"
+  },
+  {
+    "kind": "pages",
+    "target": "7977971e-570b-4556-98db-e7ae196ce05b",
+    "status": "cli-skipped",
+    "detail": "Wrangler noninteractive fallback declined confirmation despite exit code 0; see pages-deletion-results.json for actual API results"
+  },
+  {
+    "kind": "pages",
+    "target": "35d7a077-03c2-4f0e-aa77-6993a1537aa3",
+    "status": "cli-skipped",
+    "detail": "Wrangler noninteractive fallback declined confirmation despite exit code 0; see pages-deletion-results.json for actual API results"
+  },
+  {
+    "kind": "pages",
+    "target": "f8f90680-801a-4b91-9c2d-8687da373712",
+    "status": "cli-skipped",
+    "detail": "Wrangler noninteractive fallback declined confirmation despite exit code 0; see pages-deletion-results.json for actual API results"
+  },
+  {
+    "kind": "pages",
+    "target": "0e066eb5-36b5-4d9c-864f-3d7dd380ddd1",
+    "status": "cli-skipped",
+    "detail": "Wrangler noninteractive fallback declined confirmation despite exit code 0; see pages-deletion-results.json for actual API results"
+  },
+  {
+    "kind": "pages",
+    "target": "c9c75d21-314a-44d9-be34-c45fb4e547d7",
+    "status": "cli-skipped",
+    "detail": "Wrangler noninteractive fallback declined confirmation despite exit code 0; see pages-deletion-results.json for actual API results"
+  },
+  {
+    "kind": "pages",
+    "target": "46904303-5691-4e88-8883-7c7724fff351",
+    "status": "cli-skipped",
+    "detail": "Wrangler noninteractive fallback declined confirmation despite exit code 0; see pages-deletion-results.json for actual API results"
+  },
+  {
+    "kind": "github-run",
+    "target": 34694957446,
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "github-run",
+    "target": 34693466271,
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "github-run",
+    "target": 34691781003,
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "github-run",
+    "target": 34691780878,
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "github-run",
+    "target": 34690041400,
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "github-run",
+    "target": 34690041384,
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "github-run",
+    "target": 34688349025,
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "github-run",
+    "target": 34688276166,
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "github-run",
+    "target": 34688273841,
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "github-run",
+    "target": 34683791753,
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "github-run",
+    "target": 34683744554,
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "github-run",
+    "target": 34683625072,
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "github-run",
+    "target": 34683460435,
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "github-run",
+    "target": 34683254082,
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "github-run",
+    "target": 34682717399,
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "github-branch",
+    "target": "feat/botgo-cinematic-workspace",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "local",
+    "target": "agent/dist/botgo-agent-0.1.3-win-x64.zip",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "local",
+    "target": "agent/dist/botgo-agent-0.2.1-win-x64.zip",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "local",
+    "target": "agent/dist/package-70815a2e24f44705bc253e1f210e27c1",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "local",
+    "target": "agent/dist/package-fb4c0b20e3924eb38cca482907d80c20",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "local",
+    "target": "desktop/dist/BotGo Desktop Setup 1.1.2.exe",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "local",
+    "target": "desktop/dist/BotGo Desktop Setup 1.1.2.exe.blockmap",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "local",
+    "target": "desktop/dist/BotGo Desktop Setup 1.2.0.exe",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "local",
+    "target": "desktop/dist/BotGo Desktop Setup 1.2.0.exe.blockmap",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "local",
+    "target": "desktop/dist/BotGo Desktop Setup 1.2.1-preview.1.exe",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "local",
+    "target": "desktop/dist/BotGo Desktop Setup 1.2.1-preview.1.exe.blockmap",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "local",
+    "target": ".tmp-preview2-installer-check",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "local",
+    "target": ".tmp-old-desktop-check",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "local",
+    "target": ".tmp-release-acceptance/agent-0.2.1-readback.zip",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "local",
+    "target": ".tmp-release-acceptance/desktop-1.2.1-preview.1-readback.exe",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "local",
+    "target": "desktop/dist/win-unpacked",
+    "status": "deleted",
+    "detail": "Verified preview.1 and zero running owners"
+  },
+  {
+    "kind": "local",
+    "target": "desktop/dist/builder-debug.yml",
+    "status": "deleted",
+    "detail": ""
+  },
+  {
+    "kind": "local-branch",
+    "target": "feat/botgo-cinematic-workspace",
+    "status": "deleted",
+    "detail": "725d5c4 ancestor of retained source"
+  }
+]

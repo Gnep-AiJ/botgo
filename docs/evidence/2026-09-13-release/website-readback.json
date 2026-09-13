@@ -1,0 +1,158 @@
+{
+  "at": "2026-09-13T06:29:15.452Z",
+  "deployment": "https://bb4da74d.botgo.pages.dev",
+  "files": [
+    {
+      "file": "admin-layout.css",
+      "status": 200,
+      "sha256": "95df67b465a237f202dbd18e5007ddb273b1e11163efb8c821aaeab8bd63463c",
+      "type": "text/css; charset=utf-8"
+    },
+    {
+      "file": "admin-metering.js",
+      "status": 200,
+      "sha256": "29a6d56b088035c5d92290e008c6d5497d771ae576d7c30c13b1a9d586ef5828",
+      "type": "application/javascript"
+    },
+    {
+      "file": "admin-platform.js",
+      "status": 200,
+      "sha256": "bbddeb8f25344c5ac61ed332555ac88a8b5349077000f069563cba5aab53617e",
+      "type": "application/javascript"
+    },
+    {
+      "file": "admin.css",
+      "status": 200,
+      "sha256": "e165fbd2a343b3606294269b5aaeba504b43054c5734b93050a0e954f5915dca",
+      "type": "text/css; charset=utf-8"
+    },
+    {
+      "file": "admin.html",
+      "status": 200,
+      "sha256": "7de9e41003a5ca5656106ac127e4b6622fb9b4ae3fe50ecacb0d9cbe4aff076d",
+      "type": "text/html; charset=utf-8"
+    },
+    {
+      "file": "admin.js",
+      "status": 200,
+      "sha256": "91a45e3e697938c9bdeb6251c930c394ec76518838a257098d63c7ee040bee0a",
+      "type": "application/javascript"
+    },
+    {
+      "file": "agent-install.js",
+      "status": 200,
+      "sha256": "e8ab2f59686ae5767c7f9e889533297353c77f1959b9771443f6021e25642f42",
+      "type": "application/javascript"
+    },
+    {
+      "file": "app.js",
+      "status": 200,
+      "sha256": "aec55cede6a2e6b9e10b3d2fc41d32af298d0b7bef5bfab0b0ea823dd8fc9c0e",
+      "type": "application/javascript"
+    },
+    {
+      "file": "desktop-authorize.css",
+      "status": 200,
+      "sha256": "00c22531eb4b3c3d4e2b8705869f370d0b91bf477835949ab67247f17a7d1ae1",
+      "type": "text/css; charset=utf-8"
+    },
+    {
+      "file": "desktop-authorize.html",
+      "status": 200,
+      "sha256": "fa189e8cca655e09f3c77b8faf73803933bbda90d7322a53f89a6a655f77e2de",
+      "type": "text/html; charset=utf-8"
+    },
+    {
+      "file": "desktop-authorize.js",
+      "status": 200,
+      "sha256": "cd19d87aa959703586693001137755bea63092338e724f4c4d6dba2168d0469e",
+      "type": "application/javascript"
+    },
+    {
+      "file": "index.html",
+      "status": 200,
+      "sha256": "5974ba975f511ae05d201e10d2840194874308c62637d993685a5a369a64f75d",
+      "type": "text/html; charset=utf-8"
+    },
+    {
+      "file": "install.ps1",
+      "status": 200,
+      "sha256": "2439c060c83f387357ac7afb75e6b02a04464da34f68e3c6bdfa36a6f2437f99",
+      "type": "text/plain; charset=utf-8"
+    },
+    {
+      "file": "styles.css",
+      "status": 200,
+      "sha256": "9ff5c25d8d614cfdb01a5709aac65de89dad787e90b9946ba856400abd3a9fe0",
+      "type": "text/css; charset=utf-8"
+    },
+    {
+      "file": "ui-kit.css",
+      "status": 200,
+      "sha256": "2866f32c66a414a9498857b4504177c5d691af1a51f5b25222acfebe9e83a1eb",
+      "type": "text/css; charset=utf-8"
+    },
+    {
+      "file": "ui-kit.js",
+      "status": 200,
+      "sha256": "f8ed417daf1b4aec3e5da27976d1988b3fcc7e707ca26ecddda523084e3b3b64",
+      "type": "application/javascript"
+    },
+    {
+      "file": "Wechat.jpg",
+      "status": 200,
+      "sha256": "09aefa9cc82214de16dcd75512cc11914dbdcff739e14c72586d3df9d3c26f1b",
+      "type": "image/jpeg"
+    },
+    {
+      "file": "workspace-billing.js",
+      "status": 200,
+      "sha256": "6946f927b3cef7fa718cd99fa10c8dc0098e238eda1be5c78fa99a0f2bc497cf",
+      "type": "application/javascript"
+    },
+    {
+      "file": "workspace.css",
+      "status": 200,
+      "sha256": "b353e8ec9592582a36efc508032ccf913391e58f9f6e9d80c0309ac049db3e44",
+      "type": "text/css; charset=utf-8"
+    },
+    {
+      "file": "workspace.html",
+      "status": 200,
+      "sha256": "99d1c5f642bf23833d7402c9c7c9a9744ea503b052250710dc016d3562e86723",
+      "type": "text/html; charset=utf-8"
+    },
+    {
+      "file": "workspace.js",
+      "status": 200,
+      "sha256": "ebdaee16902af129f0ce857f9c8eab84a798570447c4753712efa47f07d307d3",
+      "type": "application/javascript"
+    },
+    {
+      "file": "assets/botgo-city-clean-mobile.webp",
+      "status": 200,
+      "sha256": "cf14c9de6a1caaaa97490f7aed5d3b91af51bcd4db4a8d9326b4f28c3ca21b92",
+      "type": "image/webp"
+    },
+    {
+      "file": "assets/botgo-city-clean-v2.webp",
+      "status": 200,
+      "sha256": "569f6a34ad4f92ba12a2db38aacb2bd2fd726899ee9d7a180fcab924b1e4aa6f",
+      "type": "image/webp"
+    },
+    {
+      "file": "assets/botgo-robot-dynamic-mobile.webp",
+      "status": 200,
+      "sha256": "a5b2cba505d9a60d3304754eed26f09179583dc38a21b920ea98a761b82a48ca",
+      "type": "image/webp"
+    },
+    {
+      "file": "assets/botgo-robot-dynamic-v2.webp",
+      "status": 200,
+      "sha256": "e528465a93f06652a5b3b8c4d0985b67f549a10c6c444b1ef6d56fa7e4282002",
+      "type": "image/webp"
+    }
+  ],
+  "agentCurrent": "0.2.2",
+  "health": 200
+}

@@ -1,0 +1,25 @@
+{
+  "at": "2026-09-13T06:36:14.435Z",
+  "cli": [
+    {
+      "version": "0.2.2",
+      "sha256": "184d7c2732004741d5cafd2401dffc244ca51f0fe3ea5fd68f3171d399ab74d6",
+      "fullDownloadHashPreviouslyMatched": true,
+      "postCleanupDownloadStatus": 200,
+      "size": 138196821,
+      "firstBytesRead": 644
+    },
+    {
+      "version": "0.2.0",
+      "sha256": "0a06ef7b43389608e2d79607eea9994a3d3afe32f950db60576c4d8d752e3a15",
+      "fullDownloadHashPreviouslyMatched": true,
+      "postCleanupDownloadStatus": 200,
+      "size": 138193876,
+      "firstBytesRead": 644
+    }
+  ],
+  "health": 200,
+  "previousWebsite": 200,
+  "desktopUnauthenticated": 401,
+  "desktopLimit": "Authenticated browser download and cross-device installer acceptance remain manual; R2 full installer hashes verified separately."
+}

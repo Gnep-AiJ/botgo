@@ -1,0 +1,94 @@
+[
+  {
+    "id": "90fdf2bf-50f2-430d-8e3b-b1b463bea7ba",
+    "status": 200,
+    "deleted": true,
+    "errors": []
+  },
+  {
+    "id": "dba3ebb5-12ca-4183-b2d8-4ab97a95ef52",
+    "status": 200,
+    "deleted": true,
+    "errors": []
+  },
+  {
+    "id": "a866fe34-0e36-4e0a-b6a3-6bda9c60918b",
+    "status": 200,
+    "deleted": true,
+    "errors": []
+  },
+  {
+    "id": "eb52ec3e-12f1-4bd4-be70-ef82622a56b1",
+    "status": 200,
+    "deleted": true,
+    "errors": []
+  },
+  {
+    "id": "2eb02ee6-8026-47d4-9694-d5564cd17d9a",
+    "status": 200,
+    "deleted": true,
+    "errors": []
+  },
+  {
+    "id": "79758c43-d9d6-4b66-9124-6707237c3932",
+    "deleted": true,
+    "initialAttempt": {
+      "status": 400,
+      "errors": [
+        {
+          "code": 8000035,
+          "message": "You cannot delete an aliased deployment without a `?force=true` parameter in the API request URL."
+        }
+      ]
+    },
+    "finalVerification": "Official force deletion succeeded; absent from final independent deployment list"
+  },
+  {
+    "id": "85e695ac-12a2-41fe-a8e4-7552099ca4fe",
+    "status": 200,
+    "deleted": true,
+    "errors": []
+  },
+  {
+    "id": "43e35bc3-fae8-4083-88ad-5cc83e87902f",
+    "status": 200,
+    "deleted": true,
+    "errors": []
+  },
+  {
+    "id": "7977971e-570b-4556-98db-e7ae196ce05b",
+    "status": 200,
+    "deleted": true,
+    "errors": []
+  },
+  {
+    "id": "35d7a077-03c2-4f0e-aa77-6993a1537aa3",
+    "status": 200,
+    "deleted": true,
+    "errors": []
+  },
+  {
+    "id": "f8f90680-801a-4b91-9c2d-8687da373712",
+    "status": 200,
+    "deleted": true,
+    "errors": []
+  },
+  {
+    "id": "0e066eb5-36b5-4d9c-864f-3d7dd380ddd1",
+    "status": 200,
+    "deleted": true,
+    "errors": []
+  },
+  {
+    "id": "c9c75d21-314a-44d9-be34-c45fb4e547d7",
+    "status": 200,
+    "deleted": true,
+    "errors": []
+  },
+  {
+    "id": "46904303-5691-4e88-8883-7c7724fff351",
+    "status": 200,
+    "deleted": true,
+    "errors": []
+  }
+]

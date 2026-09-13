@@ -1,0 +1,21 @@
+{
+  "checks": [
+    {
+      "version": "1.2.1-preview.3",
+      "key": "desktop/1.2.1-preview.3/BotGo-Setup-1.2.1-preview.3.exe",
+      "sha256": "8119bcfc9181808c5d8696dbfe9a7ecf763e74e313fd79552c21d7fbb374317e",
+      "fullReadbackHashVerified": true,
+      "postCleanupGet": 200,
+      "installerHeaderVerified": true
+    },
+    {
+      "version": "1.0.0",
+      "key": "win/BotGo-Desktop-Setup-1.0.0.exe",
+      "sha256": "0d0a918995f4b75d52cf2592067a0447bb18cb49d4a7aa164f4ae9d786273110",
+      "fullReadbackHashVerified": true,
+      "postCleanupGet": 200,
+      "installerHeaderVerified": true
+    }
+  ],
+  "scope": "Authenticated operator R2 reads; not a browser-session protected download or installer acceptance"
+}

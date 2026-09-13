@@ -2,7 +2,7 @@
 
 当前证据：[Release 2026-09-12](docs/notes/Release%202026-09-12.md)。
 
-2026-09-12 本轮仅发布网站静态资源并准备 Desktop 1.2.1-preview.1 / CLI 0.2.1 候选；以下历史迁移流程不适用于本轮，不执行迁移或 Worker 更新。客户端真实验收未齐全前，不切换 current。自签名预览使用 `desktop/scripts/package-preview.ps1`，需保持当前用户个人证书库中的固定非导出私钥；不安装根信任证书。Windows 默认仍不信任该身份，可能出现 SmartScreen 警告。遇到 winCodeSign 解压 macOS 符号链接失败时，仅在项目缓存中提取 Windows 工具，不能通过关闭防护或更改全局权限解决。
+2026-09-13 用户授权先发布自签名预览，Desktop 1.2.1-preview.3 / CLI 0.2.2 已激活，Pages bb4da74d 已上线；跨设备安装验收由用户上线后完成。以下历史迁移流程不适用于本轮，没有执行迁移或 Worker 更新。自签名预览使用 `desktop/scripts/package-preview.ps1`，保持当前用户个人证书库中的固定非导出私钥，不安装根信任证书。Windows 默认仍不信任该身份，可能出现 SmartScreen 警告。精确保留版本、清理结果和元数据恢复脚本见 [本轮证据](docs/evidence/2026-09-13-release/final-state.json)；不存在已完整验收的上一 Desktop 回滚版。
 
 使用现有 Pages `botgo`、Worker `botgo-api`、D1 `botgo`、私有 R2 `botgo-desktop-releases`。网站域名 `https://botgo.win`，GitHub `Gnep-AiJ/botgo`。保留 Git 历史、应用身份和下载入口。
 

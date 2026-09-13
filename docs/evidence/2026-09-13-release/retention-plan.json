@@ -1,0 +1,301 @@
+{
+  "status": "completed-and-independently-verified",
+  "source": "60d48f9d2c10d68aa8d090413538eef69510dda3",
+  "keep": {
+    "cli": [
+      "0.2.2",
+      "0.2.0"
+    ],
+    "desktop": [
+      "1.2.1-preview.3",
+      "1.0.0"
+    ],
+    "desktopLocalCandidate": "1.2.1-preview.2 (runtime verified only; not a prior published rollback)",
+    "website": [
+      "bb4da74d-bbf9-4718-9800-43fd7ab10cc7",
+      "0362a5bb-3cf0-4fff-a2c0-f79809398ff2"
+    ],
+    "gitEvidenceCommits": [
+      "60d48f9",
+      "7142b4b",
+      "4f645d1",
+      "5ae2a8f"
+    ]
+  },
+  "limitations": [
+    "Desktop 1.0.0 is the prior published artifact but global Codex/current API/install compatibility are unverified; no accepted previous Desktop rollback exists.",
+    "No GitHub Releases or tags currently exist."
+  ],
+  "delete": {
+    "r2": [
+      {
+        "key": "agent/0.1.1/botgo-agent-win-x64.zip",
+        "size": 138192714
+      },
+      {
+        "key": "agent/0.1.1/manifest.json",
+        "size": 248
+      },
+      {
+        "key": "agent/0.1.2/botgo-agent-win-x64.zip",
+        "size": 138192939
+      },
+      {
+        "key": "agent/0.1.2/manifest.json",
+        "size": 248
+      },
+      {
+        "key": "agent/0.1.3/botgo-agent-win-x64.zip",
+        "size": 138193035
+      },
+      {
+        "key": "agent/0.1.3/manifest.json",
+        "size": 248
+      },
+      {
+        "key": "agent/0.2.1/botgo-agent-win-x64.zip",
+        "size": 138197033
+      },
+      {
+        "key": "agent/0.2.1/manifest.json",
+        "size": 248
+      },
+      {
+        "key": "desktop/1.1.0/BotGo-Setup-1.1.0.exe",
+        "size": 88394730
+      },
+      {
+        "key": "desktop/1.1.1/BotGo-Setup-1.1.1.exe",
+        "size": 88394997
+      },
+      {
+        "key": "desktop/1.1.2/BotGo-Setup-1.1.2.exe",
+        "size": 88395058
+      },
+      {
+        "key": "desktop/1.2.0/BotGo-Setup-1.2.0.exe",
+        "size": 88399010
+      },
+      {
+        "key": "desktop/1.2.1-preview.1/BotGo-Setup-1.2.1-preview.1.exe",
+        "size": 88428872
+      }
+    ],
+    "pages": [
+      {
+        "id": "90fdf2bf-50f2-430d-8e3b-b1b463bea7ba",
+        "commit": "9e902c2",
+        "url": "https://90fdf2bf.botgo.pages.dev"
+      },
+      {
+        "id": "dba3ebb5-12ca-4183-b2d8-4ab97a95ef52",
+        "commit": "c7fb947",
+        "url": "https://dba3ebb5.botgo.pages.dev"
+      },
+      {
+        "id": "a866fe34-0e36-4e0a-b6a3-6bda9c60918b",
+        "commit": "da5297a",
+        "url": "https://a866fe34.botgo.pages.dev"
+      },
+      {
+        "id": "eb52ec3e-12f1-4bd4-be70-ef82622a56b1",
+        "commit": "0568341",
+        "url": "https://eb52ec3e.botgo.pages.dev"
+      },
+      {
+        "id": "2eb02ee6-8026-47d4-9694-d5564cd17d9a",
+        "commit": "4f6615e",
+        "url": "https://2eb02ee6.botgo.pages.dev"
+      },
+      {
+        "id": "79758c43-d9d6-4b66-9124-6707237c3932",
+        "commit": "83fca26",
+        "url": "https://79758c43.botgo.pages.dev"
+      },
+      {
+        "id": "85e695ac-12a2-41fe-a8e4-7552099ca4fe",
+        "commit": "184e6f6",
+        "url": "https://85e695ac.botgo.pages.dev"
+      },
+      {
+        "id": "43e35bc3-fae8-4083-88ad-5cc83e87902f",
+        "commit": "afbacf4",
+        "url": "https://43e35bc3.botgo.pages.dev"
+      },
+      {
+        "id": "7977971e-570b-4556-98db-e7ae196ce05b",
+        "commit": "afbacf4",
+        "url": "https://7977971e.botgo.pages.dev"
+      },
+      {
+        "id": "35d7a077-03c2-4f0e-aa77-6993a1537aa3",
+        "commit": "afbacf4",
+        "url": "https://35d7a077.botgo.pages.dev"
+      },
+      {
+        "id": "f8f90680-801a-4b91-9c2d-8687da373712",
+        "commit": "afbacf4",
+        "url": "https://f8f90680.botgo.pages.dev"
+      },
+      {
+        "id": "0e066eb5-36b5-4d9c-864f-3d7dd380ddd1",
+        "commit": "afbacf4",
+        "url": "https://0e066eb5.botgo.pages.dev"
+      },
+      {
+        "id": "c9c75d21-314a-44d9-be34-c45fb4e547d7",
+        "commit": "afbacf4",
+        "url": "https://c9c75d21.botgo.pages.dev"
+      },
+      {
+        "id": "46904303-5691-4e88-8883-7c7724fff351",
+        "commit": "df68b3f",
+        "url": "https://46904303.botgo.pages.dev"
+      }
+    ],
+    "githubRuns": [
+      {
+        "id": 34694957446,
+        "commit": "9e902c27e18ccc5e33d803e449089f3c4ad2b68b"
+      },
+      {
+        "id": 34693466271,
+        "commit": "c7fb947ec25a6fa6b6dc98468fc5e4121761988f"
+      },
+      {
+        "id": 34691781003,
+        "commit": "da5297aef0ecabf0676d1edf7d1bbe16a0797a3f"
+      },
+      {
+        "id": 34691780878,
+        "commit": "da5297aef0ecabf0676d1edf7d1bbe16a0797a3f"
+      },
+      {
+        "id": 34690041400,
+        "commit": "05683411ad3c26151b062cc00aa5e24dcaf6fd2f"
+      },
+      {
+        "id": 34690041384,
+        "commit": "05683411ad3c26151b062cc00aa5e24dcaf6fd2f"
+      },
+      {
+        "id": 34688349025,
+        "commit": "4f6615eaf8ff388f04176f38a4cd03de695554d0"
+      },
+      {
+        "id": 34688276166,
+        "commit": "2578b1c5d18b2aa6c444365404e8dcac5d613545"
+      },
+      {
+        "id": 34688273841,
+        "commit": "2578b1c5d18b2aa6c444365404e8dcac5d613545"
+      },
+      {
+        "id": 34683791753,
+        "commit": "83fca2604de8391ab74a2f2f36f1bb044c7d714f"
+      },
+      {
+        "id": 34683744554,
+        "commit": "610dfbb0e9d61674e445be091b3d22c541752955"
+      },
+      {
+        "id": 34683625072,
+        "commit": "027886415ca58ced8db8f9062501f2ce82a89a0d"
+      },
+      {
+        "id": 34683460435,
+        "commit": "239155917569b9e47ab590a516af985101cb1cfe"
+      },
+      {
+        "id": 34683254082,
+        "commit": "692d95707965b8421ceee7b0936a1c9f7ac9a142"
+      },
+      {
+        "id": 34682717399,
+        "commit": "184e6f69bf773d97fe3ab549ae150d7e7c84950b"
+      }
+    ],
+    "githubBranches": [
+      {
+        "name": "feat/botgo-cinematic-workspace",
+        "commit": "725d5c4d6d5c4f2e4e3cd9a7fc737be901d90779",
+        "mergedInto": "60d48f9"
+      }
+    ],
+    "local": [
+      {
+        "path": "agent/dist/botgo-agent-0.1.3-win-x64.zip",
+        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\agent\\dist\\botgo-agent-0.1.3-win-x64.zip"
+      },
+      {
+        "path": "agent/dist/botgo-agent-0.2.1-win-x64.zip",
+        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\agent\\dist\\botgo-agent-0.2.1-win-x64.zip"
+      },
+      {
+        "path": "agent/dist/package-70815a2e24f44705bc253e1f210e27c1",
+        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\agent\\dist\\package-70815a2e24f44705bc253e1f210e27c1"
+      },
+      {
+        "path": "agent/dist/package-fb4c0b20e3924eb38cca482907d80c20",
+        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\agent\\dist\\package-fb4c0b20e3924eb38cca482907d80c20"
+      },
+      {
+        "path": "desktop/dist/BotGo Desktop Setup 1.1.2.exe",
+        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.1.2.exe"
+      },
+      {
+        "path": "desktop/dist/BotGo Desktop Setup 1.1.2.exe.blockmap",
+        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.1.2.exe.blockmap"
+      },
+      {
+        "path": "desktop/dist/BotGo Desktop Setup 1.2.0.exe",
+        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.2.0.exe"
+      },
+      {
+        "path": "desktop/dist/BotGo Desktop Setup 1.2.0.exe.blockmap",
+        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.2.0.exe.blockmap"
+      },
+      {
+        "path": "desktop/dist/BotGo Desktop Setup 1.2.1-preview.1.exe",
+        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.2.1-preview.1.exe"
+      },
+      {
+        "path": "desktop/dist/BotGo Desktop Setup 1.2.1-preview.1.exe.blockmap",
+        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.2.1-preview.1.exe.blockmap"
+      },
+      {
+        "path": ".tmp-preview2-installer-check",
+        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\.tmp-preview2-installer-check"
+      },
+      {
+        "path": ".tmp-old-desktop-check",
+        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\.tmp-old-desktop-check"
+      },
+      {
+        "path": ".tmp-release-acceptance/agent-0.2.1-readback.zip",
+        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\.tmp-release-acceptance\\agent-0.2.1-readback.zip"
+      },
+      {
+        "path": ".tmp-release-acceptance/desktop-1.2.1-preview.1-readback.exe",
+        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\.tmp-release-acceptance\\desktop-1.2.1-preview.1-readback.exe"
+      },
+      {
+        "path": "desktop/dist/win-unpacked",
+        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\desktop\\dist\\win-unpacked",
+        "verifiedVersion": "1.2.1-preview.1",
+        "runningOwners": 0
+      },
+      {
+        "path": "desktop/dist/builder-debug.yml",
+        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\desktop\\dist\\builder-debug.yml"
+      }
+    ],
+    "localBranches": [
+      {
+        "name": "feat/botgo-cinematic-workspace",
+        "commit": "725d5c4d6d5c4f2e4e3cd9a7fc737be901d90779",
+        "mergedInto": "60d48f9"
+      }
+    ]
+  }
+}
