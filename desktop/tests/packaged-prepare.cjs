@@ -5,7 +5,7 @@ const fs = require('node:fs'), path = require('node:path'), assert = require('no
 const scriptIndex = process.argv.findIndex(arg => arg.endsWith('packaged-prepare.cjs'));
 const resources = path.resolve(process.argv[scriptIndex + 1]);
 const expectMissing = process.argv.includes('--expect-missing');
-const out = path.resolve('.tmp-packaged-prepare', `${expectMissing ? 'old' : 'fixed'}-${Date.now()}`);
+const out = path.resolve('artifacts/verification/app-server/packaged-prepare', `${expectMissing ? 'old' : 'fixed'}-${Date.now()}`);
 fs.mkdirSync(out, { recursive: true });
 app.setPath('userData', path.join(out, 'profile'));
 app.disableHardwareAcceleration();

@@ -55,6 +55,15 @@ try {
   const productionHome = fs.readFileSync(path.join(root, "dist", "index.html"), "utf8");
   assert.match(productionHome, /var buildVersion = "[a-f0-9]{12}"/, "生产首页应使用内容哈希作为缓存清理版本");
   assert.doesNotMatch(productionHome, /var buildVersion = "20260825\.11"/, "生产首页不应继续使用固定缓存版本");
+  const probe = path.join(root, 'artifacts', 'verification', 'dev-watch-' + process.pid + '.txt');
+  fs.mkdirSync(path.dirname(probe), { recursive: true });
+  const beforeWrite = fs.statSync(path.join(root, 'dist', 'index.html')).mtimeMs;
+  try {
+    fs.writeFileSync(probe, 'ignored verification output');
+    await new Promise(resolve => setTimeout(resolve, 800));
+    assert.equal(fs.statSync(path.join(root, 'dist', 'index.html')).mtimeMs, beforeWrite, 'Verification output must not trigger a rebuild');
+    assert.ok((await fetch(`http://127.0.0.1:${port}/`)).ok, 'Preview remains available');
+  } finally { fs.rmSync(probe, { force: true }); }
 } finally {
   await stopPreview();
 }

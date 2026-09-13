@@ -23,7 +23,9 @@ npm run dev
 
 ## 为什么会反复重建
 
-开发服务使用递归监听，但已忽略 `desktop/`、`worker/`、`docs/`、`tests/`、`dist/` 以及 `.tmp-`、`tmp-`、`layout-`、`debug-` 前缀的临时目录/文件。浏览器 profile 和截图必须使用这些前缀，否则会触发无关构建。
+开发服务使用递归监听，忽略 `desktop/`、`worker/`、`docs/`、`tests/`、`dist/`、`agent/`、`artifacts/`、凭据及工具缓存目录。新浏览器 profile、截图、日志和隔离安装结果统一写入 `artifacts/verification/`。旧 `.tmp-`、`tmp-`、`layout-`、`debug-` 前缀继续兼容。
+
+隔离后台发布使用 `node scripts/prepare-admin-release.mjs artifacts/<baseline> artifacts/<output>`。基准与输出必须是 artifacts 下互不包含的独立目录；输出必须尚不存在。
 
 ## 排障顺序
 

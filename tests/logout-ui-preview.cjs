@@ -1,7 +1,7 @@
 // Real Chromium windows with isolated API fixtures; never production login evidence.
 const { app, BrowserWindow } = require('electron');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
-const root = path.resolve(__dirname, '..'), out = path.join(root, '.tmp-logout-ui');
+const root = path.resolve(__dirname, '..'), out = path.join(root, 'artifacts/verification/logout-ui');
 fs.mkdirSync(out, { recursive: true }); app.setPath('userData', path.join(out, 'profile')); app.disableHardwareAcceleration();
 let signed = true, failLogout = false, logoutCount = 0, accountGate = null, checkoutGate = null, stream = null;
 const errors = [], windows = [], checks = [];

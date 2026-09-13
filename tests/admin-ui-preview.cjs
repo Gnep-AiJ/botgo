@@ -1,7 +1,7 @@
 // Local API fixtures only. Never uses production credentials.
 const {app,BrowserWindow}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
-const root=path.resolve(__dirname,'..'),out=path.join(root,'.tmp-admin-ui');fs.mkdirSync(out,{recursive:true});app.setPath('userData',path.join(out,'profile'));app.disableHardwareAcceleration();
+const root=path.resolve(__dirname,'..'),out=path.join(root,'artifacts/verification/admin-ui');fs.mkdirSync(out,{recursive:true});app.setPath('userData',path.join(out,'profile'));app.disableHardwareAcceleration();
 let authorized=true,meterFailure=false,empty=false,writes=0;
 const price={input:4,cached:.4,write:5,output:20,longThreshold:272000,longInput:2,longOutput:1.5,source:'https://developers.openai.com/api/docs/pricing',date:'2026-09-12',tier:'default'};
 const models=['gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna','gpt-5.5','gpt-6-astra'].map(id=>({id,name:id.replace('gpt-','GPT-'),upstream_id:id,enabled:1,web_enabled:1,agent_enabled:1,multiplier_ppm:null,price}));

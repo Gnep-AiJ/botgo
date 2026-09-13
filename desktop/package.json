@@ -1,6 +1,6 @@
 {
   "name": "botgo-desktop",
-  "version": "1.2.1-preview.3",
+  "version": "1.2.1-preview.5",
   "private": true,
   "description": "BotGo Desktop for Windows",
   "main": "main.cjs",
@@ -34,7 +34,8 @@
       "assets/**",
       "runtime-config.cjs",
       "package.json",
-      "!dist{,/**}"
+      "!dist{,/**}",
+      "renderer-runtime.js"
     ],
     "win": {
       "signAndEditExecutable": true,

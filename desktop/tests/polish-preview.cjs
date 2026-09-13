@@ -1,7 +1,7 @@
 // Desktop-only fixture harness. Does not run Codex or access user credentials.
 const {app,BrowserWindow,ipcMain}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const root=path.resolve(__dirname,'../..'),out=path.join(root,'.tmp-desktop-polish');fs.mkdirSync(out,{recursive:true});app.setPath('userData',path.join(out,'profile'));app.disableHardwareAcceleration();
+const root=path.resolve(__dirname,'../..'),out=path.join(root,'artifacts/verification/app-server/desktop-ui');fs.mkdirSync(out,{recursive:true});app.setPath('userData',path.join(out,'profile'));app.disableHardwareAcceleration();
 const models=['gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna','gpt-5.5','gpt-6-astra'].map(id=>({id,name:id,enabled:true,agent:true}));
 const history={selectedProject:root,selectedThreadId:'test-thread',recentProjects:[root],threads:[{id:'test-thread',projectPath:root,title:'本地项目对话',status:'completed',messages:[]}]};
 let modelError=false,failStart=false,starts=0,stops=0,win;
@@ -12,6 +12,8 @@ async function until(js){for(let i=0;i<60;i++){if(await run(js))return;await pau
 ipcMain.handle('models:get',()=>{if(modelError)throw Error('Fixture network failure');return {defaultModel:'missing-default',models};});
 ipcMain.handle('account:get',()=>({account:{email:'very.long.account.name.for.layout@example.invalid',balanceCents:102000}}));
 ipcMain.handle('history:get',()=>history);
+ipcMain.handle('update:check',()=>({state:'current'}));
+ipcMain.handle('task:respond',(_e,response)=>{assert.equal(response.threadId,'test-thread');return {ok:true};});
 const store=require('../lib/local-state.cjs').createLocalStateStore({filePath:path.join(out,'fixture-state.json')});
 function mutate(action){store.save(history);Object.assign(history,action());return history;}
 ipcMain.handle('thread:rename',(_event,{id,title})=>mutate(()=>store.renameThread(id,title)));
@@ -26,6 +28,22 @@ app.whenReady().then(async()=>{try{
  const errors=[];win.webContents.on('console-message',(_e,level,message)=>{if(level===3&&!/Fixture/.test(message))errors.push(message);});
  await win.loadFile(path.join(root,'desktop/index.html'));await until("!document.querySelector('[data-model]').disabled");
  assert.equal(await run("document.querySelector('[data-model]').value"),models[0].id);
+ await run("ui.runningThread='test-thread'");
+ win.webContents.send('task:event',{type:'delta',threadId:'test-thread',itemId:'stream',delta:'Live streaming fixture'});
+ await until("document.querySelector('[data-conversation]').textContent.includes('Live streaming fixture')");
+ win.webContents.send('task:event',{type:'request',threadId:'test-thread',turnId:'t',requestId:'approve',kind:'approval',message:'Allow fixture command?',details:'echo fixture',questions:[],allow:true});
+ await until("!document.querySelector('[data-runtime-requests]').hidden");
+ fs.writeFileSync(path.join(out,'approval.png'),(await win.webContents.capturePage()).toPNG());
+ await run("document.querySelector('[data-runtime-requests] button').click()");
+ await until("document.querySelector('[data-runtime-requests]').hidden");
+ win.webContents.send('task:event',{type:'request',threadId:'test-thread',turnId:'t',requestId:'question',kind:'question',message:'Choose',questions:[{id:'choice',question:'What should happen next?',options:[{label:'Continue',description:'Continue fixture'}]}],allow:true});
+ await until("!!document.querySelector('[data-runtime-requests] input')");
+ await run("document.querySelector('[data-runtime-requests] input').value='Continue';document.querySelector('[data-runtime-requests] button').click()");
+ await until("document.querySelector('[data-runtime-requests]').hidden");
+ win.webContents.send('update:event',{state:'ready',version:'1.2.1-preview.5'});
+ await until("document.querySelector('.update-notice button').textContent.length>0");
+ win.webContents.send('task:event',{type:'completed',threadId:'test-thread'});
+ await until("document.querySelector('[data-stop-task]').hidden");
  for(const zoom of [1,1.25,1.5]){
   win.webContents.setZoomFactor(zoom);await pause(150);
   await run("document.querySelector('[data-account-trigger]').click()");

@@ -1,7 +1,7 @@
 // Actual Chromium rendering with isolated API/clipboard fixtures; no user login.
 const { app, BrowserWindow } = require('electron');
 const fs = require('node:fs'), path = require('node:path'), http = require('node:http'), assert = require('node:assert/strict');
-const root = path.resolve(__dirname, '..'), out = path.join(root, '.tmp-install-ui');
+const root = path.resolve(__dirname, '..'), out = path.join(root, 'artifacts/verification/install-ui');
 fs.mkdirSync(out, { recursive: true }); app.setPath('userData', path.join(out, 'profile')); app.disableHardwareAcceleration();
 let signed = true, failure = false, gate = null;
 const errors = [], checks = [];

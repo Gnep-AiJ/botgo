@@ -3,6 +3,7 @@
 BotGo 提供网页对话、Windows 桌面工作台与 Agent CLI，共用账户、余额和模型中转。
 
 - 开发接管入口：[项目地图](docs/PROJECT_MAP.md)。
+- 目录用途、产物归档与清理：[目录与产物](docs/ARTIFACTS.md)。
 - 本地网页：`npm run dev`，访问 http://127.0.0.1:4173；此服务不模拟 Worker API。
 - 检查：`npm test`、`npm run check`。
 - 桌面开发：`npm --prefix desktop start`。

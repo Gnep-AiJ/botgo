@@ -2,6 +2,8 @@
 
 Read `docs/PROJECT_MAP.md` first, then only the linked note for your task.
 
+Write screenshots, isolated test profiles, logs and release snapshots under `artifacts/`; see `docs/ARTIFACTS.md`. Do not create new root `.tmp-*` outputs or scan archived profiles as source.
+
 - Inspect current code and uncommitted changes before editing; preserve user work.
 - Root HTML/CSS/JS is website source. `dist/` is generated; never edit it.
 - `desktop/` is Electron. `agent/` owns the shared Codex runner and independent CLI.

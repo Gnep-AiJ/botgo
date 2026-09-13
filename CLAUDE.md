@@ -1,3 +1,9 @@
+# BotGo 项目阅读入口
+
+先读 `docs/PROJECT_MAP.md`，再读任务链接的模块说明；目录和产物规则见 `docs/ARTIFACTS.md`。执行约束见 `AGENTS.md`。新截图、日志和隔离 profile 写入 `artifacts/verification/`。
+
+下方框架安装说明保留原文；技能位置使用前核对实际文件，不将 `.skill-archive/` 当作活动技能目录。
+
 <!-- superpowers-zh:begin (do not edit between these markers) -->
 # Superpowers-ZH 中文增强版
 

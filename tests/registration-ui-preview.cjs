@@ -1,7 +1,7 @@
 // Isolated public registration fixture. No mail is sent.
 const {app,BrowserWindow}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
-const root=path.resolve(__dirname,'..'),out=path.join(root,'.tmp-registration-ui');fs.mkdirSync(out,{recursive:true});app.setPath('userData',path.join(out,'profile'));app.disableHardwareAcceleration();
+const root=path.resolve(__dirname,'..'),out=path.join(root,'artifacts/verification/registration-ui');fs.mkdirSync(out,{recursive:true});app.setPath('userData',path.join(out,'profile'));app.disableHardwareAcceleration();
 let signedIn=false;const calls=[];
 const server=http.createServer((req,res)=>{
  const u=new URL(req.url,'http://localhost');

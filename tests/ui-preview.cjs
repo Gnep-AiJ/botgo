@@ -2,7 +2,7 @@
 // this never authorizes a device, makes a payment, or runs a local agent task.
 const {app,BrowserWindow,ipcMain}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const root=path.resolve(__dirname,'..'),out=path.join(root,'.tmp-ui-check');
+const root=path.resolve(__dirname,'..'),out=path.join(root,'artifacts/verification/ui-check');
 fs.mkdirSync(out,{recursive:true});app.setPath('userData',path.join(out,'profile'));app.disableHardwareAcceleration();
 app.on('window-all-closed',()=>{});
 const errors=[],results=[];

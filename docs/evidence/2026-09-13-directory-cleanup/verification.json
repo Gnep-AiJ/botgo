@@ -1,0 +1,204 @@
+{
+  "npmTest": "passed; agent 48 tests",
+  "npmCheck": "passed",
+  "devWatcher": "artifact write did not rebuild; HTTP still available",
+  "adminSnapshot": "6 admin files; 21 other files preserved",
+  "browser": {
+    "checks": [
+      {
+        "width": 1440,
+        "view": "agents",
+        "theme": "light",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 1440,
+        "view": "tutorials",
+        "theme": "light",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 1440,
+        "view": "chat",
+        "theme": "light",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 390,
+        "view": "agents",
+        "theme": "light",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 390,
+        "view": "tutorials",
+        "theme": "light",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 390,
+        "view": "chat",
+        "theme": "light",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 360,
+        "view": "agents",
+        "theme": "light",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 360,
+        "view": "tutorials",
+        "theme": "light",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 360,
+        "view": "chat",
+        "theme": "light",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 1440,
+        "view": "agents",
+        "theme": "dark",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 1440,
+        "view": "tutorials",
+        "theme": "dark",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 1440,
+        "view": "chat",
+        "theme": "dark",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 390,
+        "view": "agents",
+        "theme": "dark",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 390,
+        "view": "tutorials",
+        "theme": "dark",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 390,
+        "view": "chat",
+        "theme": "dark",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 360,
+        "view": "agents",
+        "theme": "dark",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 360,
+        "view": "tutorials",
+        "theme": "dark",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      },
+      {
+        "width": 360,
+        "view": "chat",
+        "theme": "dark",
+        "overflow": false,
+        "first": "agent-choice agent-choice--desktop",
+        "projectExample": false,
+        "spacing": 0.02
+      }
+    ],
+    "errors": [],
+    "downloadStates": [
+      "guest",
+      "loading",
+      "success",
+      "failure",
+      "retry"
+    ],
+    "clipboard": "isolated API fixture",
+    "scope": "Chromium windows; no actual account or Windows installer acceptance"
+  },
+  "links": {
+    "files": 4,
+    "broken": []
+  },
+  "archiveStatus": "all 105 archive locations present; original paths absent",
+  "cleanupPreview": "non-mutating; only two protected tool caches remain",
+  "repeatGuard": "existing execution refused",
+  "sourceCheck": "all changed JS/CJS scripts passed node --check",
+  "diffCheck": "passed",
+  "installer": {
+    "status": "passed",
+    "initialAttempt": "network restricted; retry with authorized network succeeded",
+    "checks": [
+      "private Node install",
+      "CLI 0.2.2 and Codex 0.154.0 startup",
+      "Node reuse",
+      "upgrade",
+      "bad hash rejection",
+      "old version retained"
+    ],
+    "log": "artifacts/directory-cleanup-installer-retry.log"
+  }
+}

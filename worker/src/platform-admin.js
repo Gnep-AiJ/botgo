@@ -1,5 +1,6 @@
 import { grantBalance } from "./account-operations.js";
 import { handleAlipayRoute } from "./alipay-routes.js";
+import { desktopCredentialFor } from './desktop-auth.js';
 import { handleMeteringAdmin, usageObserver } from "./metering.js";
 
 const encoder = new TextEncoder();
@@ -302,7 +303,11 @@ export async function handlePlatformRoute(request, env, path, helpers) {
   }
   const alipayResponse = await handleAlipayRoute(request, env, path, helpers);
   if (alipayResponse) return alipayResponse;
-  if (path === "/desktop/releases/current" && request.method === "GET") { const session = await helpers.sessionFor(request, env); if (!session) return json({ error: "请先登录。" }, 401); const row = await env.DB.prepare("SELECT id, version, file_name, size_bytes, sha256, notes, published_at FROM desktop_releases WHERE platform = 'win-x64' AND status = 'published' LIMIT 1").first(); if (!row) return json({ release: null }); const expires = Math.floor(Date.now() / 1000) + 300; const token = await signedDownloadToken(env, row.id, session.sub, expires); return json({ release: { ...row, downloadUrl: `/api/desktop/releases/${row.id}/download?account=${encodeURIComponent(session.sub)}&expires=${expires}&token=${token}` } }); }
+  if (path === "/desktop/releases/current" && request.method === "GET") { let session = await helpers.sessionFor(request, env);
+    if (!session && request.headers.get('authorization')?.startsWith('Bearer bgdt_')) {
+      try { const credential = await desktopCredentialFor(env, request.headers.get('authorization').slice(7)); session = { sub: credential.account.id }; }
+      catch (error) { return json({ error: error.message }, error.status || 401); }
+    } if (!session) return json({ error: "请先登录。" }, 401); const row = await env.DB.prepare("SELECT id, version, file_name, size_bytes, sha256, notes, published_at FROM desktop_releases WHERE platform = 'win-x64' AND status = 'published' LIMIT 1").first(); if (!row) return json({ release: null }); const expires = Math.floor(Date.now() / 1000) + 300; const token = await signedDownloadToken(env, row.id, session.sub, expires); return json({ release: { ...row, downloadUrl: `/api/desktop/releases/${row.id}/download?account=${encodeURIComponent(session.sub)}&expires=${expires}&token=${token}` } }); }
   const download = path.match(/^\/desktop\/releases\/([0-9a-f-]+)\/download$/i);
   if (download && request.method === "GET") { const url = new URL(request.url); const account = url.searchParams.get("account") || ""; const expires = Number(url.searchParams.get("expires")); const token = url.searchParams.get("token") || ""; if (!account || !Number.isInteger(expires) || expires < Math.floor(Date.now() / 1000) || token !== await signedDownloadToken(env, download[1], account, expires)) return json({ error: "下载链接无效或已过期。" }, 403); const row = await env.DB.prepare("SELECT object_key, file_name FROM desktop_releases WHERE id = ? AND status = 'published'").bind(download[1]).first(); if (!row || !env.DESKTOP_RELEASES) return json({ error: "安装包不可用。" }, 404); const object = await env.DESKTOP_RELEASES.get(row.object_key); if (!object) return json({ error: "安装包不存在。" }, 404); const safeName = row.file_name.replace(/[^A-Za-z0-9._-]/g, "_") || "BotGo-Desktop.exe"; return new Response(object.body, { headers: { "content-type": "application/vnd.microsoft.portable-executable", "content-disposition": `attachment; filename="${safeName}"`, "content-length": String(object.size), "cache-control": "private, no-store", "x-content-type-options": "nosniff" } }); }
   return null;

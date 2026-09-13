@@ -1,0 +1,29 @@
+{
+  "desktop": {
+    "version": "1.2.1-preview.5",
+    "file": "desktop/dist/1.2.1-preview.5/BotGo Desktop Setup 1.2.1-preview.5.exe",
+    "sizeBytes": 182241528,
+    "sha256": "ffaa8b7e10d39abd30f3df180818388c53af638706564375cd7aaa3df46f74ee"
+  },
+  "cli": {
+    "version": "0.2.3",
+    "file": "agent/dist/botgo-agent-0.2.3-win-x64.zip",
+    "sizeBytes": 138200898,
+    "sha256": "54c8aaf81129f06e25987beae3b829348267c392a625001f285af44e5d19c0e7"
+  },
+  "native": {
+    "version": "0.154.0",
+    "verified": true
+  },
+  "checks": {
+    "tests": "passed including 52 Agent tests",
+    "source": "passed",
+    "nativeMock": "two turns; streaming and resume",
+    "nativeRelay": "file creation and readback with previous turn recall; no approval requests; cost 0.11 CNY",
+    "history": "350 messages retained, backup and v3 migration passed",
+    "electron": "streaming, approval, question, update UI and existing polish checks passed",
+    "signature": "pinned certificate accepted; tampered installer rejected",
+    "installer": "extracted final NSIS runtime hashes passed; cross-device install/update/restart pending"
+  },
+  "publication": "pending"
+}

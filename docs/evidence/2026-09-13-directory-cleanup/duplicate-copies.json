@@ -1,0 +1,46 @@
+{
+  "status": "complete",
+  "freedBytes": 596816797,
+  "rows": [
+    {
+      "source": "artifacts/archive/2026-09-13-directory-cleanup/.tmp-release-acceptance/agent-0.2.0-fast.zip",
+      "retained": "agent/dist/botgo-agent-0.2.0-win-x64.zip",
+      "bytes": 138193876,
+      "sha256": "0a06ef7b43389608e2d79607eea9994a3d3afe32f950db60576c4d8d752e3a15",
+      "identical": true,
+      "status": "deleted-duplicate"
+    },
+    {
+      "source": "artifacts/archive/2026-09-13-directory-cleanup/.tmp-release-acceptance/agent-0.2.0-readback.zip",
+      "retained": "agent/dist/botgo-agent-0.2.0-win-x64.zip",
+      "bytes": 138193876,
+      "sha256": "0a06ef7b43389608e2d79607eea9994a3d3afe32f950db60576c4d8d752e3a15",
+      "identical": true,
+      "status": "deleted-duplicate"
+    },
+    {
+      "source": "artifacts/archive/2026-09-13-directory-cleanup/.tmp-release-acceptance/agent-0.2.2-readback.zip",
+      "retained": "agent/dist/botgo-agent-0.2.2-win-x64.zip",
+      "bytes": 138196821,
+      "sha256": "184d7c2732004741d5cafd2401dffc244ca51f0fe3ea5fd68f3171d399ab74d6",
+      "identical": true,
+      "status": "deleted-duplicate"
+    },
+    {
+      "source": "artifacts/archive/2026-09-13-directory-cleanup/.tmp-release-acceptance/desktop-1.2.1-preview.3-readback.exe",
+      "retained": "desktop/dist/1.2.1-preview.3/BotGo Desktop Setup 1.2.1-preview.3.exe",
+      "bytes": 182232224,
+      "sha256": "8119bcfc9181808c5d8696dbfe9a7ecf763e74e313fd79552c21d7fbb374317e",
+      "identical": true,
+      "status": "deleted-duplicate"
+    },
+    {
+      "source": "artifacts/archive/2026-09-13-directory-cleanup/.tmp-release-acceptance/existing-desktop.exe",
+      "retained": "artifacts/archive/2026-09-13-directory-cleanup/.tmp-release-acceptance/desktop-1.0.0-readback.exe",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "identical": false,
+      "status": "kept-different"
+    }
+  ]
+}

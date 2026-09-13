@@ -12,7 +12,7 @@ const sandboxFor = {
 
 function codexArgumentsFor(permission, prompt = "", sessionId = "") {
   if (!Object.hasOwn(sandboxFor, permission)) throw new Error("Unsupported permission mode");
-  const args = ["exec", "--json", "--sandbox", sandboxFor[permission]];
+  const args = ["exec", "--json", "--skip-git-repo-check", "--sandbox", sandboxFor[permission]];
   if (sessionId) args.push("resume", String(sessionId));
   if (prompt !== undefined && prompt !== null && String(prompt).trim()) args.push(String(prompt).trim());
   return args;

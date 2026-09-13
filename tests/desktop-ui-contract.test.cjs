@@ -152,5 +152,5 @@ assert.equal(rootManifest.scripts.deploy, "npm run build && npm run migrate:work
 console.log("Desktop UI contract test passed");
 
 assert.match(main, /prompt: task\.prompt/, "task runner receives the submitted prompt");
-assert.match(main, /createCodexRunner/, "desktop and CLI share the tested runner");
+assert.match(main, /createAppServerRunner/, "desktop and CLI share the tested runner");
 assert.doesNotMatch(main, /install.*,.*--global|prepareBotGoConfig/, "desktop must not replace global Codex configuration");

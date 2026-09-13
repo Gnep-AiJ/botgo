@@ -20,20 +20,41 @@ const path = require("node:path");
 const fs = require("node:fs");
 const { createCredentialStore } = require("./lib/credential-store.cjs");
 const { createLocalStateStore } = require("./lib/local-state.cjs");
+const { createUpdater } = require('./lib/updater.cjs');
 const { restoreOriginalConfig } = require("./lib/codex-config.cjs");
 const { callbackResultFor, createWebAuthorizationProof } = require("./lib/web-auth.cjs");
 
 const execFileAsync = promisify(execFile);
-const { agentRoot, nativeCommand, openNativeTerminal, createCodexRunner, writeCodexConfig } = require("./lib/agent-runtime.cjs");
+const { agentRoot, nativeCommand, openNativeTerminal, createAppServerRunner, writeCodexConfig } = require("./lib/agent-runtime.cjs");
 function buildTimeApiOrigin() {
   try { return require("./runtime-config.cjs").apiOrigin || ""; } catch { return ""; }
 }
 const pagesOrigin = (process.env.BOTGO_API_ORIGIN || buildTimeApiOrigin() || "").replace(/\/$/, "");
 let mainWindow;
 let activeTask;
+let activeThreadId;
 let taskStarting = false;
+let cancelTaskStart = false;
 let terminalStarting = false, terminalRunning = false;
 let activeAuthorization;
+let updater;
+let updateInstalling = false;
+function updaterInstance() {
+  if (!updater) updater = createUpdater({
+    directory: path.join(app.getPath('userData'), 'updates'), version: app.getVersion(), origin: requireApiOrigin(),
+    currentRelease: async () => (await apiRequest('/desktop/releases/current', { deviceToken: (await credential()).deviceToken })).release,
+    verifySignature: async file => {
+      // Path is generated locally from the SHA-256, never supplied by the renderer.
+      const verifier = path.join(app.getPath('userData'), 'updates', 'verify-signature.ps1');
+      fs.mkdirSync(path.dirname(verifier), { recursive: true });
+      fs.writeFileSync(verifier, fs.readFileSync(path.join(__dirname, 'lib', 'verify-signature.ps1')));
+      try { await execFileAsync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', verifier, '-FilePath', file], { windowsHide: true, timeout: 30000 }); }
+      catch { throw Error('安装包签名不匹配，更新已拒绝。'); }
+    },
+    onState: status => { if (!mainWindow?.isDestroyed()) mainWindow?.webContents.send('update:event', status); }
+  });
+  return updater;
+}
 if (!app.requestSingleInstanceLock()) { app.quit(); return; }
 app.on('second-instance', () => {
   if (mainWindow?.isMinimized()) mainWindow.restore();
@@ -59,6 +80,17 @@ function appPaths() {
 
 function credentials() { return createCredentialStore({ filePath: appPaths().credentials, safeStorage }); }
 function state() { return createLocalStateStore({ filePath: appPaths().history }); }
+function publicHistory(history) {
+  return { ...history, threads: history.threads.map(thread => ({ ...thread, messageCount: thread.messages.length, before: Math.max(0, thread.messages.length - 100), messages: thread.messages.slice(-100) })) };
+}
+function validProject(projectPath) {
+  try {
+    if (typeof projectPath !== 'string' || !path.isAbsolute(projectPath)) throw Error();
+    const resolved = fs.realpathSync(projectPath);
+    if (!fs.statSync(resolved).isDirectory()) throw Error();
+    return resolved;
+  } catch { throw Error('工作文件夹已移动或无法访问，请重新选择。'); }
+}
 function sendTaskEvent(event) { mainWindow?.webContents.send("task:event", event); }
 function sendAuthorizationEvent(event) { mainWindow?.webContents.send("authorization:event", event); }
 
@@ -181,7 +213,7 @@ async function cancelBrowserAuthorization() {
 function rememberProject(projectPath) {
   if (typeof projectPath !== "string" || !projectPath.trim()) throw new Error("请选择本地文件夹。");
   const history = state().load();
-  const selectedProject = projectPath.trim();
+  const selectedProject = validProject(projectPath);
   const next = {
     ...history,
     selectedProject,
@@ -274,23 +306,29 @@ app.whenReady().then(() => {
     const current = await credential();
     return apiRequest("/desktop/account", { deviceToken: current.deviceToken });
   });
-  ipcMain.handle("history:get", async () => state().load());
+  ipcMain.handle("history:get", async () => publicHistory(state().load()));
+  ipcMain.handle('history:page', (_event, { threadId, before }) => {
+    const thread = state().load().threads.find(t => t.id === threadId);
+    if (!thread || !Number.isSafeInteger(before) || before < 0) throw Error('Invalid history page');
+    const end = Math.min(before, thread.messages.length), start = Math.max(0, end - 100);
+    return { messages: thread.messages.slice(start, end), before: start };
+  });
   ipcMain.handle('models:get', async () => apiRequest('/models'));
   ipcMain.handle("project:choose", async () => {
     const selected = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory", "createDirectory"] });
     if (selected.canceled || !selected.filePaths[0]) return null;
     return selected.filePaths[0];
   });
-  ipcMain.handle("project:remember", async (_event, projectPath) => rememberProject(projectPath));
-  ipcMain.handle("thread:create", async (_event, projectPath) => createThread(projectPath));
-  ipcMain.handle("thread:select", async (_event, threadId) => selectThread(threadId));
+  ipcMain.handle("project:remember", async (_event, projectPath) => publicHistory(rememberProject(projectPath)));
+  ipcMain.handle("thread:create", async (_event, projectPath) => publicHistory(createThread(projectPath)));
+  ipcMain.handle("thread:select", async (_event, threadId) => publicHistory(selectThread(threadId)));
   for (const [channel, operation] of [
     ['thread:rename', ({ id, title }) => state().renameThread(id, title)],
     ['thread:delete', id => state().deleteThread(id)],
     ['project:remove', projectPath => state().removeProject(projectPath)]
   ]) ipcMain.handle(channel, (_event, payload) => {
     if (activeTask || taskStarting) throw new Error('请先停止当前任务。');
-    return operation(payload);
+    return publicHistory(operation(payload));
   });
   ipcMain.handle("runtime:prepare", async (_event, { confirmConfigReplace }) => prepareRuntime(confirmConfigReplace));
   ipcMain.handle("runtime:restore-config", async () => {
@@ -298,12 +336,24 @@ app.whenReady().then(() => {
     restoreOriginalConfig({ configPath: appPaths().codexConfig, backupPath: metadata.backupPath });
     return { ok: true };
   });
+  ipcMain.handle('update:check', () => updaterInstance().check());
+  ipcMain.handle('update:install', async () => {
+    if (activeTask || taskStarting || terminalStarting || terminalRunning || updateInstalling) throw Error('Finish or stop the current task before updating.');
+    updateInstalling = true;
+    try {
+      const file = await updaterInstance().installer();
+      const installer = spawn(file, ['/S', '--updated', '--force-run'], { detached: true, stdio: 'ignore', windowsHide: true });
+      await new Promise((resolve, reject) => { installer.once('spawn', resolve); installer.once('error', reject); });
+      installer.unref(); app.quit(); return { ok: true };
+    } catch (error) { updateInstalling = false; throw error; }
+  });
   ipcMain.handle("task:start", async (_event, task) => {
-    if (activeTask || taskStarting || terminalStarting || terminalRunning) throw new Error("已有任务或终端正在运行。");
-    if (!task || typeof task.prompt !== "string" || !task.prompt.trim() || typeof task.projectPath !== "string" || !fs.statSync(task.projectPath).isDirectory()) throw new Error("请选择项目并输入任务。");
+    if (activeTask || taskStarting || terminalStarting || terminalRunning || updateInstalling) throw new Error("已有任务或终端正在运行。");
+    if (!task || typeof task.prompt !== "string" || !task.prompt.trim() || typeof task.projectPath !== "string" || !validProject(task.projectPath)) throw new Error("请选择项目并输入任务。");
     if (!["read-only", "workspace-write", "full-access"].includes(task.mode)) throw new Error("权限模式无效。");
     if (task.mode === "full-access" && !task.confirmedFullAccess) throw new Error("完全访问需要确认。");
     taskStarting = true;
+    cancelTaskStart = false;
     try {
     const current = await credential();
     const account = await apiRequest("/desktop/account", { deviceToken: current.deviceToken });
@@ -313,12 +363,15 @@ app.whenReady().then(() => {
     if (!available.models.some(m=>m.id===selectedModel&&m.enabled&&m.agent)) throw new Error('所选模型暂不可用于 Agent。');
     const issued = await apiRequest("/desktop/key", { method: "POST", deviceToken: current.deviceToken });
     await prepareRuntime();
+    if (cancelTaskStart) throw Error('任务已取消，输入已保留。');
     const history = state().load();
     let thread = history.threads.find((item) => item.id === task.threadId && item.projectPath === task.projectPath);
     if (!thread) thread = { id: crypto.randomUUID(), projectPath: task.projectPath, title: task.prompt.slice(0, 64), sessionId: "", status: "idle", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     const entry = { ...thread, model: selectedModel, title: thread.messages.length || thread.title !== '新对话' ? thread.title : task.prompt.slice(0, 64), status: "running", updatedAt: new Date().toISOString(), messages: [...thread.messages, { id: crypto.randomUUID(), role: "user", kind: "message", content: task.prompt, files: [], createdAt: new Date().toISOString() }] };
     state().save({ ...history, selectedProject: entry.projectPath, selectedThreadId: entry.id, recentProjects: [entry.projectPath, ...history.recentProjects.filter((item) => item !== entry.projectPath)], threads: [entry, ...history.threads.filter((item) => item.id !== entry.id)] });
-    const runner = createCodexRunner({ command: nativeCommand(agentRoot) });
+    let lastPersisted = 0;
+    const runner = createAppServerRunner({ command: nativeCommand(agentRoot) });
+    activeThreadId = entry.id;
     activeTask = runner.start({
       id: entry.id,
       projectPath: entry.projectPath,
@@ -332,10 +385,16 @@ app.whenReady().then(() => {
       relayOrigin: requireApiOrigin(),
       onEvent(event) {
         if (event.type === "session") entry.sessionId = event.sessionId;
-        if (event.type === "progress" && event.message) entry.messages.push({ id: crypto.randomUUID(), role: "assistant", model: selectedModel, kind: "message", content: event.message, files: [], createdAt: new Date().toISOString() });
+        if (['delta', 'progress'].includes(event.type)) {
+          const messageId = event.itemId || crypto.randomUUID();
+          let message = entry.messages.find(item => item.id === messageId);
+          if (!message) { message = { id: messageId, role: 'assistant', model: selectedModel, kind: 'message', content: '', files: [], createdAt: new Date().toISOString() }; entry.messages.push(message); }
+          message.content = event.type === 'delta' ? message.content + event.delta : event.message;
+        }
         if (event.type === "files") entry.messages.push({ id: crypto.randomUUID(), role: "system", kind: "files", content: "变更文件", files: event.files, createdAt: new Date().toISOString() });
         if (event.type === "error") entry.messages.push({ id: crypto.randomUUID(), role: "system", kind: "error", content: event.message || "任务未能完成。", files: [], createdAt: new Date().toISOString() });
-        if (["session", "progress", "files"].includes(event.type)) {
+        if (["session", "progress", "files"].includes(event.type) || (event.type === "delta" && Date.now() - lastPersisted > 500)) {
+          lastPersisted = Date.now();
           entry.updatedAt = new Date().toISOString();
           const snapshot = state().load();
           state().save({ ...snapshot, selectedProject: entry.projectPath, selectedThreadId: entry.id, threads: [entry, ...snapshot.threads.filter((item) => item.id !== entry.id)] });
@@ -359,7 +418,7 @@ app.whenReady().then(() => {
     } finally { taskStarting = false; }
   });
   ipcMain.handle("runtime:open-terminal", async (_event, { projectPath, sessionId, model }) => {
-    if (activeTask || taskStarting || terminalStarting || terminalRunning) throw new Error("请先停止当前任务或关闭已打开的终端。");
+    if (activeTask || taskStarting || terminalStarting || terminalRunning || updateInstalling) throw new Error("请先停止当前任务或关闭已打开的终端。");
     terminalStarting = true;
     try {
     if (!state().load().recentProjects.includes(projectPath)) throw new Error("请先选择项目。");
@@ -377,7 +436,11 @@ app.whenReady().then(() => {
     });
     } finally { terminalStarting = false; }
   });
-  ipcMain.handle("task:stop", async () => { activeTask?.stop(); return { ok: true }; });
+  ipcMain.handle('task:respond', (_event, response) => {
+    if (!activeTask || response?.threadId !== activeThreadId) throw Error('Inactive request');
+    return activeTask.respond(response);
+  });
+  ipcMain.handle("task:stop", async () => { if (taskStarting) cancelTaskStart = true; activeTask?.stop(); return { ok: true }; });
   ipcMain.handle("account:revoke-device", async () => {
     const current = await credential();
     await apiRequest("/desktop/revoke", { method: "POST", deviceToken: current.deviceToken });

@@ -15,16 +15,16 @@ test("the bundled Windows shim is invoked through Node without a shell", () => {
 });
 
 test("permission modes map to the three Codex sandbox policies", () => {
-  assert.deepEqual(codexArgumentsFor("read-only", "do work"), ["exec", "--json", "--sandbox", "read-only", "do work"]);
-  assert.deepEqual(codexArgumentsFor("workspace-write", "do work"), ["exec", "--json", "--sandbox", "workspace-write", "do work"]);
-  assert.deepEqual(codexArgumentsFor("full-access", "do work"), ["exec", "--json", "--sandbox", "danger-full-access", "do work"]);
+  assert.deepEqual(codexArgumentsFor("read-only", "do work"), ["exec", "--json", "--skip-git-repo-check", "--sandbox", "read-only", "do work"]);
+  assert.deepEqual(codexArgumentsFor("workspace-write", "do work"), ["exec", "--json", "--skip-git-repo-check", "--sandbox", "workspace-write", "do work"]);
+  assert.deepEqual(codexArgumentsFor("full-access", "do work"), ["exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access", "do work"]);
   assert.throws(() => codexArgumentsFor("unknown", "do work"), /permission/i);
 });
 
 test("resume uses the Codex session id after the sandbox arguments", () => {
   assert.deepEqual(
     codexArgumentsFor("workspace-write", "follow up", "thread-123"),
-    ["exec", "--json", "--sandbox", "workspace-write", "resume", "thread-123", "follow up"]
+    ["exec", "--json", "--skip-git-repo-check", "--sandbox", "workspace-write", "resume", "thread-123", "follow up"]
   );
 });
 
@@ -52,7 +52,7 @@ test("runner injects BotGo credentials and removes direct provider keys", async 
   const task = runner.start({ projectPath: "C:\\project", prompt: "inspect", permission: "read-only", sessionId: "", codexHome: "C:\\agent\\codex", relayKey: "bgk_test" });
   const spawnCall = calls[0];
   assert.equal(spawnCall[0], "codex-local");
-  assert.deepEqual(spawnCall[1], ["exec", "--json", "--sandbox", "read-only", "inspect"]);
+  assert.deepEqual(spawnCall[1], ["exec", "--json", "--skip-git-repo-check", "--sandbox", "read-only", "inspect"]);
   assert.equal(spawnCall[2].cwd, "C:\\project");
   assert.equal(spawnCall[2].env.CODEX_HOME, "C:\\agent\\codex");
   assert.equal(spawnCall[2].env.BOTGO_CODEX_API_KEY, "bgk_test");

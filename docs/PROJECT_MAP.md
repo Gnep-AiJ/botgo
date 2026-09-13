@@ -2,7 +2,7 @@
 type: moc
 project: BotGo
 status: active
-updated: 2026-09-12
+updated: 2026-09-13
 tags: [botgo, agent, architecture]
 ---
 # BotGo 项目地图
@@ -14,9 +14,9 @@ tags: [botgo, agent, architecture]
 | 首页 | `index.html`、`styles.css`、`app.js` | 首页契约与浏览器 |
 | 网页工作台与账户面板 | [[notes/UI Workspace]]；`workspace.html/css/js`、`workspace-billing.js` | 响应式、主题、真实对话 |
 | Web 云端历史记录 | [[notes/Web History]]；`worker/src/conversations.js`、迁移 0015 | 账户隔离、刷新、流中断、幂等与删除 |
-| 登录、支付与扣费 | [[notes/Account and Billing]]；`worker/src/index.js`、`desktop-auth.js`、`alipay-*.js` | 授权、验签、幂等、金额单位 |
-| 模型目录与 token 计费 | [[notes/Models and Metering]]；`worker/src/metering.js`、`0014_metered_models.sql`、`admin-metering.js` | 真实用量、原子预留、快照、能力探测 |
-| 桌面界面及本地状态 | [[notes/Desktop and CLI]]；`desktop/main.cjs`、`preload.cjs`、`renderer.js/css` | 原生窗口、任务、停止、恢复 |
+| 登录、支付与扣费 | [[notes/Account and Billing]]；`worker/src/index.js`、`worker/src/desktop-auth.js`、`worker/src/alipay-*.js` | 授权、验签、幂等、金额单位 |
+| 模型目录与 token 计费 | [[notes/Models and Metering]]；`worker/src/metering.js`、`worker/migrations/0014_metered_models.sql`、`admin-metering.js` | 真实用量、原子预留、快照、能力探测 |
+| 桌面交互、本地历史与更新 | [[notes/Desktop and CLI]]；`desktop/main.cjs`、`agent/lib/app-server.cjs`、`desktop/lib/updater.cjs` | 流式、审批、停止、恢复、更新验签 |
 | CLI 与共用运行器 | [[notes/Desktop and CLI]]；`agent/bin/botgo.cjs`、`agent/lib/` | `npm --prefix agent test` |
 | 安装与发布 | `install.ps1`、`agent/scripts/package.ps1`、`DEPLOYMENT.md` | 干净安装、哈希、升级回滚 |
 | 后台 | `admin*.js/html/css`、`worker/src/platform-admin.js` | 管理员授权与发布元数据 |
@@ -37,6 +37,10 @@ flowchart LR
 
 后台样式与隔离发布流程：[[notes/Admin UI]]。
 开放注册、赠送余额及三端历史保留：[[notes/Open Registration and Retention]]。
+
+## 目录导航
+
+[目录与产物](ARTIFACTS.md) 说明源码、生成目录和归档证据的位置。新验证材料统一写入 `artifacts/verification/`。主 MOC 是唯一任务导航；按任务读取上表对应模块，不扫描依赖、浏览器 profile 或历史产物。
 
 ## 代码边界
 

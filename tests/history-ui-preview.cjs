@@ -1,7 +1,7 @@
 // Isolated browser API fixtures: tests Web history controls, never production accounts.
 const {app,BrowserWindow}=require('electron');
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const out=path.resolve('.tmp-history-ui');fs.mkdirSync(out,{recursive:true});app.setPath('userData',path.join(out,'profile'));app.disableHardwareAcceleration();
+const out=path.resolve('artifacts/verification/history-ui');fs.mkdirSync(out,{recursive:true});app.setPath('userData',path.join(out,'profile'));app.disableHardwareAcceleration();
 const rows=new Map();let activeAccount='alice',generationCount=0;const errors=[];
 const pause=ms=>new Promise(r=>setTimeout(r,ms));
 const server=http.createServer(async(req,res)=>{

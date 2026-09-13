@@ -15,7 +15,7 @@ function Invoke-WebRequest {
         Microsoft.PowerShell.Utility\Invoke-WebRequest -UseBasicParsing -Uri $Uri -OutFile $OutFile -TimeoutSec $TimeoutSec
     }
 }
-$root=Join-Path (Get-Location) ('.tmp-installer-test-' + [Guid]::NewGuid().ToString('N'))
+$root=Join-Path (Get-Location) ('artifacts/verification/installer-test-' + [Guid]::NewGuid().ToString('N'))
 if(-not (Test-Path (Join-Path $root 'current.json'))){ & './install.ps1' -InstallRoot $root -NoPath -UseBundledNode }
 $pointer=Get-Content -Raw -LiteralPath (Join-Path $root 'current.json')
 & (Join-Path $root 'bin/botgo.cmd') --version

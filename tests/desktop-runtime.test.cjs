@@ -8,9 +8,9 @@ const { createLocalStateStore } = require("../desktop/lib/local-state.cjs");
 const { createCredentialStore } = require("../desktop/lib/credential-store.cjs");
 const { prepareBotGoConfig, restoreOriginalConfig } = require("../desktop/lib/codex-config.cjs");
 
-assert.deepEqual(codexArgumentsFor("read-only"), ["exec", "--json", "--sandbox", "read-only"]);
-assert.deepEqual(codexArgumentsFor("workspace-write"), ["exec", "--json", "--sandbox", "workspace-write"]);
-assert.deepEqual(codexArgumentsFor("full-access"), ["exec", "--json", "--sandbox", "danger-full-access"]);
+assert.deepEqual(codexArgumentsFor("read-only"), ["exec", "--json", "--skip-git-repo-check", "--sandbox", "read-only"]);
+assert.deepEqual(codexArgumentsFor("workspace-write"), ["exec", "--json", "--skip-git-repo-check", "--sandbox", "workspace-write"]);
+assert.deepEqual(codexArgumentsFor("full-access"), ["exec", "--json", "--skip-git-repo-check", "--sandbox", "danger-full-access"]);
 assert.throws(() => codexArgumentsFor("unknown"), /Unsupported permission/);
 
 const temporaryDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "botgo-desktop-test-"));
@@ -19,7 +19,7 @@ const state = createLocalStateStore({ filePath: stateFile });
 state.save({ selectedProject: "C:\\work\\demo", recentProjects: ["C:\\work\\demo"], tasks: [{ id: "task-1", projectPath: "C:\\work\\demo", prompt: "inspect tests", status: "completed", changedFiles: ["README.md"] }] });
 assert.deepEqual(state.load().recentProjects, ["C:\\work\\demo"]);
 assert.equal(state.load().selectedProject, "C:\\work\\demo", "selected local project must survive restart");
-assert.equal(state.load().version, 2, "legacy task history must migrate to the thread schema");
+assert.equal(state.load().version, 3, "legacy task history must migrate to the thread schema");
 assert.equal(state.load().threads.length, 1, "legacy tasks must remain available as local conversations");
 assert.equal(state.load().threads[0].messages[0].content, "inspect tests");
 assert.throws(() => state.save({ deviceToken: "bgdt_private" }), /sensitive/i, "general desktop history must reject device credentials");

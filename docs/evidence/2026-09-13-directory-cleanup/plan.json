@@ -1,0 +1,668 @@
+﻿[
+    {
+        "source":  ".tmp-activate-release.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-activate-release.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-activate-release.ps1",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-activate-release.ps1",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-activate-release-retry.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-activate-release-retry.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-admin-desktop-check.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-admin-desktop-check.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-admin-desktop-tests.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-admin-desktop-tests.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-admin-release-20260912",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-admin-release-20260912",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-admin-release-20260912.manifest.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-admin-release-20260912.manifest.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-admin-ui",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-admin-ui",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-cleanup-execution.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-cleanup-execution.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-cleanup-operation.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-cleanup-operation.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-cleanup-preview.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-cleanup-preview.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-cleanup-release.ps1",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-cleanup-release.ps1",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-cli022-existing.json",
+        "destination":  null,
+        "action":  "delete-empty-probe",
+        "reason":  "Zero-byte release existence probe; release evidence supersedes probe"
+    },
+    {
+        "source":  ".tmp-cli022-existing.zip",
+        "destination":  null,
+        "action":  "delete-empty-probe",
+        "reason":  "Zero-byte release existence probe; release evidence supersedes probe"
+    },
+    {
+        "source":  ".tmp-cli022-exists.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-cli022-exists.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-cli022-install.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-cli022-install.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-cli022-package.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-cli022-package.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-cli022-upgrade.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-cli022-upgrade.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-cli022-upgrade.ps1",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-cli022-upgrade.ps1",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-cli-install.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-cli-install.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-cli-package.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-cli-package.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-cli-upgrade.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-cli-upgrade.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-cli-upgrade-b2a2c75f670b4f3095337385981b8f82",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-cli-upgrade-b2a2c75f670b4f3095337385981b8f82",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-cli-upgrade-c55d89d17de7462aa04c6944149e788c",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-cli-upgrade-c55d89d17de7462aa04c6944149e788c",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-cli-version-upgrade.ps1",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-cli-version-upgrade.ps1",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-desktop-activation-import.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-desktop-activation-import.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-desktop-activation-result.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-desktop-activation-result.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-desktop-after-release.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-desktop-after-release.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-desktop-before-activation.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-desktop-before-activation.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-desktop-check.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-desktop-check.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-desktop-polish",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-desktop-polish",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-desktop-postcleanup.cjs",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-desktop-postcleanup.cjs",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-desktop-release-inventory.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-desktop-release-inventory.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-desktop-restored.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-desktop-restored.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-desktop-test.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-desktop-test.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-dev-err.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-dev-err.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-dev-out.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-dev-out.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-edit-guides.cjs",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-edit-guides.cjs",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-electron-builder-cache",
+        "destination":  null,
+        "action":  "keep",
+        "reason":  "Operational tool cache"
+    },
+    {
+        "source":  ".tmp-final-release-check.cjs",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-final-release-check.cjs",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-fix-layout.cjs",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-fix-layout.cjs",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-github-artifacts.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-github-artifacts.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-github-artifacts-final.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-github-artifacts-final.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-github-branches.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-github-branches.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-github-branches-final.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-github-branches-final.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-github-releases.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-github-releases.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-github-runs.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-github-runs.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-github-runs-final.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-github-runs-final.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-github-tags.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-github-tags.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-history-check.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-history-check.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-history-test.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-history-test.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-history-ui",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-history-ui",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-installer-test-53bcea51238649cea75497f03d8d92f0",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-installer-test-53bcea51238649cea75497f03d8d92f0",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-installer-test-b0e9911410d04b72b065a301ccd55e34",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-installer-test-b0e9911410d04b72b065a301ccd55e34",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-installer-test-d9f52692d03d450fa2c5464c1465a629",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-installer-test-d9f52692d03d450fa2c5464c1465a629",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-install-ui",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-install-ui",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-install-ui.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-install-ui.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-launch-agent-tests.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-launch-agent-tests.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-logout-ui",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-logout-ui",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-native-smoke",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-native-smoke",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-native-smoke.cjs",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-native-smoke.cjs",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-native-smoke.ps1",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-native-smoke.ps1",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-old-desktop-extract.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-old-desktop-extract.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-open-admin-check.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-open-admin-check.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-open-admin-test.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-open-admin-test.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-open-registration-release-9e902c2",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-open-registration-release-9e902c2",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-packaged-prepare",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-packaged-prepare",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-pages60-deploy.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-pages60-deploy.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-pages-after-release.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-pages-after-release.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-pages-cleanup.cjs",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-pages-cleanup.cjs",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-pages-final.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-pages-final.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-pages-inventory.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-pages-inventory.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-pages-review-alias.cjs",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-pages-review-alias.cjs",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-postcleanup-downloads.cjs",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-postcleanup-downloads.cjs",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-preview2-check.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-preview2-check.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-preview2-extract.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-preview2-extract.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-preview2-package.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-preview2-package.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-preview2-tests.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-preview2-tests.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-preview3-existing.exe",
+        "destination":  null,
+        "action":  "delete-empty-probe",
+        "reason":  "Zero-byte release existence probe; release evidence supersedes probe"
+    },
+    {
+        "source":  ".tmp-preview3-existing.json",
+        "destination":  null,
+        "action":  "delete-empty-probe",
+        "reason":  "Zero-byte release existence probe; release evidence supersedes probe"
+    },
+    {
+        "source":  ".tmp-preview3-exists.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-preview3-exists.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-preview3-extract.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-preview3-extract.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-preview3-installer-check",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-preview3-installer-check",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-preview3-package.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-preview3-package.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-preview3-prepare.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-preview3-prepare.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-preview-package.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-preview-package.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-public60",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-public60",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-public-ui.cjs",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-public-ui.cjs",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-public-ui60.cjs",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-public-ui60.cjs",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-r2-after-release.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-r2-after-release.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-r2-final.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-r2-final.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-r2-inventory.cjs",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-r2-inventory.cjs",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-r2-inventory.json",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-r2-inventory.json",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-readback.cjs",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-readback.cjs",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-readback-60d48f9.cjs",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-readback-60d48f9.cjs",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-registration-ui",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-registration-ui",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-release-60d48f9",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-release-60d48f9",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-release-7142b4b",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-release-7142b4b",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-release-acceptance",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-release-acceptance",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-release-check.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-release-check.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-release-check-final.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-release-check-final.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-release-test.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-release-test.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-release-test-final.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-release-test-final.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-review-diff.txt",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-review-diff.txt",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-simplify-check.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-simplify-check.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-simplify-tests.log",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-simplify-tests.log",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-ui-check",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-ui-check",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-version.cjs",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-version.cjs",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-web-release-da5297a",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-web-release-da5297a",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-worker-build",
+        "destination":  "artifacts/archive/2026-09-13-directory-cleanup/.tmp-worker-build",
+        "action":  "archive",
+        "reason":  "Preserve evidence and uncertain temporary files outside source root"
+    },
+    {
+        "source":  ".tmp-wrangler-config",
+        "destination":  null,
+        "action":  "keep",
+        "reason":  "Operational tool cache"
+    }
+]

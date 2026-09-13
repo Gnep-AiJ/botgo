@@ -1,5 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require('node:crypto');
 
 const sensitiveName = /(key|token|secret|authorization|password)/i;
 const now = () => new Date().toISOString();
@@ -17,7 +18,7 @@ function messageOf(message) {
 }
 
 function threadOf(thread) {
-  const messages = Array.isArray(thread?.messages) ? thread.messages.map(messageOf).slice(-200) : [];
+  const messages = Array.isArray(thread?.messages) ? thread.messages.map(messageOf) : [];
   return {
     id: String(thread?.id || crypto.randomUUID()),
     projectPath: String(thread?.projectPath || ""),
@@ -33,7 +34,7 @@ function threadOf(thread) {
 
 function migrateTasks(tasks) {
   if (!Array.isArray(tasks)) return [];
-  return tasks.slice(0, 100).map((task) => threadOf({
+  return tasks.map((task) => threadOf({
     id: task.id,
     projectPath: task.projectPath,
     title: task.prompt,
@@ -51,9 +52,9 @@ function normalise(value) {
   const recentProjects = Array.isArray(value?.recentProjects) ? [...new Set(value.recentProjects.filter((item) => typeof item === "string"))].slice(0, 12) : [];
   const selectedProject = typeof value?.selectedProject === "string" ? value.selectedProject : (recentProjects[0] || "");
   const sourceThreads = Array.isArray(value?.threads) ? value.threads : migrateTasks(value?.tasks);
-  const threads = sourceThreads.map(threadOf).filter((thread) => thread.projectPath).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 100);
+  const threads = sourceThreads.map(threadOf).filter((thread) => thread.projectPath).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const selectedThreadId = threads.some((thread) => thread.id === value?.selectedThreadId) ? value.selectedThreadId : (threads.find((thread) => thread.projectPath === selectedProject)?.id || "");
-  return { version: 2, selectedProject, selectedThreadId, recentProjects, threads };
+  return { version: 3, selectedProject, selectedThreadId, recentProjects, threads };
 }
 
 function assertNoSensitiveFields(value) {
@@ -65,16 +66,38 @@ function assertNoSensitiveFields(value) {
 }
 
 function createLocalStateStore({ filePath }) {
+  const threadDirectory = filePath + '.threads';
   const store = {
     load() {
-      try { return normalise(JSON.parse(fs.readFileSync(filePath, "utf8"))); }
+      try {
+        const value = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+        if (value.version === 3) value.threads = (value.threads || []).map(thread => {
+          if (!/^[a-f0-9]{64}\.json$/.test(thread.messagesFile || '')) throw Error('Invalid message reference');
+          return { ...thread, messages: JSON.parse(fs.readFileSync(path.join(threadDirectory, thread.messagesFile), 'utf8')) };
+        });
+        return normalise(value);
+      }
       catch (error) { if (error.code === 'ENOENT') return normalise({}); throw new Error('本地对话记录无法读取，原文件已保留。', { cause: error }); }
     },
     save(value) {
       assertNoSensitiveFields(value);
       fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      if (fs.existsSync(filePath) && !fs.existsSync(filePath + '.pre-v3.bak')) fs.copyFileSync(filePath, filePath + '.pre-v3.bak');
+      fs.mkdirSync(threadDirectory, { recursive: true });
+      const normalized = normalise(value);
+      const index = { ...normalized, threads: normalized.threads.map(thread => {
+        const body = JSON.stringify(thread.messages);
+        const messagesFile = crypto.createHash('sha256').update(body).digest('hex') + '.json';
+        const target = path.join(threadDirectory, messagesFile);
+        if (!fs.existsSync(target)) {
+          const temporary = target + '.' + crypto.randomUUID() + '.tmp';
+          fs.writeFileSync(temporary, body, 'utf8'); fs.renameSync(temporary, target);
+        }
+        const { messages, ...metadata } = thread;
+        return { ...metadata, messagesFile, messageCount: messages.length };
+      }) };
       const temporary = `${filePath}.${crypto.randomUUID()}.tmp`;
-      try { fs.writeFileSync(temporary, JSON.stringify(normalise(value)), "utf8"); fs.renameSync(temporary, filePath); }
+      try { fs.writeFileSync(temporary, JSON.stringify(index), "utf8"); fs.renameSync(temporary, filePath); }
       finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); }
     },
     renameThread(id, title) {

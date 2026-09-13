@@ -983,3 +983,8 @@ svg {
 .mode-select select { min-height:40px; font-size:12px; }
 .composer-note { font-size:11px; }
 .send-button,.stop-button { width:42px; height:42px; }
+/* Runtime questions remain keyboard accessible while the task is waiting. */
+.runtime-requests{position:fixed;right:24px;bottom:140px;width:min(460px,calc(100vw - 48px));max-height:65vh;overflow:auto;background:var(--surface,#fff);color:var(--text,#17354e);border:1px solid #89adc6;border-radius:16px;padding:18px;box-shadow:0 12px 40px #001b3833;z-index:30}
+.runtime-requests article+article{border-top:1px solid #89adc6;margin-top:16px;padding-top:16px}
+.runtime-requests label{display:block;margin:12px 0}.runtime-requests input,.runtime-requests select{display:block;width:100%;box-sizing:border-box;margin-top:6px;padding:8px}.runtime-requests button{margin:8px 8px 0 0;padding:8px 14px}.runtime-requests pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px}
+.update-notice{display:grid;gap:8px;font-size:12px;padding:8px;overflow-wrap:anywhere}.update-notice button{padding:6px;border-radius:8px}

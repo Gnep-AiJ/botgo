@@ -6,5 +6,6 @@ module.exports = {
   agentRoot,
   ...require(path.join(agentRoot, "lib", "native.cjs")),
   ...require(path.join(agentRoot, "lib", "codex-runner.cjs")),
+  ...require(path.join(agentRoot, "lib", "app-server.cjs")),
   ...require(path.join(agentRoot, "lib", "codex-config.cjs"))
 };
