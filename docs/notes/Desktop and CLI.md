@@ -35,7 +35,7 @@ CLI 在 `%LOCALAPPDATA%/BotGo/Agent` 下维护安装版本、`current.json`、`p
 
 ## 分发
 
-本轮候选为 Desktop 1.2.1-preview.1 / CLI 0.2.1，不表示 current 已激活。Windows 原生终端使用 `agent/lib/windows-console.ps1` 创建独立控制台并回报生命周期；`TERM=dumb` 只在确认 Windows 交互控制台后修正。Desktop 原生终端与图形任务禁止同时启动。
+本轮候选为 Desktop 1.2.1-preview.2 / CLI 0.2.1，不表示 current 已激活。Desktop preview.1 遗漏运行二进制，不可发布；preview.2 增加打包后全量运行文件哈希及包内 Codex 启动检查。Windows 原生终端使用 `agent/lib/windows-console.ps1` 创建独立控制台并回报生命周期；`TERM=dumb` 只在确认 Windows 交互控制台后修正。Desktop 原生终端与图形任务禁止同时启动。
 
 `powershell -NoProfile -File desktop/scripts/package-preview.ps1` 使用固定自签名身份打包：非导出私钥存当前用户个人证书库，公开指纹保存在忽略目录。自签名没有系统默认信任，不安装根证书；安装/升级/卸载与本人任务验收后才允许激活。包版本和验证限制见 [[Release 2026-09-12]]。
 

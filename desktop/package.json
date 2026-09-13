@@ -1,6 +1,6 @@
 {
   "name": "botgo-desktop",
-  "version": "1.2.1-preview.1",
+  "version": "1.2.1-preview.2",
   "private": true,
   "description": "BotGo Desktop for Windows",
   "main": "main.cjs",
@@ -21,6 +21,7 @@
     "appId": "com.botgo.desktop",
     "productName": "BotGo Desktop",
     "asar": true,
+    "afterPack": "scripts/verify-packaged-runtime.cjs",
     "compression": "maximum",
     "files": [
       "main.cjs",
@@ -61,14 +62,12 @@
         "to": "licenses/Apache-2.0.txt"
       },
       {
-        "from": "../agent",
-        "to": "agent",
-        "filter": [
-          "lib/**",
-          "node_modules/@openai/codex-win32-x64/**",
-          "node_modules/@openai/codex/LICENSE",
-          "node_modules/@openai/codex/NOTICE"
-        ]
+        "from": "../agent/lib",
+        "to": "agent/lib"
+      },
+      {
+        "from": "../agent/node_modules/@openai/codex-win32-x64",
+        "to": "agent/node_modules/@openai/codex-win32-x64"
       }
     ]
   }

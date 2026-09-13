@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 $previewRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $identityPath = Join-Path $previewRoot '.secrets/desktop-preview-signing.json'
 $manifest = Get-Content -Raw -LiteralPath (Join-Path $previewRoot 'desktop/package.json') | ConvertFrom-Json
-$artifact = Join-Path $previewRoot ('desktop/dist/BotGo Desktop Setup ' + $manifest.version + '.exe')
+$artifact = Join-Path $previewRoot ('desktop/dist/' + $manifest.version + '/BotGo Desktop Setup ' + $manifest.version + '.exe')
 if (Test-Path -LiteralPath $artifact) { throw 'Preview artifact exists. Increment the version before packaging again.' }
 if (Test-Path -LiteralPath $identityPath) {
     $identity = Get-Content -Raw -LiteralPath $identityPath | ConvertFrom-Json
