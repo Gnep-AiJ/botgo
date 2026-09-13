@@ -62,7 +62,7 @@
             <div class="chat-column">
               <div class="welcome-view" id="welcome-view">
                 <p class="view-kicker">BOTGO AI</p>
-                <h1>开始工作</h1>
+                <h1 class="work-start-title">开始工作</h1>
                 <p>说清目标，交给 BotGo。</p>
               </div>
               <div class="chat-log" id="chat-log" aria-live="polite" aria-label="对话内容"></div>
@@ -85,8 +85,8 @@
               <h1>应用</h1>
               <p class="view-lead">选择 Desktop 或 CLI，在本地项目中使用 BotGo。</p>
               <div class="agent-choices" aria-label="选择本地 Agent">
-                <article class="agent-choice agent-choice--cli"><p class="agent-label">Windows · PowerShell</p><h2>BotGo Agent CLI</h2><p>在项目目录中提问、修改代码、运行任务。</p><div class="install-command"><code>irm https://botgo.win/install.ps1 | iex</code><button type="button" data-copy-install aria-label="复制 CLI 安装命令">复制</button></div><p class="cli-install-status" role="status" data-install-status></p><ol class="install-steps"><li>打开 PowerShell，粘贴命令安装。</li><li>安装完成后重开 PowerShell，进入项目目录。</li><li>输入 <code>botgo</code>。</li><li>在浏览器登录，返回终端使用。</li></ol><div class="install-command"><code>Set-Location -LiteralPath "$HOME\Desktop\my-project"</code><button type="button" data-copy-project aria-label="复制项目目录示例">复制</button></div><p class="guide-note">将 my-project 替换为你已有的项目文件夹。</p><a class="guide-link" href="?view=tutorials&amp;guide=cli">安装与使用指南 →</a></article>
-                <article class="agent-choice agent-choice--desktop"><div><p class="agent-label">桌面应用</p><h2>BotGo Desktop</h2><p>图形化管理项目与对话。</p></div><ol class="install-steps"><li>获取当前已发布安装包并安装。</li><li>打开 Desktop，通过网页登录。</li><li>选择项目文件夹。</li><li>输入目标，开始任务。</li></ol><button type="button" class="setup-primary" data-desktop-open>查看已发布版本</button></article>
+                <article class="agent-choice agent-choice--desktop"><p class="agent-label">Windows · 桌面应用</p><h2>BotGo Desktop</h2><p>图形化管理项目与对话。</p><p id="desktop-version-summary" aria-live="polite">登录后查看当前版本。</p><button type="button" class="setup-primary" data-desktop-open>下载 Desktop</button><ol class="install-steps"><li>下载并安装。</li><li>打开 Desktop，通过网页登录。</li><li>选择项目，输入目标。</li></ol></article>
+                <article class="agent-choice agent-choice--cli"><p class="agent-label">Windows · PowerShell</p><h2>BotGo Agent CLI</h2><div class="install-command"><code>irm https://botgo.win/install.ps1 | iex</code><button type="button" data-copy-install aria-label="复制 CLI 安装命令">复制</button></div><p class="cli-install-status" role="status" data-install-status></p><ol class="install-steps"><li>安装后重开终端。</li><li>在项目目录运行 <code>botgo</code>。</li><li>首次网页登录后返回终端。</li></ol></article>
               </div>
             </div>
           </section>
@@ -99,7 +99,7 @@
               <div class="guide-layout"><div class="guide-tabs" role="tablist" aria-label="指南分类"><button type="button" role="tab" data-guide="web" aria-selected="true">网页对话</button><button type="button" role="tab" data-guide="account" aria-selected="false">账户与余额</button><button type="button" role="tab" data-guide="cli" aria-selected="false">Agent CLI</button><button type="button" role="tab" data-guide="faq" aria-selected="false">常见问题</button></div><div class="guide-content">
               <section data-guide-panel="web" role="tabpanel"><h2>从一个问题开始</h2><ol class="install-steps"><li>点击右上角登录，用邮箱验证码验证。</li><li>在输入框下方选择模型，输入你的目标。</li><li>按 Enter 发送；生成时可随时停止。</li></ol><a class="guide-link" href="?view=chat">开始对话 →</a></section>
               <section data-guide-panel="account" role="tabpanel" hidden><h2>账户与余额</h2><ol class="install-steps"><li>使用邮箱验证码登录。</li><li>点击右上角余额，查看账户并选择充值金额。</li><li>每次对话按所选模型的实际用量计费，结束后余额自动刷新。</li></ol><p class="guide-note">支付完成后请等待余额刷新，避免重复付款。</p><p class="guide-note">右上角账户菜单 → 退出登录，可同步退出本浏览器的其他标签页。云端历史保留，Desktop 与 CLI 不受影响。再次点击登录可重新登录。</p></section>
-              <section data-guide-panel="cli" role="tabpanel" hidden><h2>一个命令，进入工作</h2><ol class="install-steps"><li>打开 PowerShell，粘贴应用页的安装命令。</li><li>安装后重开 PowerShell，切换到项目目录，输入 <code>botgo</code>。</li><li>首次通过浏览器登录，返回终端即可开始。</li></ol><p class="guide-note">重新登录：<code>botgo auth login</code>。浏览器未打开时，复制终端中的登录链接；按 Enter 重开浏览器，Ctrl+C 取消，超时后重新运行 botgo。</p><a class="guide-link" href="?view=agents">复制安装命令 →</a></section>
+              <section data-guide-panel="cli" role="tabpanel" hidden><h2>终端登录</h2><p class="guide-note">安装与启动步骤见应用页。需要重新登录时运行 <code>botgo auth login</code>。</p><p class="guide-note">浏览器未打开时使用终端中的登录链接；按 Enter 重开，Ctrl+C 取消。超时后重新运行 <code>botgo</code>。</p><a class="guide-link" href="?view=agents">前往应用 →</a></section>
               <section data-guide-panel="faq" role="tabpanel" hidden><h2>常见问题</h2><div class="guide-faq"><details><summary>模型不可用怎么办？</summary><p>点击模型区域的重试按钮。灰色模型暂不可用，请选择其他模型。</p></details><details><summary>停止生成后如何计费？</summary><p>按服务返回的可核验用量结算，余额会自动刷新。</p></details><details><summary>终端找不到 botgo 命令？</summary><p>安装完成后关闭并重新打开 PowerShell，再输入 <code>botgo</code>。仍不可用时重跑安装命令，并检查安装报错。网页不能直接启动未注册的 PowerShell 协议，请从开始菜单打开。</p></details><details><summary>如何更新 CLI？</summary><p>重新执行应用页的安装命令更新 BotGo CLI；<code>botgo update</code> 仅更新内置 Codex。</p></details></div></section></div></div>
             </div>
           </section>
@@ -116,6 +116,7 @@
         </div>
         <button id="desktop-download-login" class="setup-primary desktop-download-link" type="button" hidden>登录后下载</button>
         <p id="desktop-install-status" class="agent-dialog-status" aria-live="polite"></p>
+        <button id="desktop-download-retry" class="setup-primary" type="button" hidden>重试</button>
       </section>
     </dialog>
 

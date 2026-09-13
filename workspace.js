@@ -9,6 +9,7 @@
   const returnedOutTradeNo = params.get("out_trade_no") || "";
   let activeView = allowedViews.has(params.get("view")) ? params.get("view") : "chat";
   let account = null;
+  let desktopReleaseRequest = 0;
   let authEpoch = 0, loggedOut = false, logoutPending = false;
   const logoutChannel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('botgo-web-auth') : null;
   let messages = [];
@@ -99,27 +100,36 @@
   syncThemeFromPreference();
   async function loadDesktopRelease() {
     const epoch = authEpoch;
+    const request = ++desktopReleaseRequest;
+    const summary = document.getElementById('desktop-version-summary');
+    const retry = document.getElementById('desktop-download-retry');
+    retry.hidden = true;
     const releasePanel = document.getElementById("desktop-release");
     const loginButton = document.getElementById("desktop-download-login");
     const status = document.getElementById("desktop-install-status");
     releasePanel.hidden = true;
     loginButton.hidden = Boolean(account);
     if (!account) {
+      summary.textContent = '登录后查看当前版本。';
       status.textContent = "请先登录 BotGo 账号，再获取受保护的安装包。";
       return;
     }
     status.textContent = "正在获取最新版本…";
+    summary.textContent = status.textContent;
     try {
       const result = await api("/desktop/releases/current");
-      if (epoch !== authEpoch) return;
+      if (epoch !== authEpoch || request !== desktopReleaseRequest) return;
       if (!result.release) throw new Error("当前没有可下载的桌面版本。");
       const release = result.release;
       document.getElementById("desktop-download-link").href = release.downloadUrl;
       releasePanel.hidden = false;
       status.textContent = `安装包已准备好：${release.version || '当前发布版本'}。`;
+      summary.textContent = `当前版本：${release.version || '暂不可用'}`;
     } catch (error) {
-      if (epoch !== authEpoch) return;
+      if (epoch !== authEpoch || request !== desktopReleaseRequest) return;
       status.textContent = error.message;
+      summary.textContent = '版本获取失败，点击下载重试。';
+      retry.hidden = false;
     }
   }
 
@@ -146,6 +156,7 @@
       button.setAttribute("aria-current", button.dataset.viewLink === activeView ? "page" : "false");
     });
     if (updateHistory) updateUrl();
+    if (activeView === 'agents') loadDesktopRelease();
   }
 
   function formatBalance(balanceCents) {
@@ -155,6 +166,7 @@
   }
 
   function renderAccountState() {
+    if (activeView === 'agents' || desktopInstallDialog.open || !account) loadDesktopRelease();
     const nextHistoryAccount=account?.id||account?.email||null;
     if(nextHistoryAccount!==historyAccount){
       historyAccount=nextHistoryAccount;historyEpoch++;historyLoading=false;conversationLoading=false;chatController?.abort();
@@ -471,6 +483,7 @@
   document.querySelectorAll("[data-view-link]").forEach((button) => button.addEventListener("click", () => setView(button.dataset.viewLink, true)));
   document.querySelectorAll("[data-auth-mode]").forEach((button) => button.addEventListener("click", () => showAuth(button.dataset.authMode)));
   document.querySelectorAll("[data-desktop-open]").forEach((button) => button.addEventListener("click", openDesktopInstall));
+  document.getElementById('desktop-download-retry').addEventListener('click', loadDesktopRelease);
   themeToggle.addEventListener("click", () => applyTheme(currentTheme() === "dark" ? "light" : "dark"));
   prefersDarkTheme.addEventListener("change", () => {
     if (!savedThemePreference) syncThemeFromPreference();

@@ -3,6 +3,40 @@ const test = require("node:test");
 
 const { login } = require("../lib/cli.cjs");
 
+test('login prints one authorization prompt without periodic or internal progress', async () => {
+  const lines = [];
+  const context = { api: { origin: 'https://botgo.win', async startAuthorization() { return { authorizationId: 'test' }; }, async cancelAuthorization() {} }, output: line => lines.push(line) };
+  await assert.rejects(login(context, { timeoutMs: 80, progressMs: 5, input: null, openBrowserImpl() {} }), /超时.*重试/);
+  assert.equal(lines.length, 3);
+  assert.match(lines[0], /浏览器.*授权/);
+  assert.match(lines[1], /^登录链接：https:\/\/botgo.win\//);
+  assert.match(lines[2], /Ctrl\+C.*Enter/);
+  assert.doesNotMatch(lines.join('\n'), /剩余|正在创建|正在连接|BotGo Agent ·/);
+});
+
+for (const failure of ['exchange', 'invalid-token', 'credential-store']) test(`callback ${failure} failure closes listener, cancels request and preserves credentials`, async () => {
+  let url, cancelled = 0, saved = 0;
+  const listeners = process.listenerCount('SIGINT');
+  const context = {
+    api: { origin: 'https://botgo.win', async startAuthorization() { return { authorizationId: 'test' }; },
+      async exchangeAuthorization() { if (failure === 'exchange') throw Error('exchange unavailable'); return { deviceToken: failure === 'invalid-token' ? 'bad' : 'bgdt_test', account: {} }; },
+      async cancelAuthorization() { cancelled++; }
+    },
+    credentialStore: { async save() { if (failure === 'credential-store') throw Error('credential store unavailable'); saved++; } }, output() {}
+  };
+  const pending = login(context, { timeoutMs: 3000, input: null, openBrowserImpl: value => { url = value; } });
+  const rejected = assert.rejects(pending, /unavailable|有效的设备凭据/);
+  while (!url) await new Promise(resolve => setImmediate(resolve));
+  const page = new URL(url), callback = page.searchParams.get('callback');
+  const response = await fetch(`${callback}?state=${page.searchParams.get('state')}&code=bgac_test`);
+  assert.equal(response.status, 500);
+  assert.match(await response.text(), /授权未完成/);
+  await rejected;
+  assert.equal(saved, 0); assert.equal(cancelled, 1);
+  assert.equal(process.listenerCount('SIGINT'), listeners);
+  await assert.rejects(fetch(callback));
+});
+
 test('hung browser launch does not hide manual link or cancellation', async () => {
   const lines = [];
   const context = { api: { origin: 'https://botgo.win', async startAuthorization() { return { authorizationId: 'test' }; }, async cancelAuthorization() {} }, output(line) { lines.push(line); if (line.startsWith('登录链接')) setImmediate(() => process.emit('SIGINT')); } };

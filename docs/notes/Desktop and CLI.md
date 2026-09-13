@@ -27,7 +27,7 @@ tags: [botgo, desktop, cli]
 
 `local-state.cjs` 用临时文件原子替换历史；读取异常保留原文件并报错。单实例运行，启动时把遗留运行中记录恢复为停止。账户面板限制在侧栏内，模型和权限菜单支持键盘及边界翻转。
 
-CLI 登录提供等待倒计时、Enter 重开浏览器、手动链接和 Ctrl+C 取消；API 请求设 20 秒上限，远端取消失败不阻塞本地清理。重复回调拒绝交换，取消后迟到的交换响应不写凭据。网页版仍需本人确认授权；本轮未修改或部署授权网页。
+CLI 登录仅显示必要授权提示、Enter 重开浏览器、手动链接和 Ctrl+C 取消，不滚动倒计时；API 请求设 20 秒上限，远端取消失败不阻塞本地清理。重复回调拒绝交换，取消后迟到的交换响应不写凭据。网页版仍需本人确认授权；本轮未修改授权网页。
 
 桌面在 Electron userData 下保存安全凭据、`state.json` 和独立 `codex/`。旧桌面已记录的会话可从旧全局 sessions 目录复制到独立目录；不搬走或删除原文件。旧配置备份保留。
 
@@ -35,9 +35,9 @@ CLI 在 `%LOCALAPPDATA%/BotGo/Agent` 下维护安装版本、`current.json`、`p
 
 ## 分发
 
-本轮候选为 Desktop 1.2.1-preview.2 / CLI 0.2.1，不表示 current 已激活。Desktop preview.1 遗漏运行二进制，不可发布；preview.2 增加打包后全量运行文件哈希及包内 Codex 启动检查。Windows 原生终端使用 `agent/lib/windows-console.ps1` 创建独立控制台并回报生命周期；`TERM=dumb` 只在确认 Windows 交互控制台后修正。Desktop 原生终端与图形任务禁止同时启动。
+本轮版本为 Desktop 1.2.1-preview.3 / CLI 0.2.2，current 激活状态以最新发布记录为准。Desktop preview.1 遗漏运行二进制，不可发布；从 preview.2 起提供打包后全量运行文件哈希及包内 Codex 启动检查。Windows 原生终端使用 `agent/lib/windows-console.ps1` 创建独立控制台并回报生命周期；`TERM=dumb` 只在确认 Windows 交互控制台后修正。Desktop 原生终端与图形任务禁止同时启动。
 
-`powershell -NoProfile -File desktop/scripts/package-preview.ps1` 使用固定自签名身份打包：非导出私钥存当前用户个人证书库，公开指纹保存在忽略目录。自签名没有系统默认信任，不安装根证书；安装/升级/卸载与本人任务验收后才允许激活。包版本和验证限制见 [[Release 2026-09-12]]。
+`powershell -NoProfile -File desktop/scripts/package-preview.ps1` 使用固定自签名身份打包：非导出私钥存当前用户个人证书库，公开指纹保存在忽略目录。自签名没有系统默认信任，不安装根证书。2026-09-13 用户授权先发布预览版，安装/升级/卸载与本人任务由用户上线后验收；包版本和验证限制见 [[Release 2026-09-12]]。
 
 `install.ps1` 检测受支持 Node/npm，必要时安装固定官方 Node 22.23.2 到 BotGo 用户目录；先验证 zip 哈希和运行环境，再切换版本。`agent/scripts/package.ps1` 生成 zip 和元数据；R2 `agent/` 前缀经专用公开 Worker 路由分发，不开放 bucket。
 

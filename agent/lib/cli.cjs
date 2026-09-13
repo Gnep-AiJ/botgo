@@ -82,22 +82,20 @@ function openBrowser(url) {
   return new Promise((resolve,reject)=>{child.once('error',reject);child.once('spawn',()=>{child.unref();resolve();});});
 }
 
-async function login(context, { openBrowserImpl = openBrowser, timeoutMs = 5 * 60 * 1000, progressMs = 15000, input = process.stdin } = {}) {
+async function login(context, { openBrowserImpl = openBrowser, timeoutMs = 5 * 60 * 1000, input = process.stdin } = {}) {
   const proof = createProof();
-  let server, timeout, progress, terminal, started, page;
+  let server, timeout, terminal, started, page;
   let settled = false, exchanging = false, resolveResult, rejectResult;
-  const deadline = Date.now() + timeoutMs;
   const resultPromise = new Promise((resolve, reject) => { resolveResult = resolve; rejectResult = reject; });
   // A timeout may arrive while the browser launcher or an API call is still pending.
   resultPromise.catch(() => {});
   const close = () => {
-    clearTimeout(timeout); clearInterval(progress); terminal?.close();
+    clearTimeout(timeout); terminal?.close();
     if (server?.listening) server.close();
     process.removeListener('SIGINT', cancelLogin);
   };
   const fail = error => { if (settled) return; settled = true; close(); rejectResult(error); };
   const cancelLogin = () => fail(new Error('已取消浏览器登录。重新运行 botgo 可重试。'));
-  const waiting = () => outputLine(`等待网页登录确认 · 剩余 ${Math.max(0, Math.ceil((deadline - Date.now()) / 1000))} 秒`, context.output);
   server = http.createServer(async (request, response) => {
     const send = (code, title, message) => {
       response.writeHead(code, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store', 'referrer-policy': 'no-referrer' });
@@ -111,7 +109,6 @@ async function login(context, { openBrowserImpl = openBrowser, timeoutMs = 5 * 6
     if (exchanging) return send(409, '正在完成登录', '请返回终端等待结果。');
     exchanging = true;
     try {
-      outputLine('收到网页授权，正在连接账户…', context.output);
       const exchanged = await context.api.exchangeAuthorization({ authorizationId: started.authorizationId, authorizationCode: callback.code, verifier: proof.verifier });
       if (settled) return send(410, '授权已结束', '请返回终端重新登录。');
       if (!/^bgdt_[A-Za-z0-9_-]+$/.test(exchanged.deviceToken || '')) throw new Error('服务未返回有效的设备凭据。');
@@ -130,7 +127,6 @@ async function login(context, { openBrowserImpl = openBrowser, timeoutMs = 5 * 6
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
     process.once('SIGINT', cancelLogin);
     timeout = setTimeout(() => fail(new Error('浏览器授权已超时。重新运行 botgo 可重试。')), timeoutMs);
-    outputLine('正在创建网页登录请求…', context.output);
     started = await Promise.race([context.api.startAuthorization({ deviceLabel: `BotGo Agent CLI (${os.hostname()})`.slice(0, 80), verifier: proof.verifier }), resultPromise]);
     if (settled) return await resultPromise;
     const callback = `http://127.0.0.1:${server.address().port}/callback`;
@@ -145,7 +141,6 @@ async function login(context, { openBrowserImpl = openBrowser, timeoutMs = 5 * 6
       outputLine('请在浏览器中登录并确认授权；完成后自动返回终端。', context.output);
       outputLine(`登录链接：${page}`, context.output);
       outputLine('按 Ctrl+C 取消；按 Enter 重新打开浏览器。', context.output);
-      waiting(); progress = setInterval(() => { if (!settled && !exchanging) waiting(); }, progressMs);
       if (input?.isTTY) {
         terminal = readline.createInterface({ input, terminal: false });
         terminal.on('line', () => { if (!settled && !exchanging) reopen().catch(() => {}); });
@@ -382,7 +377,6 @@ async function main(argv = process.argv.slice(2), overrides = {}) {
     }
     if (!credential?.deviceToken) {
       if (!interactive) throw new Error('请在交互终端运行 botgo auth login');
-      outputLine('BotGo Agent · 通过浏览器登录你的 BotGo 账户',context.output);
       await (overrides.loginImpl || login)(context);
       credential=await storedCredential(context);
     }

@@ -551,7 +551,7 @@ body:not([data-active-view="chat"]) .view-lead { margin:14px 0 0; font-size:15px
 .agent-panel .install-command { display:flex; align-items:center; gap:16px; max-width:100%; margin-top:20px; padding:16px 18px; border:1px solid var(--edge-soft); border-radius:10px; background:var(--workspace-elevated); }
 .agent-panel .install-command code { flex:1; min-width:0; font:14px/1.7 Consolas,monospace; overflow-wrap:anywhere; }
 .agent-panel .install-command button { flex-shrink:0; min-height:40px; padding:0 14px; border:1px solid var(--line); border-radius:8px; color:var(--ink); background:var(--panel-strong); cursor:pointer; }
-.agent-panel .install-steps { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px 28px; margin:24px 0; padding:0; list-style:none; counter-reset:install; font-size:16px; }
+.agent-panel .install-steps { display:grid; grid-template-columns:1fr; gap:12px; margin:24px 0 0; padding:0; list-style:none; counter-reset:install; font-size:16px; }
 .agent-panel .install-steps li { position:relative; padding:0 0 0 36px; counter-increment:install; }
 .agent-panel .install-steps li::before { content:counter(install); position:absolute; top:2px; left:0; display:grid; place-items:center; width:26px; height:26px; border:1px solid var(--edge-soft); border-radius:50%; background:var(--workspace-elevated); color:var(--copy-strong); font-size:13px; font-weight:600; }
 .cli-install-status:empty { display:none; }
@@ -561,8 +561,8 @@ body:not([data-active-view="chat"]) .view-lead { margin:14px 0 0; font-size:15px
 .guide-layout .guide-tabs [aria-selected="true"] { color:#0868c7; background:#e9f1fa; font-weight:600; }
 .guide-content { min-width:0; max-width:760px; padding:28px 32px; border:1px solid var(--edge-soft); border-radius:16px; background:var(--workspace-elevated); color:var(--copy-strong); }
 .guide-content h2 { font-size:26px; margin:0 0 24px; font-weight:600; letter-spacing:-.03em; }
-.guide-content .install-steps { padding-left:22px; font-size:16px; line-height:1.9; }
-.guide-content .install-steps li { padding:8px 0 16px 8px; }
+.guide-content .install-steps { padding-left:22px; font-size:16px; line-height:1.8; }
+.guide-content .install-steps li { padding:0 0 12px 8px; }
 .guide-note { font-size:15px; color:var(--copy-muted); line-height:1.8; }
 .guide-content .guide-faq { margin-top:0; }
 :root[data-theme="dark"] .guide-layout .guide-tabs [aria-selected="true"] { background:#25394c; color:#9aceff; }
@@ -581,3 +581,10 @@ body:not([data-active-view="chat"]) .view-lead { margin:14px 0 0; font-size:15px
  .agent-panel .agent-choice--desktop { align-items:flex-start; padding:24px; }
  body:not([data-active-view="chat"]) .content-panel h1 { font-size:34px; }
 }
+
+/* Installation typography and the welcome heading retain the existing palette. */
+.welcome-view h1.work-start-title { letter-spacing:0.02em; }
+.agent-panel .agent-choice p,.guide-content :is(p,li) { font-size:16px; line-height:1.8; }
+.agent-panel .setup-primary { display:inline-flex; align-items:center; justify-content:center; min-height:44px; }
+.agent-panel .install-command button { min-height:44px; }
+#desktop-version-summary { overflow-wrap:anywhere; }
