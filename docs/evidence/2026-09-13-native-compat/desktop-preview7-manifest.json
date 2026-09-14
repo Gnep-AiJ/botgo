@@ -1,0 +1,12 @@
+{
+  "version": "1.2.1-preview.7",
+  "platform": "win-x64",
+  "objectKey": "desktop/1.2.1-preview.7/BotGo-Setup-1.2.1-preview.7.exe",
+  "fileName": "BotGo Desktop Setup 1.2.1-preview.7.exe",
+  "sizeBytes": 182253752,
+  "sha256": "2c8453e6f25f8bfd8dc1a94759b8542a2d7eba7fb444a57454eab62028ae5075",
+  "sourceCommit": "2d16e7b0afb7f157464efd6da00af10bdec27468",
+  "signature": "self-signed",
+  "signerThumbprint": "104C109C454B26C3B5028EE66D8B225F447F953F",
+  "notes": "Self-signed preview. Production fault-matrix and cross-device install, upgrade, uninstall and history acceptance are deferred to user testing after activation."
+}

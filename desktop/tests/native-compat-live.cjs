@@ -1,6 +1,8 @@
 // Real account/model acceptance, isolated files. Never print/store credential values.
 const { app, safeStorage } = require('electron');
-const fs = require('node:fs'), path = require('node:path');
+const fs = require('node:fs'), path = require('node:path'), crypto = require('node:crypto');
+const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const { createCredentialStore } = require('../lib/credential-store.cjs');
 const { createAppServerRunner } = require('../../agent/lib/app-server.cjs');
 const { nativeCommand } = require('../../agent/lib/native.cjs');
@@ -29,6 +31,24 @@ app.whenReady().then(async () => {
     report.before = (await call('/desktop/account')).account.balanceCents;
     const catalog = await call('/models');
     report.autoReviewCapability = catalog?.capabilities?.autoReview === true;
+    const currentRelease = (await call('/desktop/releases/current')).release;
+    report.desktopRelease = currentRelease ? {
+      id: currentRelease.id,
+      version: currentRelease.version,
+      sizeBytes: currentRelease.size_bytes,
+      sha256: currentRelease.sha256
+    } : null;
+    if (process.argv.includes('--release-download')) {
+      if (!currentRelease?.downloadUrl) throw Error('Production Desktop release is unavailable');
+      const response = await fetch(new URL(currentRelease.downloadUrl, 'https://botgo.win'), { signal: AbortSignal.timeout(300000) });
+      if (!response.ok || !response.body) throw Error(`Desktop release download: ${response.status}`);
+      const target = path.join(out, 'desktop-release-readback.exe');
+      await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(target));
+      const bytes = fs.statSync(target).size;
+      const sha256 = crypto.createHash('sha256').update(fs.readFileSync(target)).digest('hex');
+      report.desktopReleaseDownload = { bytes, sha256, matches: bytes === currentRelease.size_bytes && sha256 === currentRelease.sha256 };
+      if (!report.desktopReleaseDownload.matches) throw Error('Downloaded Desktop release does not match current metadata');
+    }
     if (process.argv.includes('--account-only')) { report.status = 'account-accessible'; return; }
     if (process.argv.includes('--capabilities') && !report.autoReviewCapability) throw Error('Production auto-review capability is not enabled for this Desktop device');
     const connect = async () => {
