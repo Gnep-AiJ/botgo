@@ -19,6 +19,8 @@ function fixture(overrides = {}) {
     });
   };
   const task = createAppServerRunner({ command: 'codex', spawnImpl: () => child }).start({ id: 'local-thread', projectPath: process.cwd(), codexHome: process.cwd(), relayKey: 'bgk_test', relayOrigin: 'https://botgo.win', model: 'gpt-5.6-sol', prompt: 'inspect', permission: 'workspace-write', onEvent: e => events.push(e), ...overrides });
+  const originalRespond = task.respond;
+  task.respond = response => originalRespond({ ...response, requestId: events.find(e => e.type === 'request' && e.requestId.endsWith(':' + response.requestId))?.requestId || response.requestId });
   return { task, events, emit, child, messages, ready: () => new Promise(resolve => setImmediate(resolve)) };
 }
 test('app server initializes, resumes, streams Unicode and ignores unrelated threads', async () => {

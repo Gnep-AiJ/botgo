@@ -1,6 +1,6 @@
 import { consumeLoginCode } from "./account-operations.js";
 import { connect } from "cloudflare:sockets";
-import { DesktopAuthError, approveDesktopWebAuthorization, cancelDesktopWebAuthorization, desktopCredentialFor, desktopRelayCredentialFor, desktopWebAuthorizationFor, exchangeDesktopWebAuthorization, issueDesktopKey, revokeDesktopDevice, startDesktopWebAuthorization } from "./desktop-auth.js";
+import { DesktopAuthError, approveDesktopWebAuthorization, cancelDesktopWebAuthorization, desktopCredentialFor, desktopRelayCredentialFor, desktopWebAuthorizationFor, exchangeDesktopWebAuthorization, executionKey, executionModelFromVerifiedKey, issueDesktopKey, revokeDesktopDevice, startDesktopWebAuthorization, validateExecutionModel } from "./desktop-auth.js";
 import { handlePlatformRoute, resolveUpstreamConfig } from "./platform-admin.js";
 import { conversationRoute, startConversationTurn, purgeExpiredConversations } from "./conversations.js";
 
@@ -507,8 +507,9 @@ async function desktopAccount(request, env) {
 
 async function desktopIssueKey(request, env) {
   try {
-    const result = await issueDesktopKey(env, bearerToken(request));
-    await audit(env, result.account.id, "desktop_key_issued", { keyId: result.keyId, plan: result.subscription.plan });
+    const body = await bodyOf(request) || {};
+    const result = await issueDesktopKey(env, bearerToken(request), { model: body.model });
+    await audit(env, result.account.id, "desktop_key_issued", { keyId: result.keyId, plan: result.subscription.plan, model: result.model });
     return json({ key: result.key, prefix: result.prefix }, 201);
   } catch (error) {
     return desktopFailure(error);
@@ -535,14 +536,19 @@ async function issueCodexKey(request, env) {
   const session = await sessionFor(request, env);
   if (!session) return json({ error: "请先登录。" }, 401);
   const subscription = await activeSubscription(env, session.sub);
-  const rawKey = `bgk_${base64url(crypto.getRandomValues(new Uint8Array(32)))}`;
+  const body = await bodyOf(request) || {};
+  if (body.model !== undefined) {
+    try { await validateExecutionModel(env, body.model); }
+    catch (error) { return desktopFailure(error); }
+  }
+  const rawKey = executionKey(body.model);
   const keyHash = await sha256(rawKey);
   const keyId = requestId();
   await env.DB.batch([
     env.DB.prepare("UPDATE api_keys SET revoked_at = CURRENT_TIMESTAMP WHERE account_id = ? AND scope IN ('codex', 'agent') AND revoked_at IS NULL").bind(session.sub),
     env.DB.prepare("INSERT INTO api_keys (id, account_id, key_hash, key_prefix, label, scope) VALUES (?, ?, ?, ?, ?, 'agent')").bind(keyId, session.sub, keyHash, rawKey.slice(0, 12), "BotGo Agent API")
   ]);
-  await audit(env, session.sub, "agent_key_issued", { keyId, plan: subscription.plan });
+  await audit(env, session.sub, "agent_key_issued", { keyId, plan: subscription?.plan || "metered", model: body.model ?? null });
   return json({ key: rawKey, prefix: rawKey.slice(0, 12), instruction: "Use this BotGo API Key for BotGo Desktop." }, 201);
 }
 
@@ -556,7 +562,8 @@ async function credentialFor(request, env, includeDesktop = false) {
   const keyHash = await sha256(rawKey);
   const credential = await env.DB.prepare("SELECT k.id, k.account_id, a.credit_balance, a.status FROM api_keys k JOIN accounts a ON a.id = k.account_id WHERE k.key_hash = ? AND k.scope IN ('codex', 'agent') AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at > CURRENT_TIMESTAMP)").bind(keyHash).first();
   if (!credential || credential.status !== "active") return null;
-  return credential;
+  const model = executionModelFromVerifiedKey(rawKey);
+  return model === undefined ? null : { ...credential, model };
 }
 
 
@@ -570,7 +577,7 @@ async function proxyCodexModels(request, env) {
 
 
 import { handleAgentRelease } from "./agent-releases.js";
-import { catalog, publicCatalog, meteredProxy } from "./metering.js";
+import { autoReviewCapability, catalog, publicCatalog, meteredProxy } from "./metering.js";
 
 export default {
   async scheduled(event, env, ctx) { ctx.waitUntil(purgeExpiredConversations(env)); },
@@ -578,7 +585,11 @@ export default {
     if (env.BOTGO_MAINTENANCE === "1") return json({ error: "服务更新中，请稍后重试。" }, 503, { "retry-after": "60" });
     if (!env.DB || !env.AUTH_SECRET) return json({ error: "后端绑定尚未配置。" }, 503);
     const path = new URL(request.url).pathname;
-    if (request.method === 'GET' && path === '/models') return json(publicCatalog(await catalog(env)));
+    if (request.method === 'GET' && path === '/models') {
+      const data=await catalog(env),token=bearerToken(request);
+      const desktop=token?.startsWith('bgdt_')?await desktopCredentialFor(env,token):null;
+      return json(publicCatalog(data,{autoReview:desktop?await autoReviewCapability(env,data):false}));
+    }
     if (path === '/conversations' || path.startsWith('/conversations/')) {
       const identity = await sessionFor(request, env);
       return await conversationRoute(request, env, identity?.sub, path) || json({error:'对话不存在。'},404);
@@ -602,7 +613,7 @@ export default {
           return response;
         } catch(error) {await turn.history.finish('failed');throw error;}
       }
-      return meteredProxy(request, env, ctx, {accountId, channel, body, upstream});
+      return meteredProxy(request, env, ctx, {accountId, channel, body, upstream, billingModel: channel==='desktop_codex'?identity.model:null});
     }
     const agentRelease = await handleAgentRelease(request, env, path);
     if (agentRelease) return agentRelease;

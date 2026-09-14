@@ -10,6 +10,7 @@ const records = {
   accounts: new Map([["alice@botgo.test", { id: "account-1", email: "alice@botgo.test", credit_balance: 4, status: "active" }]]),
   loginCodes: new Map([["login-hash", { token_hash: "login-hash", email: "alice@botgo.test", expires_at: "2099-01-01T00:00:00.000Z", consumed_at: null }]]),
   subscriptions: new Map([["account-1", { plan: "free", status: "active", expires_at: null }]]),
+  models: new Set(["gpt-5.6-sol", "gpt-5.6-terra"]),
   devices: new Map(),
   keys: []
 };
@@ -27,6 +28,7 @@ const db = {
             if (sql.includes("FROM accounts WHERE email")) return records.accounts.get(values[0]) || null;
             if (sql.includes("FROM accounts WHERE id")) return [...records.accounts.values()].find((account) => account.id === values[0]) || null;
             if (sql.includes("FROM device_tokens")) return records.devices.get(values[0]) || null;
+            if (sql.includes("FROM model_catalog")) return records.models.has(values[0]) ? { id: values[0] } : null;
             if (sql.includes("FROM api_keys k JOIN accounts a")) {
               const key = records.keys.find((item) => item.key_hash === values[0] && item.scope === "desktop" && !item.revoked_at);
               const device = key ? records.devices.get(key.device_token_hash) : null;
@@ -78,20 +80,28 @@ assert.equal(records.loginCodes.get("login-hash").consumed_at, "now");
 records.subscriptions.clear();
 const firstKey = await issueDesktopKey(env, session.deviceToken, { sha256, requestId });
 assert.equal(firstKey.subscription.plan,"metered","a verified user must not require a legacy subscription");
-const secondKey = await issueDesktopKey(env, session.deviceToken, { sha256, requestId });
+const secondKey = await issueDesktopKey(env, session.deviceToken, { model: "gpt-5.6-sol", sha256, requestId });
 assert.match(firstKey.key, /^bgk_/);
+assert.match(secondKey.key, /^bgk_v2_/);
 assert.notEqual(firstKey.key, secondKey.key);
 assert.equal(records.keys.filter((key) => key.scope === "desktop" && !key.revoked_at).length, 1, "rotating a desktop key must keep only this device's latest key active");
 
 const activeRelayCredential = await desktopRelayCredentialFor(env, secondKey.key, { sha256 });
 assert.equal(activeRelayCredential.account.id, "account-1", "an active device may use its current desktop relay key");
+assert.equal(activeRelayCredential.model, "gpt-5.6-sol", "a v2 relay key exposes its bound model only after full-hash validation");
+const keyParts=secondKey.key.split("_");keyParts[2]=(keyParts[2][0]==="A"?"B":"A")+keyParts[2].slice(1);
+assert.equal(await desktopRelayCredentialFor(env, keyParts.join("_"), { sha256 }), null, "tampering with the embedded model invalidates the complete key hash");
+await assert.rejects(issueDesktopKey(env, session.deviceToken, { model: "gpt-disabled", sha256, requestId }), /暂不可用于 Agent/);
+const switchedKey=await issueDesktopKey(env, session.deviceToken, { model: "gpt-5.6-terra", sha256, requestId });
+assert.equal(await desktopRelayCredentialFor(env, secondKey.key, { sha256 }), null, "switching models revokes the previous execution key");
+assert.equal((await desktopRelayCredentialFor(env, switchedKey.key, { sha256 })).model, "gpt-5.6-terra");
 records.devices.get(`hash:${session.deviceToken}`).expires_at = "2000-01-01T00:00:00.000Z";
-assert.equal(await desktopRelayCredentialFor(env, secondKey.key, { sha256 }), null, "an expired desktop device must not retain relay access through its old key");
+assert.equal(await desktopRelayCredentialFor(env, switchedKey.key, { sha256 }), null, "an expired desktop device must not retain relay access through its old key");
 records.devices.get(`hash:${session.deviceToken}`).expires_at = "2099-01-01T00:00:00.000Z";
 
 await revokeDesktopDevice(env, session.deviceToken, { sha256 });
 assert.equal([...records.devices.values()][0].revoked_at, "now");
 assert.equal(records.keys.filter((key) => key.scope === "desktop" && !key.revoked_at).length, 0, "revoking a device must revoke only its desktop key");
-assert.equal(await desktopRelayCredentialFor(env, secondKey.key, { sha256 }), null, "a revoked desktop device must not retain relay access through its old key");
+assert.equal(await desktopRelayCredentialFor(env, switchedKey.key, { sha256 }), null, "a revoked desktop device must not retain relay access through its old key");
 
 console.log("Desktop device credential lifecycle test passed");

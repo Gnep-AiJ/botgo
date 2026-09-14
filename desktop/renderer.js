@@ -3,20 +3,26 @@ const $=(selector)=>document.querySelector(selector);const $$=(selector)=>[...do
 const escapeHtml=(value)=>String(value).replace(/[&<>'"]/g,(character)=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"})[character]);
 const projectName=(projectPath)=>projectPath.split(/[\\/]/).filter(Boolean).pop()||projectPath;
 const currentThread=()=>ui.history.threads.find((thread)=>thread.id===ui.threadId)||null;
-let submitting=false,modelsReady=false,authorizing=false;
-let terminalStarting=false,terminalState='idle';
+let submitting=false,modelsReady=false,authorizing=false,autoApprovalAvailable=false,syncingApproval=false;
+const permissionPresets={
+ 'auto-approve':{mode:'workspace-write',reviewer:'auto_review'},
+ 'manual-approve':{mode:'workspace-write',reviewer:'user'},
+ 'read-only':{mode:'read-only',reviewer:'user'},
+ 'full-access':{mode:'full-access',reviewer:'user'}
+};
 function renderRunningState(){
  const node=$('[data-running-state]');
- const state=terminalStarting||submitting?'starting':ui.runningThread||terminalState==='running'?'running':terminalState==='error'||currentThread()?.status==='error'?'error':'idle';
- node.dataset.state=state;node.textContent=({starting:'启动中',running:terminalState==='running'?'终端运行中':'执行中',error:'运行失败',idle:'就绪'})[state];
+ const state=submitting?'starting':ui.runningThread?'running':currentThread()?.status==='error'?'error':'idle';
+ node.dataset.state=state;node.textContent=({starting:'启动中',running:'执行中',error:'运行失败',idle:'就绪'})[state];
 }
 function syncControls(){
- const busy=submitting||Boolean(ui.runningThread)||terminalStarting||terminalState==='running';
+ const busy=submitting||Boolean(ui.runningThread);
  renderRunningState();
- $$('[data-new-thread],[data-change-project],[data-empty-choose-project],[data-thread-id],[data-thread-menu],[data-open-terminal]').forEach(button=>button.disabled=busy);
- $('[data-start-task]').disabled=busy||!modelsReady||!$('[data-task-prompt]').value.trim();
- $('[data-start-task]').hidden=Boolean(ui.runningThread);$('[data-stop-task]').hidden=!ui.runningThread;
- $('[data-task-prompt]').disabled=busy;$('[data-model]').disabled=busy||!modelsReady;$('[data-mode]').disabled=busy;
+ $$('[data-new-thread],[data-change-project],[data-empty-choose-project],[data-thread-menu]').forEach(button=>button.disabled=busy);
+ $('[data-start-task]').disabled=submitting||!modelsReady||!$('[data-task-prompt]').value.trim();
+ $('[data-start-task]').hidden=false;$('[data-stop-task]').hidden=!ui.runningThread;
+ $('[data-task-prompt]').disabled=false;$('[data-model]').disabled=busy||!modelsReady;$('[data-mode]').disabled=busy;
+ $$('[data-attach],[data-plan]').forEach(button=>button.disabled=busy);
  for(const selector of ['[data-model]','[data-mode]']){const select=$(selector);if(select.previousElementSibling?.classList.contains('model-picker'))select.previousElementSibling.disabled=select.disabled;}
 }
 function setMessage(value,error=false){const node=$("[data-workspace-message]");node.textContent=value||"";node.style.color=error?"var(--danger)":""}
@@ -27,6 +33,7 @@ function renderAccount(){
  const cents=ui.account?.balanceCents;const yuan=Number.isFinite(cents)?cents/100:Number(ui.account?.credits);
  const balance=Number.isFinite(yuan)?new Intl.NumberFormat("zh-CN",{style:"currency",currency:"CNY"}).format(yuan):"—";
  $("[data-account-guest]").hidden=signed;$("[data-account-signed]").hidden=!signed;
+ $('[data-update-row]').hidden=!signed||$('[data-update-row]').hidden;
  $("[data-account-menu-title]").textContent=signed?"账户":"登录 BotGo";
  $("[data-account-name]").textContent=signed?ui.account.email:"登录 BotGo";
  $("[data-account-state]").textContent=signed?`余额 ${balance}`:"连接你的账户";
@@ -46,11 +53,15 @@ function projectLabel(project){
 }
 function renderProjects(){
  const container=$('[data-project-list]');
- container.innerHTML=ui.history.threads.map(thread=>`<div class="thread-row${thread.id===ui.threadId?' active':''}"><button class="thread-item" type="button" data-thread-id="${escapeHtml(thread.id)}" title="${escapeHtml(thread.title)} — ${escapeHtml(thread.projectPath)}" ${thread.id===ui.threadId?'aria-current="true"':''}><span>${escapeHtml(thread.title||'新对话')}</span>${['running','error'].includes(thread.status)?`<i class="thread-state ${thread.status}" aria-label="${thread.status==='running'?'执行中':'执行失败'}"></i>`:''}</button><button class="thread-more" type="button" data-thread-menu="${escapeHtml(thread.id)}" aria-label="${escapeHtml(thread.title)}的操作" aria-haspopup="menu" aria-expanded="false">⋯</button></div>`).join('')||'<p class="empty-copy">暂无对话</p>';
+ container.innerHTML=ui.history.threads.filter(thread=>!thread.archived).map(thread=>`<div class="thread-row${thread.id===ui.threadId?' active':''}"><button class="thread-item" type="button" data-thread-id="${escapeHtml(thread.id)}" title="${escapeHtml(thread.title)} — ${escapeHtml(thread.projectPath)}" ${thread.id===ui.threadId?'aria-current="true"':''}><span>${escapeHtml(thread.title||'新对话')}</span>${['running','error'].includes(thread.status)?`<i class="thread-state ${thread.status}" aria-label="${thread.status==='running'?'执行中':'执行失败'}"></i>`:''}</button><button class="thread-more" type="button" data-thread-menu="${escapeHtml(thread.id)}" aria-label="${escapeHtml(thread.title)}的操作" aria-haspopup="menu" aria-expanded="false">⋯</button></div>`).join('')||'<p class="empty-copy">暂无对话</p>';
  $$('[data-thread-id]').forEach(button=>button.onclick=()=>selectThread(button.dataset.threadId).catch(error=>setMessage(error.message,true)));
  $$('[data-thread-menu]').forEach(button=>button.onclick=()=>openThreadMenu(button));
 }
 let menuAnchor=null,editAction=null;
+async function historyAction(action){
+ try{await action();closeMenus();await refreshHistory();}
+ catch(error){setMessage(error.message,true)}
+}
 function closeMenus(restore=false){
  $('[data-context-menu]').hidden=true;$('[data-project-menu]').hidden=true;
  $('[data-change-project]').setAttribute('aria-expanded','false');
@@ -66,6 +77,9 @@ function openThreadMenu(button){
  menuAnchor=button;button.setAttribute('aria-expanded','true');
  const menu=$('[data-context-menu]'),id=button.dataset.threadMenu;
  menu.innerHTML='<button type="button" role="menuitem" data-rename>重命名</button><button type="button" role="menuitem" class="danger" data-delete>删除对话</button>';
+ menu.insertAdjacentHTML('beforeend','<button type="button" role="menuitem" data-fork>分叉对话</button><button type="button" role="menuitem" data-archive>归档对话</button>');
+ menu.querySelector('[data-fork]').onclick=()=>historyAction(()=>window.botgo.forkThread(id));
+ menu.querySelector('[data-archive]').onclick=()=>historyAction(()=>window.botgo.archiveThread(id,true));
  menu.querySelector('[data-rename]').onclick=()=>editThread(id,false);
  menu.querySelector('[data-delete]').onclick=()=>editThread(id,true);
  placeMenu(menu,button);menu.querySelector('button').focus();
@@ -119,21 +133,29 @@ async function selectThread(id){if(ui.runningThread&&ui.runningThread!==id)retur
 async function newThread(projectPath=ui.projectPath){if(ui.runningThread)return setMessage("当前对话正在执行，停止后再新建。",true);if(!projectPath)return chooseProject();ui.history=await window.botgo.createThread(projectPath);ui.projectPath=projectPath;ui.threadId=ui.history.selectedThreadId;setMessage("");render();$("[data-task-prompt]").focus()}
 async function chooseProject(){const project=await window.botgo.chooseProject();if(!project)return;ui.projectPath=project;ui.history=await window.botgo.rememberProject(project);await newThread(project)}
 function setRunning(running){if(!running)submitting=false;syncControls()}
-async function prepareAfterLogin(){await window.botgo.prepare(false)}
-async function completeLogin(account){ui.account={...account,plan:account.plan||""};renderAccount();try{accountMessage("正在准备本地环境…");await prepareAfterLogin();await refreshAccount();closeAccount()}catch(error){accountMessage(error.message||"本地环境尚未准备完成。",true)}}
+async function prepareAfterLogin(){await window.botgo.prepare(false);await refreshHistory()}
+async function completeLogin(account){ui.account={...account,plan:account.plan||""};renderAccount();try{accountMessage("正在准备本地环境…");await prepareAfterLogin();await refreshAccount();await loadModels();closeAccount()}catch(error){accountMessage(error.message||"本地环境尚未准备完成。",true)}}
 
 $("[data-account-trigger]").addEventListener("click",()=>$("[data-account-menu]").hidden?openAccount():closeAccount());$("[data-account-close]").addEventListener("click",closeAccount);document.addEventListener("keydown",(event)=>{if(event.key==="Escape"&&!$("[data-account-menu]").hidden)closeAccount()});
 $("[data-start-web-authorization]").addEventListener("click",async()=>{if(authorizing)return;authorizing=true;$('[data-start-web-authorization]').disabled=true;try{accountMessage("正在打开浏览器…");await window.botgo.startWebAuthorization();$("[data-cancel-web-authorization]").hidden=false;accountMessage("请在浏览器中完成登录并确认这台设备。")}catch(error){authorizing=false;$('[data-start-web-authorization]').disabled=false;accountMessage(error.message||"无法开始浏览器授权。",true)}});$("[data-cancel-web-authorization]").addEventListener("click",()=>window.botgo.cancelWebAuthorization().catch(error=>accountMessage(error.message,true)));
 $('[data-change-project]').setAttribute('aria-haspopup','true');$('[data-change-project]').onclick=openProjects;$$('[data-choose-project]').forEach((button)=>button.addEventListener("click",()=>chooseProject().catch((error)=>setMessage(error.message,true))));$("[data-new-thread]").addEventListener("click",()=>newThread());
 $("[data-composer]").addEventListener("submit",async(event)=>{
- event.preventDefault();if(submitting||ui.runningThread)return;
+ event.preventDefault();if(submitting)return;
+ if(ui.runningThread){
+   const text=$('[data-task-prompt]').value.trim();if(!text)return;
+   if(ui.threadId!==ui.runningThread)return setMessage('请切回执行中的对话补充指令。',true);
+   submitting=true;syncControls();try{await window.botgo.steerTask(ui.runningThread,text);if($('[data-task-prompt]').value.trim()===text)$('[data-task-prompt]').value='';await refreshHistory();}catch(error){setMessage(error.message,true)}finally{submitting=false;syncControls()}return;
+ }
  const prompt=$('[data-task-prompt]').value.trim();if(!prompt)return;
  if(!modelsReady)return setMessage('请选择可用模型，或重新加载模型列表。',true);
  if(!ui.projectPath)return chooseProject();if(!ui.account)return openAccount("登录后即可在当前文件夹执行。");
- const mode=$('[data-mode]').value,model=modelSelect.value;
+ const preset=permissionPresets[$('[data-mode]').value],model=modelSelect.value;
+ if(!preset)return setMessage('权限与审批设置无效。',true);
+ if(preset.reviewer==='auto_review'&&!autoApprovalAvailable)return setMessage('替我审批暂不可用：当前审核路由或计费探测未通过。请选择手动审批。',true);
+ const {mode,reviewer}=preset;
  const confirmedFullAccess=mode!=='full-access'||confirm('完全访问可能处理当前项目以外的内容，确认继续？');if(!confirmedFullAccess)return;
  submitting=true;syncControls();setMessage('正在准备任务…');let accepted=false;
- try{if(!ui.threadId)await newThread(ui.projectPath);await prepareAfterLogin();ui.runningThread=ui.threadId;syncControls();const result=await window.botgo.startTask({threadId:ui.threadId,projectPath:ui.projectPath,prompt,mode,model,confirmedFullAccess});accepted=true;ui.threadId=result.id;$('[data-task-prompt]').value='';$('[data-task-prompt]').style.height='auto';await refreshHistory();}
+ try{if(!ui.threadId)await newThread(ui.projectPath);await prepareAfterLogin();ui.runningThread=ui.threadId;syncControls();const result=await window.botgo.startTask({threadId:ui.threadId,projectPath:ui.projectPath,prompt,mode,model,confirmedFullAccess,reviewer,attachments:pendingAttachments.map(item=>item.id),skills:pendingSkills.map(item=>item.id),plan:planRequested,review:reviewRequested});accepted=true;ui.threadId=result.id;if($('[data-task-prompt]').value.trim()===prompt)$('[data-task-prompt]').value='';$('[data-task-prompt]').style.height='auto';pendingAttachments=[];pendingSkills=[];planRequested=false;reviewRequested=false;renderAttachments();$('[data-plan]').setAttribute('aria-pressed','false');await refreshHistory();}
  catch(error){if(!accepted)ui.runningThread='';setMessage(error.message||'无法开始执行。',true);}
  finally{submitting=false;syncControls();}
 });
@@ -144,19 +166,18 @@ window.botgo.onAuthorizationEvent((event)=>{if(event.type==="waiting"){$("[data-
 const modelSelect=$('[data-model]');
 window.BotGoUI.enhanceSelect(modelSelect);
 window.BotGoUI.enhanceSelect($('[data-mode]'));
-async function loadModels(){modelsReady=false;$('[data-model-retry]').hidden=true;syncControls();try{const result=await window.botgo.models();if(!Array.isArray(result.models))throw Error('Invalid models');modelSelect.replaceChildren(...result.models.map(m=>{const option=document.createElement('option');option.value=m.id;option.textContent=m.name;option.disabled=!(m.enabled&&m.agent);return option;}));let saved;try{saved=localStorage.getItem('botgo-model')}catch{}const usable=result.models.filter(m=>m.enabled&&m.agent);modelSelect.value=(usable.find(m=>m.id===saved)||usable.find(m=>m.id===result.defaultModel)||usable[0])?.id||'';modelsReady=usable.length>0;if(!modelsReady)setMessage('暂无可用模型，请稍后重试。',true);else setMessage('');modelSelect.dispatchEvent(new Event('change'));}catch{setMessage('模型列表加载失败，请检查网络后重试。',true);}finally{$('[data-model-retry]').hidden=modelsReady;syncControls();}}
+function applyAutoReviewAvailability(available){
+ autoApprovalAvailable=available===true;const select=$('[data-mode]'),option=select.querySelector('option[value="auto-approve"]');
+ option.disabled=!autoApprovalAvailable;option.textContent=autoApprovalAvailable?'替我审批':'替我审批（暂不可用）';
+ let saved;try{saved=localStorage.getItem('botgo-approval')}catch{}
+ const preferred=saved||(autoApprovalAvailable?'auto-approve':'manual-approve');
+ select.value=preferred==='auto-approve'&&!autoApprovalAvailable?'manual-approve':permissionPresets[preferred]?preferred:'manual-approve';
+ syncingApproval=true;select.dispatchEvent(new Event('change'));syncingApproval=false;
+}
+async function loadModels(){modelsReady=false;applyAutoReviewAvailability(false);$('[data-model-retry]').hidden=true;syncControls();try{const result=await window.botgo.models();if(!Array.isArray(result.models))throw Error('Invalid models');modelSelect.replaceChildren(...result.models.map(m=>{const option=document.createElement('option');option.value=m.id;option.textContent=m.name;option.disabled=!(m.enabled&&m.agent);return option;}));let saved;try{saved=localStorage.getItem('botgo-model')}catch{}const usable=result.models.filter(m=>m.enabled&&m.agent);modelSelect.value=(usable.find(m=>m.id===saved)||usable.find(m=>m.id===result.defaultModel)||usable[0])?.id||'';modelsReady=usable.length>0;applyAutoReviewAvailability(result.capabilities?.autoReview===true);if(!modelsReady)setMessage('暂无可用模型，请稍后重试。',true);else setMessage('');modelSelect.dispatchEvent(new Event('change'));}catch{setMessage('模型列表加载失败，请检查网络后重试。',true);}finally{$('[data-model-retry]').hidden=modelsReady;syncControls();}}
 $('[data-model-retry]').onclick=loadModels;
 modelSelect.addEventListener('change',()=>{try{if(modelSelect.value)localStorage.setItem('botgo-model',modelSelect.value)}catch{}});
-renderAccount();refreshHistory().catch(error=>{render();setMessage(error.message,true)});refreshAccount().catch(renderAccount);loadModels();
+$('[data-mode]').addEventListener('change',event=>{if(syncingApproval)return;try{localStorage.setItem('botgo-approval',event.currentTarget.value)}catch{}});
+renderAccount();refreshHistory().catch(error=>{render();setMessage(error.message,true)});refreshAccount().then(()=>prepareAfterLogin()).catch(error=>{renderAccount();if(ui.account)setMessage(error.message,true)});loadModels();
 
-$("[data-open-terminal]").addEventListener("click",async()=>{
- if(terminalStarting||terminalState==='running')return;
- if(!ui.projectPath)return chooseProject();if(!ui.account)return openAccount('登录后打开终端。');
- if(ui.runningThread||submitting)return setMessage('停止当前任务后再打开终端。',true);
- terminalStarting=true;terminalState='starting';const button=$('[data-open-terminal]');button.setAttribute('aria-busy','true');button.textContent='正在打开…';syncControls();
- try{const result=await window.botgo.openTerminal({projectPath:ui.projectPath,model:modelSelect.value,sessionId:currentThread()?.sessionId||''});if(!result?.consoleReady)throw Error('终端未确认交互输入输出。');terminalState='running';setMessage('交互控制台已连接，请在终端中操作。');}
- catch(error){terminalState='error';setMessage(error.message,true);}
- finally{terminalStarting=false;button.removeAttribute('aria-busy');button.textContent='在终端中打开 ↗';syncControls();}
-});
-window.botgo.onTerminalEvent?.(event=>{terminalState=event.state;setMessage(event.message,event.state==='error');syncControls();});
 document.addEventListener("keydown",(event)=>{if(event.key!=="Tab"||$("[data-account-menu]").hidden)return;const nodes=[...$("[data-account-menu]").querySelectorAll('button:not([hidden]),summary')].filter(n=>n.getClientRects().length);const first=nodes[0],last=nodes.at(-1);if(event.shiftKey&&(document.activeElement===first||document.activeElement===$("[data-account-menu-title]"))){event.preventDefault();last?.focus()}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus()}});

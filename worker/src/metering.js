@@ -7,16 +7,26 @@ export const MODEL_SEEDS = [
   ['gpt-6-astra','GPT-6 Astra',10,1,12.5,50]
 ].map(([id,name,input,cached,write,output]) => ({id,name,price:{input,cached,write,output,longThreshold:272000,longInput:2,longOutput:1.5,source:'https://developers.openai.com/api/docs/pricing',date:'2026-09-12',tier:'default'}}));
 
+export const AUTO_REVIEW_MODEL_ID = 'codex-auto-review';
+export const AUTO_REVIEW_BILLING_MODEL_ID = 'gpt-5.6-luna';
+
 export const reply = (body,status=200) => Response.json(body,{status,headers:{'cache-control':'no-store'}});
 export async function catalog(env) {
   const [rows,settings] = await Promise.all([
-    env.DB.prepare("SELECT * FROM model_catalog WHERE id<>'gpt-5.4' AND archived=0 ORDER BY rowid").all(),
+    env.DB.prepare("SELECT * FROM model_catalog WHERE id NOT IN ('gpt-5.4','codex-auto-review') AND archived=0 ORDER BY rowid").all(),
     env.DB.prepare('SELECT * FROM metering_settings WHERE id=1').first()
   ]);
   return {models:(rows.results||[]).map(r=>({...r,price:JSON.parse(r.price_json)})),settings};
 }
-export function publicCatalog({models,settings}) {
-  return {defaultModel:settings.default_model,models:models.map(m=>({id:m.id,name:m.name,enabled:!!m.enabled,web:!!m.web_enabled,agent:!!m.agent_enabled,price:m.price,multiplier:(m.multiplier_ppm??settings.multiplier_ppm)/1e6,usdCny:settings.usd_cny_ppm/1e6}))};
+export function publicCatalog({models,settings},capabilities={}) {
+  return {defaultModel:settings.default_model,capabilities:{autoReview:capabilities.autoReview===true},models:models.filter(m=>m.id!==AUTO_REVIEW_MODEL_ID).map(m=>({id:m.id,name:m.name,enabled:!!m.enabled,web:!!m.web_enabled,agent:!!m.agent_enabled,price:m.price,multiplier:(m.multiplier_ppm??settings.multiplier_ppm)/1e6,usdCny:settings.usd_cny_ppm/1e6}))};
+}
+export async function autoReviewCapability(env,data) {
+  if(env.AUTO_REVIEW_ENABLED!=='1')return false;
+  const reviewer=data.models.find(model=>model.id===AUTO_REVIEW_BILLING_MODEL_ID);
+  if(!reviewer?.enabled||!reviewer.agent_enabled)return false;
+  const proof=await env.DB.prepare("SELECT p.status FROM upstream_routes r JOIN upstream_profiles u ON u.id=r.profile_id JOIN upstream_route_probes p ON p.profile_id=r.profile_id AND p.channel=r.channel WHERE r.channel='desktop_codex' AND u.base_url<>'' AND p.model_id=? AND p.status='ok' AND p.metering_verified=1 AND p.tested_at>datetime('now','-1 day') LIMIT 1").bind(reviewer.upstream_id).first();
+  return Boolean(proof);
 }
 export function normalizedUsage(usage) {
   if (!usage) throw new Error('MISSING_USAGE');
@@ -60,26 +70,33 @@ export async function settle(env,id,usage,snapshot,state='completed') {
   try {if(usage)cost=costMicros(usage,snapshot);else if(state==='completed')state='review';}
   catch {state='review';usage=null;}
   await env.DB.prepare("UPDATE metered_requests SET state=?,cost_micros=?,usage_json=? WHERE id=? AND state='reserved'").bind(state,cost,usage?JSON.stringify(usage):null,id).run();
-  if(state==='review') await env.DB.prepare("UPDATE model_catalog SET enabled=0 WHERE id=?").bind(snapshot.model).run();
+  if(state==='review') await env.DB.prepare("UPDATE model_catalog SET enabled=0 WHERE id=?").bind(snapshot.billingModel||snapshot.model).run();
 }
-export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstream,history}) {
+export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstream,history,billingModel=null}) {
   // Recover abandoned reservations only after the upstream timeout has elapsed.
   await env.DB.batch([
-    env.DB.prepare("UPDATE model_catalog SET enabled=0 WHERE id IN (SELECT model FROM metered_requests WHERE account_id=? AND state='reserved' AND created_at<datetime('now','-10 minutes'))").bind(accountId),
+    env.DB.prepare("UPDATE model_catalog SET enabled=0 WHERE id IN (SELECT COALESCE(json_extract(snapshot,'$.billingModel'),model) FROM metered_requests WHERE account_id=? AND state='reserved' AND created_at<datetime('now','-10 minutes'))").bind(accountId),
     env.DB.prepare("UPDATE metered_requests SET state='review' WHERE account_id=? AND state='reserved' AND created_at<datetime('now','-10 minutes')").bind(accountId)
   ]);
   const data=await catalog(env);
-  const modelId=body.model==='gpt-5.6'?data.settings.default_model:body.model;
-  const model=data.models.find(m=>m.id===modelId);
+  const requestedModel=body.model==='gpt-5.6'?data.settings.default_model:body.model;
+  if(requestedModel===AUTO_REVIEW_MODEL_ID)return reply({error:'旧版自动审核协议不可用，请更新客户端。'},503);
+  const model=data.models.find(m=>m.id===requestedModel);
   if(!model?.enabled || !(channel==='web_chat'?model.web_enabled:model.agent_enabled)) return reply({error:'所选模型暂不可用。'},400);
-  const proof=upstream.profileId?await env.DB.prepare("SELECT status FROM upstream_route_probes WHERE profile_id=? AND channel=? AND model_id=? AND status='ok' AND metering_verified=1").bind(upstream.profileId,channel,model.upstream_id).first():null;
-  if(!proof)return reply({error:'当前渠道的模型尚未验证，请联系管理员。'},503);
+  const autoReview=channel==='desktop_codex'&&billingModel&&model.id===AUTO_REVIEW_BILLING_MODEL_ID&&model.id!==billingModel;
+  if(billingModel&&model.id!==billingModel&&!autoReview)return reply({error:'执行凭据绑定模型与请求不一致，请重新连接。'},403);
+  if(autoReview&&!await autoReviewCapability(env,data))return reply({error:'替我审批暂不可用：生产开关或 Luna 真实用量探测未通过。'},503);
+  if(!autoReview) {
+    const proof=upstream.profileId?await env.DB.prepare("SELECT status FROM upstream_route_probes WHERE profile_id=? AND channel=? AND model_id=? AND status='ok' AND metering_verified=1").bind(upstream.profileId,channel,model.upstream_id).first():null;
+    if(!proof)return reply({error:'当前渠道的模型尚未验证，请联系管理员。'},503);
+  }
   if(body.service_tier && !['auto','default'].includes(body.service_tier)) return reply({error:'当前仅支持 Standard 计费。'},400);
   if(body.background || body.previous_response_id) return reply({error:'请发送完整上下文；暂不支持后台任务或上游会话引用。'},400);
   if(body.tools!==undefined&&(!Array.isArray(body.tools)||body.tools.some(t=>!t||!['function','custom','local_shell','shell','apply_patch'].includes(t.type)||(t.type==='shell'&&t.environment?.type!=='local')))) return reply({error:'暂不支持另行计费的托管工具。'},400);
   if(body.n!==undefined&&body.n!==1) return reply({error:'每次请求只支持一个结果。'},400);
   const price=model.price;
-  const snapshot={model:model.id,upstreamModel:model.upstream_id,profileId:upstream.profileId,price,revision:model.revision,multiplierPpm:model.multiplier_ppm??data.settings.multiplier_ppm,usdCnyPpm:data.settings.usd_cny_ppm,settingsRevision:data.settings.revision};
+  const upstreamModel=model.upstream_id;
+  const snapshot={requestedModel,billingModel:model.id,selectedModel:billingModel||model.id,requestPurpose:autoReview?'auto_review':'task',upstreamModel,profileId:upstream.profileId,price,revision:model.revision,multiplierPpm:model.multiplier_ppm??data.settings.multiplier_ppm,usdCnyPpm:data.settings.usd_cny_ppm,settingsRevision:data.settings.revision};
   const requested=body.max_output_tokens??body.max_completion_tokens??body.max_tokens??8192;
   if(!Number.isInteger(requested)||requested<1) return reply({error:'输出上限无效。'},400);
   const maxOutput=Math.min(requested,16384);
@@ -89,10 +106,10 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
   const retryKey=request.headers.get('idempotency-key');
   if(retryKey&&!/^[a-zA-Z0-9_-]{16,128}$/.test(retryKey))return reply({error:'请求标识无效。'},400);
   const id=retryKey?`${accountId}:${channel}:${retryKey}`:crypto.randomUUID();
-  try {await env.DB.prepare('INSERT INTO metered_requests(id,account_id,channel,model,snapshot,reserved_micros) VALUES(?,?,?,?,?,?)').bind(id,accountId,channel,model.id,JSON.stringify(snapshot),reserved).run();}
+  try {await env.DB.prepare('INSERT INTO metered_requests(id,account_id,channel,model,snapshot,reserved_micros) VALUES(?,?,?,?,?,?)').bind(id,accountId,channel,requestedModel,JSON.stringify(snapshot),reserved).run();}
   catch(error){if(String(error).includes('UNIQUE'))return reply({error:'该请求已受理，请勿重复提交。',requestId:id},409);if(String(error).includes('BILLING_INSUFFICIENT'))return reply({error:'可用余额不足或账户需要核对，请充值后重试。'},402);throw error;}
   const chat=channel==='web_chat';
-  const payload={...body,model:model.upstream_id,service_tier:'default',...(chat?{max_completion_tokens:maxOutput,stream:true,stream_options:{include_usage:true}}:{max_output_tokens:maxOutput})};
+  const payload={...body,model:upstreamModel,service_tier:'default',...(chat?{max_completion_tokens:maxOutput,stream:true,stream_options:{include_usage:true}}:{max_output_tokens:maxOutput})};
   delete payload.max_tokens;
   const abort=new AbortController();
   const timeout=setTimeout(()=>abort.abort(),180000);
@@ -149,12 +166,13 @@ export async function handleMeteringAdmin(request,env,path,admin,audit) {
   }
   if(path==='/admin/metering/settings' && request.method==='PUT') {
     if(![body?.multiplierPpm,body?.usdCnyPpm].every(n=>Number.isSafeInteger(n)&&n>0&&n<=100000000))return reply({error:'倍率或汇率无效。'},400);
-    const selected=await env.DB.prepare('SELECT id FROM model_catalog WHERE id=? AND enabled=1').bind(body.defaultModel||'').first();
+    const selected=await env.DB.prepare("SELECT id FROM model_catalog WHERE id=? AND enabled=1").bind(body.defaultModel||'').first();
     if(!selected)return reply({error:'默认模型尚未启用。'},400);
     await env.DB.prepare('UPDATE metering_settings SET multiplier_ppm=?,usd_cny_ppm=?,default_model=?,revision=revision+1 WHERE id=1').bind(body.multiplierPpm,body.usdCnyPpm,body.defaultModel).run();
     await audit(env,admin.id,'metering_settings_changed',{defaultModel:body.defaultModel,multiplierPpm:body.multiplierPpm,usdCnyPpm:body.usdCnyPpm});return reply({ok:true});
   }
   const match=path.match(/^\/admin\/metering\/models\/([a-z0-9.-]+)$/);
+  if(match?.[1]===AUTO_REVIEW_MODEL_ID)return reply({error:'codex-auto-review 是保留的原生内部路由，不属于模型目录或价格配置。'},400);
   if(match&&request.method==='DELETE') {
     const model=await env.DB.prepare('SELECT id,upstream_id FROM model_catalog WHERE id=? AND archived=0').bind(match[1]).first();
     if(!model)return reply({error:'模型不存在。'},404);
@@ -168,7 +186,10 @@ export async function handleMeteringAdmin(request,env,path,admin,audit) {
   }
   if(match&&request.method==='PUT') {
     const p=body?.price;
-    if(!p||!['input','cached','write','output','longThreshold','longInput','longOutput'].every(k=>Number.isFinite(p[k])&&p[k]>=0&&p[k]<=10000000)||p.longThreshold<1||p.longInput<1||p.longOutput<1||p.tier!=='default'||!/^https:\/\/(developers\.)?openai\.com\//.test(p.source||''))return reply({error:'价格快照无效。'},400);
+    let source;
+    try{source=new URL(p?.source||'');}catch{}
+    const validSource=source?.protocol==='https:'&&!source.username&&!source.password&&/^(developers\.)?openai\.com$/.test(source.hostname);
+    if(!p||!['input','cached','write','output','longThreshold','longInput','longOutput'].every(k=>Number.isFinite(p[k])&&p[k]>=0&&p[k]<=10000000)||p.longThreshold<1||p.longInput<1||p.longOutput<1||p.tier!=='default'||!validSource||!/^\d{4}-\d{2}-\d{2}$/.test(p.date||''))return reply({error:'价格快照无效。'},400);
     if(body.multiplierPpm!==null&&(!Number.isSafeInteger(body.multiplierPpm)||body.multiplierPpm<=0||body.multiplierPpm>100000000))return reply({error:'模型倍率无效。'},400);
     const upstreamId=String(body.upstreamId||match[1]);
     if(!/^[a-zA-Z0-9._-]{1,128}$/.test(upstreamId))return reply({error:'上游模型标识无效。'},400);

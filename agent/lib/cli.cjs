@@ -237,7 +237,7 @@ async function executeTask(context, { projectPath, prompt, permission, session =
   const available=await context.api.models();
   const selectedModel=options.model||session?.model||available.defaultModel;
   if(!available.models.some(m=>m.id===selectedModel&&m.enabled&&m.agent))throw new Error('所选模型暂不可用于 Agent。');
-  const issued = await context.api.issueKey(credential.deviceToken);
+  const issued = await context.api.issueKey(credential.deviceToken, selectedModel);
   if (!/^bgk_[A-Za-z0-9_-]{1,256}$/.test(issued.key || "")) throw new Error("BotGo 未返回有效的执行凭据");
   const current = session || {
     id: crypto.randomUUID(), projectPath, title: prompt.slice(0, 120), codexSessionId: "", status: "idle", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
@@ -384,7 +384,7 @@ async function main(argv = process.argv.slice(2), overrides = {}) {
     const model=options.model || available.defaultModel;
     if(!available.models.some(m=>m.id===model&&m.enabled&&m.agent))throw new Error('所选模型暂不可用于 Agent。');
     writeCodexConfig({ codexHome: context.paths.codexHome, relayOrigin: context.api.origin });
-    const issued = await context.api.issueKey(credential.deviceToken);
+    const issued = await context.api.issueKey(credential.deviceToken, model);
     const child = (overrides.spawnImpl || spawn)(nativeCommand(context.paths.packageRoot), [...positional.slice(1), ...providerArguments(context.api.origin,model)], {
       cwd: ensureProject(options.project), env: interactiveEnvironment(context.paths.codexHome, issued.key, overrides.baseEnv || process.env, { platform: context.paths.platform, isTTY: interactive }), stdio: "inherit", windowsHide: false
     });

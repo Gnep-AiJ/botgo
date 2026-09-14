@@ -16,8 +16,7 @@ async function call(endpoint,body){
 for(const model of MODEL_SEEDS){
  const record={model:model.id};
  try{
-  const web=await call('chat/completions',{model:model.id,messages:[{role:'user',content:'Reply only OK'}],max_completion_tokens:32,stream:true,stream_options:{include_usage:true}});
-  record.web={status:web.status,usage:!!web.usage};
+  const web=await call('chat/completions',{model:model.id,messages:[{role:'user',content:'Reply only OK'}],max_completion_tokens:32,stream:true,stream_options:{include_usage:true}});record.web={status:web.status,usage:!!web.usage};
   const tools=[{type:'function',name:'botgo_probe',parameters:{type:'object',properties:{value:{type:'string'}},required:['value'],additionalProperties:false},strict:true}];
   const input=[{role:'user',content:'Call botgo_probe with value OK. After the result, reply only OK.'}];
   const agent=await call('responses',{model:model.id,input,tools,tool_choice:{type:'function',name:'botgo_probe'},max_output_tokens:128,stream:true});

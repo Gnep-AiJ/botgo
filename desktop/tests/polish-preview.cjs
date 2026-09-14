@@ -4,12 +4,10 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 const root=path.resolve(__dirname,'../..'),out=path.join(root,'artifacts/verification/app-server/desktop-ui');fs.mkdirSync(out,{recursive:true});app.setPath('userData',path.join(out,'profile'));app.disableHardwareAcceleration();
 const models=['gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna','gpt-5.5','gpt-6-astra'].map(id=>({id,name:id,enabled:true,agent:true}));
 const history={selectedProject:root,selectedThreadId:'test-thread',recentProjects:[root],threads:[{id:'test-thread',projectPath:root,title:'本地项目对话',status:'completed',messages:[]}]};
-let modelError=false,failStart=false,starts=0,stops=0,win;
-let terminalStarts=0,terminalFailure=false;
-ipcMain.handle('runtime:open-terminal',async()=>{terminalStarts++;await pause(150);if(terminalFailure)throw Error('Fixture terminal exited immediately');win.webContents.send('terminal:event',{state:'running',message:'Fixture console ready'});return {opened:true,consoleReady:true};});
+  let modelError=false,failStart=false,autoReview=false,starts=0,stops=0,win;
 const pause=ms=>new Promise(r=>setTimeout(r,ms)),run=js=>win.webContents.executeJavaScript(js,true);
 async function until(js){for(let i=0;i<60;i++){if(await run(js))return;await pause(50);}throw Error('Timed out: '+js+' '+await run("JSON.stringify({message:document.querySelector('[data-workspace-message]').textContent,model:document.querySelector('[data-model]').value,prompt:document.querySelector('[data-task-prompt]').value})"));}
-ipcMain.handle('models:get',()=>{if(modelError)throw Error('Fixture network failure');return {defaultModel:'missing-default',models};});
+  ipcMain.handle('models:get',()=>{if(modelError)throw Error('Fixture network failure');return {defaultModel:'missing-default',capabilities:{autoReview},models};});
 ipcMain.handle('account:get',()=>({account:{email:'very.long.account.name.for.layout@example.invalid',balanceCents:102000}}));
 ipcMain.handle('history:get',()=>history);
 ipcMain.handle('update:check',()=>({state:'current'}));
@@ -41,7 +39,7 @@ app.whenReady().then(async()=>{try{
  await run("document.querySelector('[data-runtime-requests] input').value='Continue';document.querySelector('[data-runtime-requests] button').click()");
  await until("document.querySelector('[data-runtime-requests]').hidden");
  win.webContents.send('update:event',{state:'ready',version:'1.2.1-preview.5'});
- await until("document.querySelector('.update-notice button').textContent.length>0");
+ await until("!document.querySelector('[data-update-row]').hidden&&document.querySelector('[data-update-action]').textContent==='重启更新'");
  win.webContents.send('task:event',{type:'completed',threadId:'test-thread'});
  await until("document.querySelector('[data-stop-task]').hidden");
  for(const zoom of [1,1.25,1.5]){
@@ -49,6 +47,7 @@ app.whenReady().then(async()=>{try{
   await run("document.querySelector('[data-account-trigger]').click()");
   assert.equal(await run("(()=>{const r=document.querySelector('[data-account-menu]').getBoundingClientRect();return r.width>100&&r.height>100&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight})()"),true);
   assert.equal(await run("(()=>{const r=document.querySelector('[data-account-menu]').getBoundingClientRect(),s=document.querySelector('.sidebar').getBoundingClientRect();return r.right<=s.right&&r.left>=s.left})()"),true,'account must stay inside sidebar');
+  assert.equal(await run("document.querySelector('[data-update-status]').textContent.includes('新版')"),true,'update status stays in account menu');
   assert.equal(await run("(()=>{const e=document.querySelector('.brand-logo'),r=e.getBoundingClientRect();return r.width>=28&&r.height>=28})()"),true);
   fs.writeFileSync(path.join(out,'account-'+zoom+'.png'),(await win.webContents.capturePage()).toPNG());
   await run("document.querySelector('[data-account-close]').click();document.querySelector('[data-model]').previousElementSibling.click()");
@@ -73,14 +72,15 @@ app.whenReady().then(async()=>{try{
  assert.equal(await run("document.querySelector('[data-task-prompt]').value"),'失败后保留这段输入');
  modelError=true;await win.loadFile(path.join(root,'desktop/index.html'));await until("!document.querySelector('[data-model-retry]').hidden");assert.equal(await run("document.querySelector('[data-start-task]').disabled"),true);
  modelError=false;await run("document.querySelector('[data-model-retry]').click()");await until("!document.querySelector('[data-model]').disabled");
- await run("document.querySelector('[data-open-terminal]').click();document.querySelector('[data-open-terminal]').click()");
- assert.equal(await run("document.querySelector('[data-running-state]').dataset.state"),'starting');
- await until("document.querySelector('[data-running-state]').dataset.state==='running'");assert.equal(terminalStarts,1);
- assert.equal(await run("document.querySelector('[data-open-terminal]').disabled"),true);
- fs.writeFileSync(path.join(out,'terminal-running.png'),(await win.webContents.capturePage()).toPNG());
- win.webContents.send('terminal:event',{state:'idle',message:'Fixture exited'});await until("!document.querySelector('[data-open-terminal]').disabled");
- terminalFailure=true;await run("document.querySelector('[data-open-terminal]').click()");await until("document.querySelector('[data-running-state]').dataset.state==='error'");
- assert.equal(await run("document.querySelector('[data-open-terminal]').disabled"),false);
+ assert.equal(await run("document.querySelectorAll('.composer select').length"),2,'composer exposes only model and permission selects');
+  assert.equal(await run("document.querySelector('[data-mode]').value"),'manual-approve','manual approval is the default');
+  assert.equal(await run("document.querySelector('[data-mode] option[value=\"auto-approve\"]').disabled"),true,'automatic approval remains gated');
+  autoReview=true;await run("localStorage.removeItem('botgo-approval');loadModels()");await until("document.querySelector('[data-mode]').value==='auto-approve'&&!document.querySelector('[data-mode] option[value=\"auto-approve\"]').disabled");
+  await run("document.querySelector('[data-mode]').value='manual-approve';document.querySelector('[data-mode]').dispatchEvent(new Event('change'))");await run("loadModels()");await until("document.querySelector('[data-mode]').value==='manual-approve'");
+  await run("document.querySelector('[data-mode]').value='auto-approve';document.querySelector('[data-mode]').dispatchEvent(new Event('change'))");autoReview=false;await run("loadModels()");await until("document.querySelector('[data-mode]').value==='manual-approve'");
+  assert.equal(await run("localStorage.getItem('botgo-approval')"),'auto-approve','temporary route failure must not overwrite the user preference');
+  autoReview=true;await run("loadModels()");await until("document.querySelector('[data-mode]').value==='auto-approve'&&document.querySelector('[data-mode]').previousElementSibling.textContent.includes('替我审批')");await pause(100);fs.writeFileSync(path.join(out,'auto-review-available.png'),(await win.webContents.capturePage()).toPNG());
+ assert.equal(await run("!document.querySelector('[data-settings],[data-open-terminal],[data-attach],[data-plan]')"),true,'removed controls stay absent');
  await run("document.querySelector('[data-thread-menu]').click();document.querySelector('[data-rename]').click();document.querySelector('[data-edit-input]').value='重命名后的对话';document.querySelector('[data-edit-form]').requestSubmit()");
  await until("document.querySelector('[data-thread-id] span').textContent==='重命名后的对话'");
  assert.equal(history.threads[0].title,'重命名后的对话');
@@ -97,5 +97,5 @@ app.whenReady().then(async()=>{try{
  assert.deepEqual(history.recentProjects,[other]);assert.equal(history.selectedThreadId,'other');
  await run("document.querySelector('[data-thread-menu]').click();document.querySelector('[data-delete]').click();document.querySelector('[data-edit-form]').requestSubmit()");
  await until("document.querySelectorAll('[data-thread-menu]').length===0");assert.equal(history.threads.length,0);
- assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({verifiedAt:new Date().toISOString(),ok:true,starts,stops,checks:['account inside sidebar','logo','menus at 100/125/150 percent','fallback model','duplicate submit','running controls','stop','failed start retains input','model retry','rename','delete confirmation and cancellation','same-name projects','remove project and selection fallback'],errors},null,2));console.log('Desktop polish checks passed');win.destroy();setTimeout(()=>app.exit(0),300);
+ assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({verifiedAt:new Date().toISOString(),ok:true,starts,stops,checks:['account update inside menu','logo','menus at 100/125/150 percent','model and permission controls only','automatic approval gated','fallback model','duplicate submit','running controls','stop','failed start retains input','model retry','rename','delete confirmation and cancellation','same-name projects','remove project and selection fallback'],errors},null,2));console.log('Desktop polish checks passed');win.destroy();setTimeout(()=>app.exit(0),300);
  }catch(error){console.error(error);fs.writeFileSync(path.join(out,'failure.txt'),String(error.stack));win?.destroy();setTimeout(()=>app.exit(1),300);}});

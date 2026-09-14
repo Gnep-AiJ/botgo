@@ -1,6 +1,6 @@
 {
   "name": "botgo-desktop",
-  "version": "1.2.1-preview.5",
+  "version": "1.2.1-preview.7",
   "private": true,
   "description": "BotGo Desktop for Windows",
   "main": "main.cjs",
@@ -8,7 +8,7 @@
     "prestart": "node scripts/sync-assets.cjs && node scripts/create-windows-icon.cjs",
     "start": "electron .",
     "test": "node ../tests/desktop-auth.test.mjs && node ../tests/desktop-web-authorization.test.mjs && node ../tests/desktop-web-auth.test.cjs && node ../tests/desktop-runtime.test.cjs && node ../tests/desktop-ui-contract.test.cjs",
-    "check": "node --check main.cjs && node --check preload.cjs && node --check renderer.js && node --check lib/local-state.cjs && node --check lib/credential-store.cjs && node --check lib/codex-config.cjs && node --check lib/web-auth.cjs",
+    "check": "node --check main.cjs && node --check preload.cjs && node --check renderer.js && node --check renderer-settings.js && node --check lib/local-state.cjs && node --check lib/credential-store.cjs && node --check lib/codex-config.cjs && node --check lib/web-auth.cjs",
     "prepackage:win": "node scripts/sync-assets.cjs && node scripts/create-windows-icon.cjs && node scripts/create-nsis-assets.cjs && node scripts/write-runtime-config.cjs",
     "package:win": "electron-builder --win nsis",
     "release:metadata": "node scripts/release-metadata.cjs"
@@ -27,6 +27,7 @@
       "main.cjs",
       "preload.cjs",
       "renderer.js",
+      "renderer-settings.js",
       "index.html",
       "renderer.css",
       "polish.css",

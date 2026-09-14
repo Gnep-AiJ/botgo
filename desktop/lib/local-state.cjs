@@ -24,6 +24,7 @@ function threadOf(thread) {
     projectPath: String(thread?.projectPath || ""),
     title: String(thread?.title || messages.find((message) => message.role === "user")?.content || "新对话").slice(0, 64),
     sessionId: String(thread?.sessionId || "").slice(0, 200),
+    archived: Boolean(thread?.archived),
     model: String(thread?.model || ''),
     status: ["idle", "running", "completed", "stopped", "error"].includes(thread?.status) ? thread.status : "idle",
     messages,

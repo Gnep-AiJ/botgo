@@ -30,6 +30,8 @@ tags: [botgo, models, billing, agent]
 
 ## 当前功能边界
 
+- `codex-auto-review` 是旧身份模式产生的内部 ID，Worker 明确拒绝且不向上游转发。API-key 身份模式下，Codex `0.154.0` 的真实审核请求使用 `gpt-5.6-luna`；它按 Luna 的实际价格、倍率和 usage 独立结算。账本快照保存 `requestedModel`、`billingModel=gpt-5.6-luna`、任务 Key 的 `selectedModel` 与 `requestPurpose=auto_review`。
+- 自动审核能力要求有效 Desktop 设备、生产开关、可用的 `desktop_codex` 路由，以及同一 profile 下 24 小时内真实 Luna Responses/流式 usage 探测。只有绑定其他任务模型的 Desktop v2 Key 才能在该能力开启时跨模型请求 Luna；其他不匹配仍拒绝。旧的无模型 Key 只兼容普通请求。
 - 仅 Standard，暂不开放 Fast/Batch/Flex、后台请求、previous_response_id 或收费托管工具。Agent 发送完整续接上下文，可使用本地 function/custom/shell/apply_patch 工具。
 - 单次输出最多 16384 token；预留输入按 UTF-8 大小加隐藏提示裕量估算，实际结算以 usage 为准。图片/文件等扩展输入的完整计量尚未验证。
 - 所有模型初始禁用。2026-09-12 真实上游小请求：Sol/Terra/Luna/5.5 均通过 Chat 流式 usage、Responses 工具调用与完整上下文续接。5.4 返回 429，Astra 返回 404，暂不启用。
@@ -40,3 +42,5 @@ tags: [botgo, models, billing, agent]
 `npm test` 的 pretest 用 Node 22 SQLite 执行全部迁移，验证小额/缓存/推理/长上下文、原子预留、幂等、超额和 SSE 中止。真实上游脚本 `scripts/probe-models.mjs` 仅从进程环境读取测试凭据，输出无秘密的能力状态。
 
 2026-09-12 已顺序迁移生产 0013、0014 并发布兼容 Worker。五个模型（含 GPT-6 Astra）通过当前生产上游探测并启用，5.4 返回 404 保持禁用；详见 [[Release 2026-09-12]]。新环境仍须先迁移再部署。生产已有账务单位不能通过代码回滚恢复为元。
+
+2026-09-14 生产 profile 的 Luna 工具、续接、终态 usage 和原生允许路径再次通过，Sol/Luna 双账本实测成立。危险请求由主模型在工具前拒绝且目标未发生，符合最终口径。由于生产撤销/失效 Key/余额不足故障矩阵仍缺少独立测试账户和设备，已按门禁恢复关闭；当前兼容 Worker 为 `744c67a7-9944-471b-916d-b43a0fa2f7ff`，未运行新迁移。

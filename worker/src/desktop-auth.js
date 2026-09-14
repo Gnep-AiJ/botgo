@@ -30,6 +30,31 @@ function token(prefix) {
   return `${prefix}_${base64url(crypto.getRandomValues(new Uint8Array(32)))}`;
 }
 
+export function executionKey(model) {
+  if (model === undefined) return token("bgk");
+  if (typeof model !== "string" || !/^[A-Za-z0-9._-]{1,128}$/.test(model)) throw new DesktopAuthError("模型标识无效。", 400);
+  return `bgk_v2_${base64url(textEncoder.encode(model))}_${base64url(crypto.getRandomValues(new Uint8Array(32)))}`;
+}
+
+// This parser is only used after the complete raw key hash matched api_keys.
+export function executionModelFromVerifiedKey(rawKey) {
+  if (!rawKey.startsWith("bgk_v2_")) return rawKey.startsWith("bgk_") ? null : undefined;
+  const match = rawKey.match(/^bgk_v2_([A-Za-z0-9_-]+)_[A-Za-z0-9_-]{43}$/);
+  if (!match) return undefined;
+  try {
+    const padded = match[1].replaceAll("-", "+").replaceAll("_", "/") + "=".repeat((4 - match[1].length % 4) % 4);
+    const model = new TextDecoder().decode(Uint8Array.from(atob(padded), character => character.charCodeAt(0)));
+    return /^[A-Za-z0-9._-]{1,128}$/.test(model) ? model : undefined;
+  } catch { return undefined; }
+}
+
+export async function validateExecutionModel(env, model) {
+  if (typeof model !== "string" || !/^[A-Za-z0-9._-]{1,128}$/.test(model)) throw new DesktopAuthError("模型标识无效。", 400);
+  const selected = await env.DB.prepare("SELECT id FROM model_catalog WHERE id = ? AND enabled = 1 AND agent_enabled = 1 AND archived = 0").bind(model).first();
+  if (!selected) throw new DesktopAuthError("所选模型暂不可用于 Agent。", 400);
+  return selected.id;
+}
+
 function validProof(value) {
   return typeof value === "string" && /^[A-Za-z0-9_-]{16,256}$/.test(value);
 }
@@ -166,17 +191,21 @@ export async function desktopRelayCredentialFor(env, rawKey, { sha256 = defaultS
   const credential = await env.DB.prepare("SELECT k.id, k.account_id, a.email, a.credit_balance, a.status FROM api_keys k JOIN accounts a ON a.id = k.account_id JOIN device_tokens d ON d.token_hash = k.device_token_hash WHERE k.key_hash = ? AND k.scope = 'desktop' AND k.revoked_at IS NULL AND d.revoked_at IS NULL AND d.expires_at > ?")
     .bind(keyHash, new Date().toISOString()).first();
   if (!credential || credential.status !== "active") return null;
+  const model = executionModelFromVerifiedKey(rawKey);
+  if (model === undefined) return null;
   return {
     id: credential.id,
     account_id: credential.account_id,
     account: { id: credential.account_id, email: credential.email, credit_balance: credential.credit_balance, status: credential.status },
-    subscription: { plan: "metered", status: "active", expires_at: null }
+    subscription: { plan: "metered", status: "active", expires_at: null },
+    model
   };
 }
 
-export async function issueDesktopKey(env, rawDeviceToken, { sha256 = defaultSha256, requestId = defaultRequestId } = {}) {
+export async function issueDesktopKey(env, rawDeviceToken, { model, sha256 = defaultSha256, requestId = defaultRequestId } = {}) {
   const credential = await desktopCredentialFor(env, rawDeviceToken, { sha256 });
-  const rawKey = token("bgk");
+  if (model !== undefined) await validateExecutionModel(env, model);
+  const rawKey = executionKey(model);
   const keyHash = await sha256(rawKey);
   const keyId = requestId();
   await env.DB.batch([
@@ -184,7 +213,7 @@ export async function issueDesktopKey(env, rawDeviceToken, { sha256 = defaultSha
     env.DB.prepare("INSERT INTO api_keys (id, account_id, key_hash, key_prefix, label, scope, device_token_hash) VALUES (?, ?, ?, ?, ?, 'desktop', ?)")
       .bind(keyId, credential.account.id, keyHash, rawKey.slice(0, 12), credential.device.label, credential.tokenHash)
   ]);
-  return { key: rawKey, keyId, prefix: rawKey.slice(0, 12), account: credential.account, subscription: credential.subscription };
+  return { key: rawKey, keyId, prefix: rawKey.slice(0, 12), account: credential.account, subscription: credential.subscription, model: model ?? null };
 }
 
 export async function revokeDesktopDevice(env, rawDeviceToken, { sha256 = defaultSha256 } = {}) {

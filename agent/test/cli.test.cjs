@@ -43,7 +43,7 @@ test("executeTask issues a relay key and records a resumable session", async () 
       origin: "https://botgo.win",
       async account() { return { account: { credits: 3 } }; },
       async models() { return {defaultModel:'gpt-5.6-sol',models:[{id:'gpt-5.6-sol',enabled:true,agent:true}]}; },
-      async issueKey() { return { key: "bgk_relay" }; }
+      async issueKey(_deviceToken, model) { assert.equal(model, 'gpt-5.6-sol'); return { key: "bgk_v2_relay" }; }
     },
     sessions: {
       upsert(value) { stored.set(value.id, JSON.parse(JSON.stringify(value))); return value; },
@@ -67,7 +67,7 @@ test("executeTask issues a relay key and records a resumable session", async () 
     permission: "read-only",
     options: { permission: "read-only", yes: false }
   });
-  assert.equal(events[0].relayKey, "bgk_relay");
+  assert.equal(events[0].relayKey, "bgk_v2_relay");
   assert.equal(events[0].codexHome, path.join(root, "codex"));
   assert.equal(result.session.codexSessionId, "codex-session");
   assert.equal(result.session.status, "completed");

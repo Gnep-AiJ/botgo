@@ -8,8 +8,7 @@ const gpuFallbackArgs = ["--disable-gpu", "--disable-gpu-compositing"];
 if (process.platform === "win32" && !process.argv.includes("--disable-gpu")) {
   const relaunch = spawn(process.execPath, [...gpuFallbackArgs, ...process.argv.slice(1)], {
     detached: true,
-    stdio: "ignore",
-    windowsHide: false
+    stdio: "ignore"
   });
   relaunch.unref();
   app.exit(0);
@@ -32,12 +31,13 @@ function buildTimeApiOrigin() {
 const pagesOrigin = (process.env.BOTGO_API_ORIGIN || buildTimeApiOrigin() || "").replace(/\/$/, "");
 let mainWindow;
 let activeTask;
+let runtimeService, runtimeConnecting, runtimeModel, runtimeEpoch = 0;
 let activeThreadId;
 let taskStarting = false;
 let cancelTaskStart = false;
 let terminalStarting = false, terminalRunning = false;
 let activeAuthorization;
-let updater;
+let updater, nativePanel;
 let updateInstalling = false;
 function updaterInstance() {
   if (!updater) updater = createUpdater({
@@ -150,6 +150,7 @@ async function finishBrowserAuthorization(authorizationCode) {
     });
     credentials().save({ deviceToken: result.deviceToken });
     closeActiveAuthorization();
+    defaultWorkspace();
     sendAuthorizationEvent({ type: "completed", account: result.account });
     return { ok: true };
   } catch (error) {
@@ -248,7 +249,10 @@ async function apiRequest(endpoint, { method = "GET", body, deviceToken } = {}) 
     body: body ? JSON.stringify(body) : undefined
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(payload.error || "BotGo service is unavailable.");
+  if (!response.ok) {
+    if (response.status === 401 || response.status === 403) closeRuntime();
+    throw new Error(payload.error || "BotGo service is unavailable.");
+  }
   return payload;
 }
 
@@ -256,6 +260,40 @@ async function credential() {
   const value = credentials().load();
   if (!value?.deviceToken) throw new Error("请先登录。");
   return value;
+}
+
+function closeRuntime() {
+  runtimeEpoch++; runtimeService?.close(); runtimeService = null; runtimeModel = null;
+}
+function defaultWorkspace() {
+  const history = state().load();
+  if (history.selectedProject) return history;
+  const projectPath = path.join(app.getPath('home'), 'BotGo', 'Workspace');
+  fs.mkdirSync(projectPath, { recursive: true });
+  return rememberProject(projectPath);
+}
+async function ensureRuntime(model) {
+  if (runtimeConnecting) return runtimeConnecting;
+  if (runtimeService?.connected && runtimeModel === model) return runtimeService;
+  if (runtimeService) closeRuntime();
+  const epoch = runtimeEpoch;
+  runtimeConnecting = (async () => {
+    const current = await credential();
+    await prepareRuntime();
+    const history = defaultWorkspace();
+    const issued = await apiRequest('/desktop/key', { method: 'POST', deviceToken: current.deviceToken, body: { model } });
+    if (epoch !== runtimeEpoch) throw Error('连接或授权请求已取消。');
+    const runner = createAppServerRunner({ command: nativeCommand(agentRoot), onEvent: sendTaskEvent });
+    runtimeService = runner;
+    try {
+      await runner.connect({ projectPath: validProject(history.selectedProject), codexHome: appPaths().codexHome,
+        relayKey: issued.key, relayOrigin: requireApiOrigin(), model });
+      if (epoch !== runtimeEpoch) { runner.close(); throw Error('连接或授权请求已取消。'); }
+      runtimeModel = model;
+      return runner;
+    } finally { issued.key = undefined; }
+  })();
+  try { return await runtimeConnecting; } finally { runtimeConnecting = null; }
 }
 
 async function prepareRuntime() {
@@ -282,9 +320,22 @@ async function prepareRuntime() {
   return { ready: true };
 }
 
+const attachmentHandles = new Map();
+function resolveAttachments(ids = []) {
+  if (!Array.isArray(ids) || ids.length > 16) throw Error('最多添加 16 个附件。');
+  return ids.map(id => {
+    const file = attachmentHandles.get(id);
+    if (!file || !fs.statSync(file.path).isFile()) throw Error('附件已失效，请重新选择。');
+    return /\.(png|jpe?g|webp|gif)$/i.test(file.path)
+      ? { type: 'localImage', path: file.path }
+      : { type: 'mention', name: path.basename(file.path), path: file.path };
+  });
+}
+
 function createWindow() {
   app.setAppUserModelId("com.botgo.desktop");
   mainWindow = new BrowserWindow({
+    show: false,
     width: 1180,
     height: 780,
     minWidth: 760,
@@ -294,12 +345,20 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, "preload.cjs"), contextIsolation: true, nodeIntegration: false, sandbox: true }
   });
   mainWindow.setMenuBarVisibility(false);
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  mainWindow.webContents.on('will-navigate', event => event.preventDefault());
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.center();
+    mainWindow.show();
+    mainWindow.focus();
+  });
   mainWindow.loadFile(path.join(__dirname, "index.html"));
 }
 
 app.whenReady().then(() => {
   try { state().recoverInterruptedThreads(); }
   catch (error) { dialog.showErrorBox('无法读取本地记录', error.message); }
+  nativePanel = require('./lib/native-panel.cjs').registerNativePanel({ ipcMain, dialog, shell, window: () => mainWindow, ensureRuntime, closeRuntime, state, paths: appPaths, busy: () => activeTask || taskStarting || terminalStarting || terminalRunning, publicHistory });
   ipcMain.handle("auth:start-web-authorization", async () => startBrowserAuthorization());
   ipcMain.handle("auth:cancel-web-authorization", async () => cancelBrowserAuthorization());
   ipcMain.handle("account:get", async () => {
@@ -313,7 +372,7 @@ app.whenReady().then(() => {
     const end = Math.min(before, thread.messages.length), start = Math.max(0, end - 100);
     return { messages: thread.messages.slice(start, end), before: start };
   });
-  ipcMain.handle('models:get', async () => apiRequest('/models'));
+  ipcMain.handle('models:get', async () => apiRequest('/models', { deviceToken: credentials().load()?.deviceToken }));
   ipcMain.handle("project:choose", async () => {
     const selected = await dialog.showOpenDialog(mainWindow, { properties: ["openDirectory", "createDirectory"] });
     if (selected.canceled || !selected.filePaths[0]) return null;
@@ -323,14 +382,21 @@ app.whenReady().then(() => {
   ipcMain.handle("thread:create", async (_event, projectPath) => publicHistory(createThread(projectPath)));
   ipcMain.handle("thread:select", async (_event, threadId) => publicHistory(selectThread(threadId)));
   for (const [channel, operation] of [
-    ['thread:rename', ({ id, title }) => state().renameThread(id, title)],
+    ['thread:rename', async ({ id, title }) => {
+      if (typeof title !== 'string' || !title.trim() || title.trim().length > 64) throw Error('请输入 1–64 字的对话名称。');
+      const thread = state().load().threads.find(t => t.id === id);
+      if (thread?.sessionId) await (await ensureRuntime()).request('thread/name/set', { threadId: thread.sessionId, name: title.trim() });
+      return state().renameThread(id, title);
+    }],
     ['thread:delete', id => state().deleteThread(id)],
     ['project:remove', projectPath => state().removeProject(projectPath)]
-  ]) ipcMain.handle(channel, (_event, payload) => {
+  ]) ipcMain.handle(channel, async (_event, payload) => {
     if (activeTask || taskStarting) throw new Error('请先停止当前任务。');
-    return publicHistory(operation(payload));
+    return publicHistory(await operation(payload));
   });
-  ipcMain.handle("runtime:prepare", async (_event, { confirmConfigReplace }) => prepareRuntime(confirmConfigReplace));
+  ipcMain.handle("runtime:prepare", async () => {
+    await credential(); defaultWorkspace(); await ensureRuntime(); return { ready: true };
+  });
   ipcMain.handle("runtime:restore-config", async () => {
     const metadata = JSON.parse(fs.readFileSync(appPaths().metadata, "utf8"));
     restoreOriginalConfig({ configPath: appPaths().codexConfig, backupPath: metadata.backupPath });
@@ -348,21 +414,23 @@ app.whenReady().then(() => {
     } catch (error) { updateInstalling = false; throw error; }
   });
   ipcMain.handle("task:start", async (_event, task) => {
-    if (activeTask || taskStarting || terminalStarting || terminalRunning || updateInstalling) throw new Error("已有任务或终端正在运行。");
+    if (activeTask || taskStarting || terminalStarting || terminalRunning || updateInstalling || nativePanel?.busy) throw new Error("已有任务或扩展操作正在运行。");
     if (!task || typeof task.prompt !== "string" || !task.prompt.trim() || typeof task.projectPath !== "string" || !validProject(task.projectPath)) throw new Error("请选择项目并输入任务。");
     if (!["read-only", "workspace-write", "full-access"].includes(task.mode)) throw new Error("权限模式无效。");
     if (task.mode === "full-access" && !task.confirmedFullAccess) throw new Error("完全访问需要确认。");
+    if (!['auto_review', 'user'].includes(task.reviewer)) throw Error('审批方式无效。');
+    const nativeInput = [...resolveAttachments(task.attachments), ...nativePanel.skillInput(task.skills)];
     taskStarting = true;
     cancelTaskStart = false;
     try {
     const current = await credential();
     const account = await apiRequest("/desktop/account", { deviceToken: current.deviceToken });
     if (!Number.isFinite(account.account?.credits) || account.account.credits <= 0) throw new Error("额度不足。请前往 BotGo 网站管理账户。");
-    const available = await apiRequest('/models');
+    const available = await apiRequest('/models', { deviceToken: current.deviceToken });
     const selectedModel = task.model || available.defaultModel;
     if (!available.models.some(m=>m.id===selectedModel&&m.enabled&&m.agent)) throw new Error('所选模型暂不可用于 Agent。');
-    const issued = await apiRequest("/desktop/key", { method: "POST", deviceToken: current.deviceToken });
-    await prepareRuntime();
+    if(task.reviewer==='auto_review'&&available.capabilities?.autoReview!==true)throw new Error('替我审批暂不可用：当前审核路由或计费探测未通过。输入已保留，任务未发送。');
+    const runner = await ensureRuntime(selectedModel);
     if (cancelTaskStart) throw Error('任务已取消，输入已保留。');
     const history = state().load();
     let thread = history.threads.find((item) => item.id === task.threadId && item.projectPath === task.projectPath);
@@ -370,20 +438,23 @@ app.whenReady().then(() => {
     const entry = { ...thread, model: selectedModel, title: thread.messages.length || thread.title !== '新对话' ? thread.title : task.prompt.slice(0, 64), status: "running", updatedAt: new Date().toISOString(), messages: [...thread.messages, { id: crypto.randomUUID(), role: "user", kind: "message", content: task.prompt, files: [], createdAt: new Date().toISOString() }] };
     state().save({ ...history, selectedProject: entry.projectPath, selectedThreadId: entry.id, recentProjects: [entry.projectPath, ...history.recentProjects.filter((item) => item !== entry.projectPath)], threads: [entry, ...history.threads.filter((item) => item.id !== entry.id)] });
     let lastPersisted = 0;
-    const runner = createAppServerRunner({ command: nativeCommand(agentRoot) });
     activeThreadId = entry.id;
     activeTask = runner.start({
       id: entry.id,
       projectPath: entry.projectPath,
       prompt: task.prompt,
+      reviewer: task.reviewer,
+      plan: Boolean(task.plan),
+      review: Boolean(task.review),
+      input: nativeInput,
       model: selectedModel,
       permission: task.mode,
       confirmedFullAccess: task.confirmedFullAccess,
       sessionId: entry.sessionId,
       codexHome: appPaths().codexHome,
-      relayKey: issued.key,
       relayOrigin: requireApiOrigin(),
       onEvent(event) {
+        if (event.type === 'steered') entry.messages.push({ id: crypto.randomUUID(), role: 'user', kind: 'message', content: event.message, createdAt: new Date().toISOString() });
         if (event.type === "session") entry.sessionId = event.sessionId;
         if (['delta', 'progress'].includes(event.type)) {
           const messageId = event.itemId || crypto.randomUUID();
@@ -393,11 +464,11 @@ app.whenReady().then(() => {
         }
         if (event.type === "files") entry.messages.push({ id: crypto.randomUUID(), role: "system", kind: "files", content: "变更文件", files: event.files, createdAt: new Date().toISOString() });
         if (event.type === "error") entry.messages.push({ id: crypto.randomUUID(), role: "system", kind: "error", content: event.message || "任务未能完成。", files: [], createdAt: new Date().toISOString() });
-        if (["session", "progress", "files"].includes(event.type) || (event.type === "delta" && Date.now() - lastPersisted > 500)) {
+        if (["session", "progress", "files", "steered"].includes(event.type) || (event.type === "delta" && Date.now() - lastPersisted > 500)) {
           lastPersisted = Date.now();
           entry.updatedAt = new Date().toISOString();
           const snapshot = state().load();
-          state().save({ ...snapshot, selectedProject: entry.projectPath, selectedThreadId: entry.id, threads: [entry, ...snapshot.threads.filter((item) => item.id !== entry.id)] });
+          state().save({ ...snapshot, selectedProject: snapshot.selectedProject, selectedThreadId: snapshot.selectedThreadId, threads: [entry, ...snapshot.threads.filter((item) => item.id !== entry.id)] });
         }
         if (["completed", "stopped", "error"].includes(event.type)) {
           entry.status = event.type;
@@ -406,7 +477,7 @@ app.whenReady().then(() => {
           const latest = state().load();
           state().save({
             selectedProject: latest.selectedProject || entry.projectPath,
-            selectedThreadId: entry.id,
+            selectedThreadId: latest.selectedThreadId,
             recentProjects: [entry.projectPath, ...latest.recentProjects.filter((item) => item !== entry.projectPath)],
             threads: [entry, ...latest.threads.filter((item) => item.id !== entry.id)]
           });
@@ -422,12 +493,13 @@ app.whenReady().then(() => {
     terminalStarting = true;
     try {
     if (!state().load().recentProjects.includes(projectPath)) throw new Error("请先选择项目。");
-    const models=await apiRequest('/models');
+    const current = await credential();
+    const models=await apiRequest('/models', { deviceToken: current.deviceToken });
     model=model||models.defaultModel;
     if(!models.models.some(m=>m.id===model&&m.enabled&&m.agent))throw new Error('所选模型暂不可用。');
+    closeRuntime();
     await prepareRuntime();
-    const current = await credential();
-    const issued = await apiRequest("/desktop/key", { method: "POST", deviceToken: current.deviceToken });
+    const issued = await apiRequest("/desktop/key", { method: "POST", deviceToken: current.deviceToken, body: { model } });
     return await openNativeTerminal({ command: nativeCommand(agentRoot), projectPath, codexHome: appPaths().codexHome, relayKey: issued.key, relayOrigin: requireApiOrigin(), model, sessionId,
       onStatus(status) {
         terminalRunning = status.state === 'running';
@@ -436,12 +508,28 @@ app.whenReady().then(() => {
     });
     } finally { terminalStarting = false; }
   });
+  ipcMain.handle('task:open-request-url', async (_event, { threadId, requestId }) => {
+    if (!activeTask || threadId !== activeThreadId) throw Error('连接或授权请求已取消。');
+    await shell.openExternal(activeTask.requestUrl(requestId)); return { ok: true };
+  });
   ipcMain.handle('task:respond', (_event, response) => {
     if (!activeTask || response?.threadId !== activeThreadId) throw Error('Inactive request');
     return activeTask.respond(response);
   });
+  ipcMain.handle('task:steer', async (_event, { threadId, text }) => {
+    if (!activeTask || threadId !== activeThreadId) throw Error('当前会话没有运行中的任务。');
+    await activeTask.steer(text);
+    return { ok: true };
+  });
+  ipcMain.handle('attachments:choose', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openFile', 'multiSelections'] });
+    if (result.canceled) return [];
+    if (result.filePaths.length > 16) throw Error('最多添加 16 个附件。');
+    return result.filePaths.map(file => { const id = crypto.randomUUID(); attachmentHandles.set(id, { path: file }); return { id, name: path.basename(file) }; });
+  });
   ipcMain.handle("task:stop", async () => { if (taskStarting) cancelTaskStart = true; activeTask?.stop(); return { ok: true }; });
   ipcMain.handle("account:revoke-device", async () => {
+    cancelTaskStart = true; closeRuntime();
     const current = await credential();
     await apiRequest("/desktop/revoke", { method: "POST", deviceToken: current.deviceToken });
     credentials().clear();
@@ -454,4 +542,4 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => { if (process.platform !== "darwin") app.quit(); });
-app.on("before-quit", () => { activeTask?.stop(); closeActiveAuthorization(); });
+app.on("before-quit", () => { closeRuntime(); closeActiveAuthorization(); });

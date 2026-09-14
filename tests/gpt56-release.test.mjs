@@ -19,11 +19,13 @@ assert.doesNotMatch(workspace, /\/downloads\/BotGo-Desktop-Setup\.exe/, "未托�
 assert.doesNotMatch(client, /activeProvider|provider:\s*activeProvider|claude-sonnet/, "网页对话不应保留模型提供方切换");
 assert.match(client, /model:\s*requestModel/, "网页请求应冻结发送时所选模型");
 
-assert.match(worker, /publicCatalog\(await catalog\(env\)\)/, "Worker 应集中提供模型目录");
+assert.match(worker, /publicCatalog\(data,\{autoReview:desktop\?await autoReviewCapability\(env,data\):false\}\)/, "Worker 应集中提供模型目录并仅向有效 Desktop 设备返回审核能力");
 assert.doesNotMatch(worker, /proxyClaudeMessages|\/v1\/messages|ANTHROPIC_/, "Worker 不应保留 Anthropic 代理或路由");
 assert.doesNotMatch(workerConfig, /ANTHROPIC_/, "Worker 配置不应保留 Anthropic 变量");
-assert.match(read('worker/src/metering.js'), /model:model\.upstream_id/, "Worker 必须使用服务端上游映射");
-assert.match(codexConfig, /model = "gpt-5\.6"/, "桌面端托管配置应固定 GPT-5.6");
+assert.match(read('worker/src/metering.js'), /AUTO_REVIEW_BILLING_MODEL_ID = 'gpt-5\.6-luna'/, "原生 API-key 审核必须使用实测的 Luna 路由");
+assert.match(read('worker/src/metering.js'), /selectedModel:billingModel\|\|model\.id,requestPurpose:autoReview\?'auto_review':'task'/, "审核账本必须区分所选模型、实际计费模型和请求用途");
+assert.doesNotMatch(read('worker/src/metering.js'), /AUTO_REVIEW_TEMPLATE|Codex Auto Review/, "原生审核路由不应拥有独立模型目录或价格模板");
+assert.match(codexConfig, /model = "gpt-5\.6"/, "桌面端兼容配置应保留服务端默认模型别名");
 
 assert.doesNotMatch(build, /installer\/botgo-bootstrap/, "生产构建不应发布旧命令行安装脚本");
 assert.equal(exists("installer/botgo-bootstrap.ps1"), false, "旧 Windows 安装脚本应被移除");

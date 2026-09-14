@@ -42,7 +42,7 @@ function createApiClient({ origin = process.env.BOTGO_API_ORIGIN || DEFAULT_ORIG
     exchangeAuthorization: (body) => request("/desktop/authorize/exchange", { method: "POST", body }),
     cancelAuthorization: (body) => request("/desktop/authorize/cancel", { method: "POST", body }),
     account: (deviceToken) => request("/desktop/account", { deviceToken }),
-    issueKey: (deviceToken) => request("/desktop/key", { method: "POST", deviceToken }),
+    issueKey: (deviceToken, model) => request("/desktop/key", { method: "POST", deviceToken, body: model === undefined ? undefined : { model } }),
     revoke: (deviceToken) => request("/desktop/revoke", { method: "POST", deviceToken })
   };
 }

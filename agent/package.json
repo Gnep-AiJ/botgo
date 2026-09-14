@@ -1,6 +1,6 @@
 {
   "name": "botgo-agent-cli",
-  "version": "0.2.3",
+  "version": "0.2.5",
   "private": true,
   "description": "BotGo Agent CLI backed by the BotGo relay and Codex CLI",
   "main": "bin/botgo.cjs",

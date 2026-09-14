@@ -14,7 +14,17 @@ function renderRuntimeRequests() {
     title.textContent = request.kind === 'question' ? '需要你的回答' : '需要你的许可'; article.append(title);
     const reason = document.createElement('p'); reason.textContent = request.message; article.append(reason);
     if (request.details) { const details = document.createElement('details'), summary = document.createElement('summary'), text = document.createElement('pre'); summary.textContent = '查看操作详情'; text.textContent = request.details; details.append(summary, text); article.append(details); }
-    const fields = [];
+    const fields = [], formFields = [];
+    if (request.kind === 'elicitation' && request.schema) for (const [name, rule] of Object.entries(request.schema.properties || {})) {
+      const label = document.createElement('label'); label.textContent = rule.title || name;
+      const choices = rule.enum || rule.oneOf?.map(o => o.const) || rule.items?.enum || rule.items?.anyOf?.map(o => o.const);
+      const input = document.createElement(choices ? 'select' : 'input');
+      if (choices) { input.multiple = rule.type === 'array'; for (const value of choices) { const option = document.createElement('option'); option.value = String(value); option.textContent = String(value); input.append(option); } }
+      else input.type = rule.type === 'boolean' ? 'checkbox' : ['integer', 'number'].includes(rule.type) ? 'number' : 'text';
+      input.required = (request.schema.required || []).includes(name); label.append(input); article.append(label); formFields.push({ name, rule, input });
+    }
+    if (request.url) { const notice = document.createElement('p'); notice.textContent = '第三方服务需要在浏览器中完成授权。'; article.append(notice); const open = document.createElement('button'); open.textContent = '打开授权页面'; open.onclick = () => window.botgo.openRequestUrl(request.threadId, request.requestId).catch(e => { error.textContent = e.message; }); article.append(open); }
+
     for (const question of request.questions) {
       const label = document.createElement('label'); label.textContent = question.question;
       const input = document.createElement('input'); input.type = question.isSecret ? 'password' : 'text'; input.maxLength = 10000;
@@ -30,13 +40,14 @@ function renderRuntimeRequests() {
       const buttons = article.querySelectorAll('button'); buttons.forEach(b => b.disabled = true);
       try {
         const answers = Object.fromEntries(fields.map(f => [f.id, { answers: [f.input.value.trim()] }]));
-        if (fields.some(f => !f.input.value.trim())) throw Error('请填写所有问题。');
-        await window.botgo.respondToRequest({ threadId: request.threadId, requestId: request.requestId, decision, answers });
+        if (decision === 'accept' && fields.some(f => !f.input.value.trim())) throw Error('请填写所有问题。');
+        await window.botgo.respondToRequest({ threadId: request.threadId, requestId: request.requestId, decision, answers, content: Object.fromEntries(formFields.filter(f => f.input.required || f.input.value || f.rule.type === 'boolean').map(({ name, rule, input }) => [name, rule.type === 'boolean' ? input.checked : rule.type === 'array' ? [...input.selectedOptions].map(o => o.value) : ['number', 'integer'].includes(rule.type) ? Number(input.value) : input.value])) });
         runtimeRequests.delete(request.requestId); renderRuntimeRequests();
       } catch (e) { error.textContent = e.message; buttons.forEach(b => b.disabled = false); }
     };
-    if (request.kind === 'question' || request.allow) { const accept = document.createElement('button'); accept.textContent = request.kind === 'question' ? '提交回答' : '允许这次操作'; accept.onclick = () => answer('accept'); article.append(accept); }
+    if (request.kind === 'question' || request.kind === 'elicitation' || request.allow) { const accept = document.createElement('button'); accept.textContent = request.kind === 'question' ? '提交回答' : '允许这次操作'; accept.onclick = () => answer('accept'); article.append(accept); }
     if (request.kind !== 'question') { const decline = document.createElement('button'); decline.textContent = '拒绝'; decline.onclick = () => answer('decline'); article.append(decline); }
+    if (request.kind === 'elicitation') { const cancel = document.createElement('button'); cancel.textContent = '取消授权'; cancel.onclick = () => answer('cancel'); article.append(cancel); }
     article.append(error); node.append(article);
   }
 }
@@ -44,6 +55,14 @@ function handleRuntimeEvent(event) {
   if (event.threadId && ui.runningThread && event.threadId !== ui.runningThread) return;
   if (event.type === 'started') setMessage('BotGo 正在处理…');
   if (event.type === 'activity') setMessage(event.message);
+  if (event.type === 'connection-closed') setMessage(event.message, true);
+  if (event.type === 'runtime-notification' && event.message) setMessage(event.message);
+  if (['review', 'plan', 'diff'].includes(event.type)) {
+    let panel = document.querySelector('[data-runtime-details]');
+    if (!panel) { panel = document.createElement('details'); panel.dataset.runtimeDetails = ''; panel.className = 'runtime-details'; const summary = document.createElement('summary'); summary.textContent = '查看执行详情'; panel.append(summary); document.querySelector('[data-conversation]').append(panel); }
+    const text = document.createElement('pre'); text.textContent = event.type === 'review' ? `${event.operation}\n${event.details}` : event.type === 'diff' ? event.diff : `${event.explanation}\n${(event.plan || []).map(p => `${p.status} ? ${p.step}`).join('\n')}`;
+    panel.append(text); if (event.type === 'review') panel.open = true;
+  }
   if (['delta', 'progress'].includes(event.type)) {
     const key = event.threadId + ':' + event.itemId;
     let entry = streamedMessages.get(key);
@@ -67,9 +86,7 @@ async function loadEarlierMessages() {
   if (currentThread()?.id !== thread.id) return;
   thread.messages.unshift(...page.messages); thread.before = page.before; renderConversation();
 }
-const updateNotice = document.createElement('div'), updateLabel = document.createElement('span'), updateAction = document.createElement('button');
-updateNotice.className = 'update-notice'; updateAction.type = 'button'; updateAction.textContent = '检查更新';
-updateNotice.append(updateLabel, updateAction); document.querySelector('.sidebar-account').prepend(updateNotice);
+const updateRow = document.querySelector('[data-update-row]'), updateLabel = document.querySelector('[data-update-status]'), updateAction = document.querySelector('[data-update-action]');
 let updateReady = false;
 updateAction.onclick = async () => {
   updateAction.disabled = true;
@@ -78,10 +95,12 @@ updateAction.onclick = async () => {
   finally { updateAction.disabled = false; }
 };
 window.botgo.onUpdate?.(status => {
+  updateRow.hidden = !ui.account || !['checking', 'downloading', 'ready', 'error'].includes(status.state);
+  updateRow.title = status.state === 'error' ? status.message || '更新失败' : status.version ? `版本 ${status.version}` : '';
   updateReady = status.state === 'ready';
   updateAction.textContent = updateReady ? '重启更新' : status.state === 'error' ? '重试更新' : '检查更新';
   updateAction.disabled = ['checking', 'downloading'].includes(status.state);
-  updateLabel.textContent = ({ checking: '正在检查更新', current: '已是最新版本', ready: `新版 ${status.version} 已就绪，任务结束后可安装`, error: status.message, downloading: `正在下载 ${status.version}：${Math.floor(100 * status.received / status.total)}%` })[status.state] || '';
+  updateLabel.textContent = ({ checking: '检查更新中', ready: '有新版本', error: '更新失败', downloading: `下载更新 ${status.total ? Math.floor(100 * status.received / status.total) : 0}%` })[status.state] || '';
 });
 let updateCheckedForAccount = false;
 setInterval(() => {
