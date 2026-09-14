@@ -25,9 +25,9 @@ function replace(value,needle,next){
   return value.replace(needle,next);
 }
 function brand(value){
-  return value.replaceAll('OpenCode Dev','BotGo Preview').replaceAll('OpenCode Beta','BotGo Beta')
-    .replaceAll('"OpenCode"','"BotGo"').replaceAll('ai.opencode.desktop.dev','com.botgo.opencode.preview')
-    .replaceAll('ai.opencode.desktop.beta','com.botgo.opencode.beta').replaceAll('ai.opencode.desktop','com.botgo.opencode');
+  return value.replaceAll('OpenCode Dev','BotGo Desktop').replaceAll('OpenCode Beta','BotGo Desktop')
+    .replaceAll('"OpenCode"','"BotGo"').replaceAll('ai.opencode.desktop.dev','com.botgo.desktop')
+    .replaceAll('ai.opencode.desktop.beta','com.botgo.desktop').replaceAll('ai.opencode.desktop','com.botgo.desktop');
 }
 let main=brand(base('packages/desktop/src/main/index.ts'));
 main='import { createBotGo } from "./botgo-main"\n'+main;
@@ -45,7 +45,7 @@ main=replace(main,'  const shellEnv = preferAppEnv(app.getPath("userData"))',`  
   }
   process.env.OPENCODE_DISABLE_AUTOUPDATE = "true"
   process.env.OPENCODE_DISABLE_MODELS_FETCH = "true"`);
-main=replace(main,'app.setAsDefaultProtocolClient("opencode")','app.setAsDefaultProtocolClient("botgo-opencode")');
+main=replace(main,'app.setAsDefaultProtocolClient("opencode")','app.setAsDefaultProtocolClient("botgo")');
 main=replace(main,'  registerIpcHandlers({','  const botgo = createBotGo()\n  void botgo.initialize()\n  registerIpcHandlers({\n    botgo,');
 main=replace(main,'    logger.log("sidecar connection started", { version: SIDECAR_VERSION })',
   '    yield* Effect.promise(() => botgo.ready)\n    logger.log("sidecar connection started", { version: SIDECAR_VERSION })');
@@ -168,13 +168,13 @@ staged.set('packages/desktop/src/renderer/index.html',base('packages/desktop/src
 staged.set('packages/ui/src/components/logo.tsx',fs.readFileSync(path.join(here,'overlay/logo.tsx')));
 staged.set('packages/desktop/resources/icons/icon.ico',fs.readFileSync(path.join(here,'overlay/botgo-desktop.ico')));
 const pkg=JSON.parse(base('packages/desktop/package.json'));
-pkg.name='@botgo/opencode-desktop';
-pkg.version='0.1.0-preview.2';
+pkg.name='@botgo/desktop';
+pkg.version='1.3.0-preview.1';
 pkg.homepage='https://botgo.win';
 // Keep upstream MIT authorship. Packaging is never publishing.
 staged.set('packages/desktop/package.json',JSON.stringify(pkg,null,2)+'\n');
 let builder=brand(base('packages/desktop/electron-builder.config.ts'));
-builder=builder.replaceAll('schemes: ["opencode"]','schemes: ["botgo-opencode"]')
+builder=builder.replaceAll('schemes: ["opencode"]','schemes: ["botgo"]')
   .replace('"opencode-desktop-${os}-${arch}.${ext}"','"BotGo-${version}-${os}-${arch}.${ext}"');
 builder=replace(builder,'  extraResources: [','  extraResources: [\n    { from: "resources/icons", to: "icons" },');
 // The preview is a separate app; no upstream publishing configuration is retained.

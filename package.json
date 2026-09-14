@@ -4,7 +4,7 @@
   "private": true,
   "description": "BotGo 科技品牌官网首页",
   "scripts": {
-    "pretest": "node tests/opencode-bridge.test.cjs && node tests/opencode-authorization.test.cjs && node --experimental-sqlite tests/opencode-gateway.test.mjs && node --experimental-sqlite tests/account-retention.test.mjs && node --experimental-sqlite tests/conversations.test.mjs && node --experimental-sqlite tests/metering.test.mjs && node --experimental-sqlite tests/auto-review-metering.test.mjs && node --experimental-sqlite tests/release-bootstrap.test.mjs",
+    "pretest": "node tests/opencode-release.test.cjs && node tests/opencode-bridge.test.cjs && node tests/opencode-authorization.test.cjs && node --experimental-sqlite tests/opencode-gateway.test.mjs && node --experimental-sqlite tests/account-retention.test.mjs && node --experimental-sqlite tests/conversations.test.mjs && node --experimental-sqlite tests/metering.test.mjs && node --experimental-sqlite tests/auto-review-metering.test.mjs && node --experimental-sqlite tests/release-bootstrap.test.mjs",
     "opencode:prepare": "node opencode-desktop/prepare.mjs",
     "preopencode:build": "node tests/opencode-diagnostic.test.cjs",
     "opencode:build": "node opencode-desktop/build.mjs",

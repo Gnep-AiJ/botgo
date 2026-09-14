@@ -45,7 +45,7 @@ async function beginAuthorization({origin,save,fetchImpl=fetch,timeoutMs=300000}
   try{
     await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
     timer=setTimeout(()=>fail(Error('Authorization timed out')),timeoutMs);
-    started=await Promise.race([request('/desktop/authorize/start',{deviceLabel:'BotGo OpenCode Desktop',verifier}),done]);
+    started=await Promise.race([request('/desktop/authorize/start',{deviceLabel:'BotGo Desktop',verifier}),done]);
     if(!started?.authorizationId)throw Error('Invalid authorization response');
     const url=new URL('/desktop-authorize.html',origin);
     url.searchParams.set('request',started.authorizationId);url.searchParams.set('state',state);
