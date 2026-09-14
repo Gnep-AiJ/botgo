@@ -226,7 +226,7 @@ function rememberProject(projectPath) {
 
 function createThread(projectPath) {
   const history = rememberProject(projectPath);
-  const thread = { id: crypto.randomUUID(), projectPath, title: "新对话", sessionId: "", status: "idle", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+  const thread = { id: crypto.randomUUID(), projectPath, title: "新对话", sessionId: "", collaborationMode: "default", status: "idle", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
   state().save({ ...history, selectedProject: projectPath, selectedThreadId: thread.id, threads: [thread, ...history.threads] });
   return state().load();
 }
@@ -273,7 +273,11 @@ function defaultWorkspace() {
   return rememberProject(projectPath);
 }
 async function ensureRuntime(model) {
-  if (runtimeConnecting) return runtimeConnecting;
+  if (runtimeConnecting) {
+    const connecting = await runtimeConnecting;
+    if (runtimeModel === model) return connecting;
+    return ensureRuntime(model);
+  }
   if (runtimeService?.connected && runtimeModel === model) return runtimeService;
   if (runtimeService) closeRuntime();
   const epoch = runtimeEpoch;
@@ -320,18 +324,6 @@ async function prepareRuntime() {
   return { ready: true };
 }
 
-const attachmentHandles = new Map();
-function resolveAttachments(ids = []) {
-  if (!Array.isArray(ids) || ids.length > 16) throw Error('最多添加 16 个附件。');
-  return ids.map(id => {
-    const file = attachmentHandles.get(id);
-    if (!file || !fs.statSync(file.path).isFile()) throw Error('附件已失效，请重新选择。');
-    return /\.(png|jpe?g|webp|gif)$/i.test(file.path)
-      ? { type: 'localImage', path: file.path }
-      : { type: 'mention', name: path.basename(file.path), path: file.path };
-  });
-}
-
 function createWindow() {
   app.setAppUserModelId("com.botgo.desktop");
   mainWindow = new BrowserWindow({
@@ -353,6 +345,18 @@ function createWindow() {
     mainWindow.focus();
   });
   mainWindow.loadFile(path.join(__dirname, "index.html"));
+}
+
+function setThreadMode(threadId, mode) {
+  if (!['default', 'plan'].includes(mode)) throw new Error('对话模式无效。');
+  const history = state().load();
+  const thread = history.threads.find(item => item.id === threadId);
+  if (!thread) throw new Error('对话不存在。');
+  if (thread.status === 'running') throw new Error('请先停止当前任务再切换模式。');
+  thread.collaborationMode = mode;
+  thread.updatedAt = new Date().toISOString();
+  state().save(history);
+  return state().load();
 }
 
 app.whenReady().then(() => {
@@ -381,6 +385,10 @@ app.whenReady().then(() => {
   ipcMain.handle("project:remember", async (_event, projectPath) => publicHistory(rememberProject(projectPath)));
   ipcMain.handle("thread:create", async (_event, projectPath) => publicHistory(createThread(projectPath)));
   ipcMain.handle("thread:select", async (_event, threadId) => publicHistory(selectThread(threadId)));
+  ipcMain.handle("thread:mode", async (_event, { id, mode }) => {
+    if (activeTask || taskStarting) throw new Error('请先停止当前任务再切换模式。');
+    return publicHistory(setThreadMode(id, mode));
+  });
   for (const [channel, operation] of [
     ['thread:rename', async ({ id, title }) => {
       if (typeof title !== 'string' || !title.trim() || title.trim().length > 64) throw Error('请输入 1–64 字的对话名称。');
@@ -394,8 +402,10 @@ app.whenReady().then(() => {
     if (activeTask || taskStarting) throw new Error('请先停止当前任务。');
     return publicHistory(await operation(payload));
   });
-  ipcMain.handle("runtime:prepare", async () => {
-    await credential(); defaultWorkspace(); await ensureRuntime(); return { ready: true };
+  ipcMain.handle("runtime:prepare", async (_event, request = {}) => {
+    await credential(); defaultWorkspace();
+    if (typeof request.model === 'string' && request.model) await ensureRuntime(request.model); else await prepareRuntime();
+    return { ready: true };
   });
   ipcMain.handle("runtime:restore-config", async () => {
     const metadata = JSON.parse(fs.readFileSync(appPaths().metadata, "utf8"));
@@ -419,7 +429,7 @@ app.whenReady().then(() => {
     if (!["read-only", "workspace-write", "full-access"].includes(task.mode)) throw new Error("权限模式无效。");
     if (task.mode === "full-access" && !task.confirmedFullAccess) throw new Error("完全访问需要确认。");
     if (!['auto_review', 'user'].includes(task.reviewer)) throw Error('审批方式无效。');
-    const nativeInput = [...resolveAttachments(task.attachments), ...nativePanel.skillInput(task.skills)];
+    const nativeInput = [];
     taskStarting = true;
     cancelTaskStart = false;
     try {
@@ -434,7 +444,7 @@ app.whenReady().then(() => {
     if (cancelTaskStart) throw Error('任务已取消，输入已保留。');
     const history = state().load();
     let thread = history.threads.find((item) => item.id === task.threadId && item.projectPath === task.projectPath);
-    if (!thread) thread = { id: crypto.randomUUID(), projectPath: task.projectPath, title: task.prompt.slice(0, 64), sessionId: "", status: "idle", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
+    if (!thread) thread = { id: crypto.randomUUID(), projectPath: task.projectPath, title: task.prompt.slice(0, 64), sessionId: "", collaborationMode: "default", status: "idle", messages: [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() };
     const entry = { ...thread, model: selectedModel, title: thread.messages.length || thread.title !== '新对话' ? thread.title : task.prompt.slice(0, 64), status: "running", updatedAt: new Date().toISOString(), messages: [...thread.messages, { id: crypto.randomUUID(), role: "user", kind: "message", content: task.prompt, files: [], createdAt: new Date().toISOString() }] };
     state().save({ ...history, selectedProject: entry.projectPath, selectedThreadId: entry.id, recentProjects: [entry.projectPath, ...history.recentProjects.filter((item) => item !== entry.projectPath)], threads: [entry, ...history.threads.filter((item) => item.id !== entry.id)] });
     let lastPersisted = 0;
@@ -444,7 +454,7 @@ app.whenReady().then(() => {
       projectPath: entry.projectPath,
       prompt: task.prompt,
       reviewer: task.reviewer,
-      plan: Boolean(task.plan),
+      plan: entry.collaborationMode === 'plan',
       review: Boolean(task.review),
       input: nativeInput,
       model: selectedModel,
@@ -462,9 +472,18 @@ app.whenReady().then(() => {
           if (!message) { message = { id: messageId, role: 'assistant', model: selectedModel, kind: 'message', content: '', files: [], createdAt: new Date().toISOString() }; entry.messages.push(message); }
           message.content = event.type === 'delta' ? message.content + event.delta : event.message;
         }
+        if (event.type === 'plan') {
+          const messageId = `plan:${event.turnId || 'current'}`;
+          let message = entry.messages.find(item => item.id === messageId);
+          if (!message) { message = { id: messageId, role: 'system', kind: 'plan', content: '', files: [], createdAt: new Date().toISOString() }; entry.messages.push(message); }
+          message.content = [event.explanation || '计划已更新', ...(event.plan || []).map(item => `${item.status === 'completed' ? '✓' : item.status === 'inProgress' ? '→' : '○'} ${item.step}`)].filter(Boolean).join('\n');
+          message.plan = event.plan || [];
+        }
+        if (event.type === 'diff') entry.messages.push({ id: crypto.randomUUID(), role: 'system', kind: 'diff', content: ['代码改动', event.diff || ''].filter(Boolean).join('\n'), files: [], createdAt: new Date().toISOString() });
+        if (event.type === 'review') entry.messages.push({ id: crypto.randomUUID(), role: 'system', kind: 'review', content: [event.operation || '审核', event.details || ''].filter(Boolean).join('\n'), files: [], createdAt: new Date().toISOString() });
         if (event.type === "files") entry.messages.push({ id: crypto.randomUUID(), role: "system", kind: "files", content: "变更文件", files: event.files, createdAt: new Date().toISOString() });
         if (event.type === "error") entry.messages.push({ id: crypto.randomUUID(), role: "system", kind: "error", content: event.message || "任务未能完成。", files: [], createdAt: new Date().toISOString() });
-        if (["session", "progress", "files", "steered"].includes(event.type) || (event.type === "delta" && Date.now() - lastPersisted > 500)) {
+        if (["session", "progress", "files", "steered", "plan", "diff", "review"].includes(event.type) || (event.type === "delta" && Date.now() - lastPersisted > 500)) {
           lastPersisted = Date.now();
           entry.updatedAt = new Date().toISOString();
           const snapshot = state().load();
@@ -520,12 +539,6 @@ app.whenReady().then(() => {
     if (!activeTask || threadId !== activeThreadId) throw Error('当前会话没有运行中的任务。');
     await activeTask.steer(text);
     return { ok: true };
-  });
-  ipcMain.handle('attachments:choose', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, { properties: ['openFile', 'multiSelections'] });
-    if (result.canceled) return [];
-    if (result.filePaths.length > 16) throw Error('最多添加 16 个附件。');
-    return result.filePaths.map(file => { const id = crypto.randomUUID(); attachmentHandles.set(id, { path: file }); return { id, name: path.basename(file) }; });
   });
   ipcMain.handle("task:stop", async () => { if (taskStarting) cancelTaskStart = true; activeTask?.stop(); return { ok: true }; });
   ipcMain.handle("account:revoke-device", async () => {

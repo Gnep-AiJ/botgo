@@ -94,7 +94,6 @@
         </button>
         <span class="sr-only" data-thread-title>新对话</span>
         <span class="running-state" data-running-state data-state="idle" role="status" aria-live="polite">就绪</span>
-        <button class="header-action" type="button" data-settings aria-haspopup="dialog">更多</button>
       </header>
 
       <section class="conversation" data-conversation aria-live="polite">
@@ -107,14 +106,13 @@
 
       <section class="composer-wrap">
         <p class="workspace-message" data-workspace-message role="status" aria-live="polite"></p>
+        <div class="command-menu" id="command-menu" data-command-menu role="listbox" aria-label="Codex 命令" hidden></div>
         <form class="composer" data-composer>
           <label class="sr-only" for="task-prompt">输入任务</label>
-          <textarea id="task-prompt" data-task-prompt rows="1" placeholder="给 BotGo 一个任务…"></textarea>
-          <div class="attachment-list" data-attachments aria-live="polite"></div>
+          <textarea id="task-prompt" data-task-prompt rows="1" placeholder="描述任务，或输入 / 查看命令…" aria-controls="command-menu" aria-expanded="false"></textarea>
           <div class="composer-toolbar">
             <div class="context-controls">
-              <button type="button" class="composer-tool" data-attach>添加文件</button>
-              <button type="button" class="composer-tool" data-plan aria-pressed="false">计划</button>
+              <button type="button" class="collaboration-mode" data-collaboration-mode hidden>计划模式</button>
               <select data-model aria-label="选择模型"><option value="gpt-5.6-sol">GPT-5.6 Sol</option></select>
               <button type="button" class="model-retry" data-model-retry hidden>重新加载模型</button>
               <label class="mode-select">
@@ -155,56 +153,6 @@
       <p data-edit-error role="alert"></p>
       <div class="dialog-actions"><button type="button" data-edit-cancel>取消</button><button class="primary" type="submit" data-edit-confirm>保存</button></div>
     </form>
-  </dialog>
-  <dialog class="settings-dialog" data-settings-dialog aria-labelledby="settings-title">
-    <div class="settings-shell">
-      <header class="settings-heading">
-        <div><p class="eyebrow">原生 Codex</p><h2 id="settings-title">能力与扩展</h2></div>
-        <button class="icon-button" type="button" data-settings-close aria-label="关闭能力与扩展">
-          <svg viewBox="0 0 20 20" focusable="false"><path d="m5 5 10 10M15 5 5 15"></path></svg>
-        </button>
-      </header>
-      <p class="settings-status" data-settings-status role="status" aria-live="polite"></p>
-      <section class="settings-actions" aria-label="会话操作">
-        <button type="button" data-review-code>审阅当前项目改动</button>
-        <button type="button" data-import-configuration>导入现有 Codex 配置</button>
-      </section>
-      <details open>
-        <summary>MCP 服务</summary>
-        <div class="settings-inline-actions">
-          <button type="button" data-extensions-refresh>刷新</button>
-          <button type="button" data-mcp-reconnect>重新连接</button>
-          <button type="button" data-mcp-cancel-login>取消 OAuth 等待</button>
-        </div>
-        <div class="extension-list" data-mcp-list></div>
-        <details>
-          <summary>添加或编辑 MCP</summary>
-          <form class="mcp-form" data-mcp-form>
-            <label>名称<input name="name" required pattern="[A-Za-z0-9_-]{1,64}" autocomplete="off"></label>
-            <label>连接方式<select name="transport"><option value="stdio">本地 stdio</option><option value="http">HTTP</option></select></label>
-            <label>命令<input name="command" autocomplete="off"></label>
-            <label>参数（每行一个）<textarea name="args" rows="3"></textarea></label>
-            <label>URL<input name="url" type="url" autocomplete="off"></label>
-            <button type="submit">保存 MCP</button>
-          </form>
-        </details>
-      </details>
-      <details>
-        <summary>Skills</summary>
-        <button type="button" data-skill-install>从本地安装 Skill</button>
-        <div class="extension-list" data-skills-list></div>
-      </details>
-      <details>
-        <summary>插件</summary>
-        <button type="button" data-plugin-marketplace>添加本地 Marketplace</button>
-        <div class="extension-list" data-plugins-list></div>
-      </details>
-      <details>
-        <summary>已归档会话</summary>
-        <div class="extension-list" data-archived-list></div>
-      </details>
-      <pre class="extension-detail" data-extension-detail hidden tabindex="0"></pre>
-    </div>
   </dialog>
   <section class="runtime-requests" data-runtime-requests aria-live="polite" hidden></section>
   <script src="assets/ui-kit.js"></script><script src="renderer.js"></script><script src="renderer-runtime.js"></script><script src="renderer-settings.js"></script>

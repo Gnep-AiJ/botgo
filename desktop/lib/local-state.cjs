@@ -6,13 +6,19 @@ const sensitiveName = /(key|token|secret|authorization|password)/i;
 const now = () => new Date().toISOString();
 
 function messageOf(message) {
+  const plan = Array.isArray(message?.plan) ? message.plan.slice(0, 100).map(item => ({
+    step: String(item?.step || '').slice(0, 4000),
+    status: ['pending', 'inProgress', 'completed'].includes(item?.status) ? item.status : 'pending'
+  })).filter(item => item.step) : [];
   return {
     id: String(message?.id || crypto.randomUUID()),
     role: ["user", "assistant", "system"].includes(message?.role) ? message.role : "system",
     content: String(message?.content || ""),
     model: String(message?.model || ''),
-    kind: ["message", "progress", "error", "files"].includes(message?.kind) ? message.kind : "message",
+    kind: ["message", "progress", "error", "files", "plan", "diff", "review"].includes(message?.kind) ? message.kind : "message",
     files: Array.isArray(message?.files) ? message.files.filter((file) => typeof file === "string").slice(0, 200) : [],
+    details: String(message?.details || '').slice(0, 200000),
+    plan,
     createdAt: String(message?.createdAt || now())
   };
 }
@@ -26,6 +32,7 @@ function threadOf(thread) {
     sessionId: String(thread?.sessionId || "").slice(0, 200),
     archived: Boolean(thread?.archived),
     model: String(thread?.model || ''),
+    collaborationMode: thread?.collaborationMode === 'plan' ? 'plan' : 'default',
     status: ["idle", "running", "completed", "stopped", "error"].includes(thread?.status) ? thread.status : "idle",
     messages,
     createdAt: String(thread?.createdAt || now()),

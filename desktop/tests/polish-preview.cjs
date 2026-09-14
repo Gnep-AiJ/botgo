@@ -1,10 +1,10 @@
 // Desktop-only fixture harness. Does not run Codex or access user credentials.
 const {app,BrowserWindow,ipcMain}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const root=path.resolve(__dirname,'../..'),out=path.join(root,'artifacts/verification/app-server/desktop-ui');fs.mkdirSync(out,{recursive:true});app.setPath('userData',path.join(out,'profile'));app.disableHardwareAcceleration();
+const root=path.resolve(__dirname,'../..'),packaged=process.argv.includes('--packaged'),desktopVersion=require('../package.json').version,out=path.join(root,`artifacts/verification/app-server/desktop-ui${packaged?'-packaged':''}`),uiRoot=packaged?path.join(root,`desktop/dist/${desktopVersion}/win-unpacked/resources/app.asar`):path.join(root,'desktop');fs.mkdirSync(out,{recursive:true});app.setPath('userData',path.join(out,'profile'));app.disableHardwareAcceleration();
 const models=['gpt-5.6-sol','gpt-5.6-terra','gpt-5.6-luna','gpt-5.5','gpt-6-astra'].map(id=>({id,name:id,enabled:true,agent:true}));
-const history={selectedProject:root,selectedThreadId:'test-thread',recentProjects:[root],threads:[{id:'test-thread',projectPath:root,title:'本地项目对话',status:'completed',messages:[]}]};
-  let modelError=false,failStart=false,autoReview=false,starts=0,stops=0,win;
+const history={selectedProject:root,selectedThreadId:'test-thread',recentProjects:[root],threads:[{id:'test-thread',projectPath:root,title:'本地项目对话',collaborationMode:'default',status:'completed',messages:[]}]};
+  let modelError=false,failStart=false,autoReview=false,starts=0,stops=0,win;const preparedModels=[];
 const pause=ms=>new Promise(r=>setTimeout(r,ms)),run=js=>win.webContents.executeJavaScript(js,true);
 async function until(js){for(let i=0;i<60;i++){if(await run(js))return;await pause(50);}throw Error('Timed out: '+js+' '+await run("JSON.stringify({message:document.querySelector('[data-workspace-message]').textContent,model:document.querySelector('[data-model]').value,prompt:document.querySelector('[data-task-prompt]').value})"));}
   ipcMain.handle('models:get',()=>{if(modelError)throw Error('Fixture network failure');return {defaultModel:'missing-default',capabilities:{autoReview},models};});
@@ -18,13 +18,14 @@ ipcMain.handle('thread:rename',(_event,{id,title})=>mutate(()=>store.renameThrea
 ipcMain.handle('thread:delete',(_event,id)=>mutate(()=>store.deleteThread(id)));
 ipcMain.handle('project:remove',(_event,project)=>mutate(()=>store.removeProject(project)));
 ipcMain.handle('thread:select',(_event,id)=>{const thread=history.threads.find(t=>t.id===id);history.selectedThreadId=id;history.selectedProject=thread.projectPath;return history;});
-ipcMain.handle('runtime:prepare',async()=>{await pause(100);return {};});
+ipcMain.handle('thread:mode',(_event,{id,mode})=>{const thread=history.threads.find(t=>t.id===id);assert.ok(thread);assert.ok(['default','plan'].includes(mode));thread.collaborationMode=mode;return history;});
+ipcMain.handle('runtime:prepare',async(_event,request)=>{preparedModels.push(request?.model||'');await pause(100);return {};});
 ipcMain.handle('task:start',async()=>{starts++;if(failStart)throw Error('Fixture task start failed');return {id:'test-thread'};});
 ipcMain.handle('task:stop',()=>{stops++;win.webContents.send('task:event',{type:'stopped',message:'已停止'});return {};});
 app.whenReady().then(async()=>{try{
- win=new BrowserWindow({width:1180,height:780,show:false,webPreferences:{preload:path.join(root,'desktop/preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});win.showInactive();
+ win=new BrowserWindow({width:1180,height:780,show:false,webPreferences:{preload:path.join(uiRoot,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true}});win.showInactive();
  const errors=[];win.webContents.on('console-message',(_e,level,message)=>{if(level===3&&!/Fixture/.test(message))errors.push(message);});
- await win.loadFile(path.join(root,'desktop/index.html'));await until("!document.querySelector('[data-model]').disabled");
+ await win.loadFile(path.join(uiRoot,'index.html'));await until("!document.querySelector('[data-model]').disabled");
  assert.equal(await run("document.querySelector('[data-model]').value"),models[0].id);
  await run("ui.runningThread='test-thread'");
  win.webContents.send('task:event',{type:'delta',threadId:'test-thread',itemId:'stream',delta:'Live streaming fixture'});
@@ -70,7 +71,7 @@ app.whenReady().then(async()=>{try{
  await run("document.querySelector('[data-stop-task]').click()");await until("document.querySelector('[data-stop-task]').hidden");assert.equal(stops,1);
  failStart=true;await run("document.querySelector('[data-task-prompt]').value='失败后保留这段输入';document.querySelector('[data-task-prompt]').dispatchEvent(new Event('input'));document.querySelector('[data-composer]').requestSubmit()");await until("document.querySelector('[data-workspace-message]').textContent.includes('Fixture task start failed')");
  assert.equal(await run("document.querySelector('[data-task-prompt]').value"),'失败后保留这段输入');
- modelError=true;await win.loadFile(path.join(root,'desktop/index.html'));await until("!document.querySelector('[data-model-retry]').hidden");assert.equal(await run("document.querySelector('[data-start-task]').disabled"),true);
+ modelError=true;await win.loadFile(path.join(uiRoot,'index.html'));await until("!document.querySelector('[data-model-retry]').hidden");assert.equal(await run("document.querySelector('[data-start-task]').disabled"),true);
  modelError=false;await run("document.querySelector('[data-model-retry]').click()");await until("!document.querySelector('[data-model]').disabled");
  assert.equal(await run("document.querySelectorAll('.composer select').length"),2,'composer exposes only model and permission selects');
   assert.equal(await run("document.querySelector('[data-mode]').value"),'manual-approve','manual approval is the default');
@@ -81,6 +82,18 @@ app.whenReady().then(async()=>{try{
   assert.equal(await run("localStorage.getItem('botgo-approval')"),'auto-approve','temporary route failure must not overwrite the user preference');
   autoReview=true;await run("loadModels()");await until("document.querySelector('[data-mode]').value==='auto-approve'&&document.querySelector('[data-mode]').previousElementSibling.textContent.includes('替我审批')");await pause(100);fs.writeFileSync(path.join(out,'auto-review-available.png'),(await win.webContents.capturePage()).toPNG());
  assert.equal(await run("!document.querySelector('[data-settings],[data-open-terminal],[data-attach],[data-plan]')"),true,'removed controls stay absent');
+ await run("document.querySelector('[data-task-prompt]').value='/';document.querySelector('[data-task-prompt]').dispatchEvent(new Event('input'))");
+ await until("!document.querySelector('[data-command-menu]').hidden&&document.querySelector('[data-command-menu]').textContent.includes('/plan')");
+ fs.writeFileSync(path.join(out,'slash-commands.png'),(await win.webContents.capturePage()).toPNG());
+ await run("[...document.querySelectorAll('[data-command-menu] button')].find(button=>button.textContent.includes('/plan')).click()");
+ await until("document.querySelector('[data-command-menu]').textContent.includes('计划模式')");
+ await run("[...document.querySelectorAll('[data-command-menu] button')].find(button=>button.textContent.includes('计划模式')).click()");
+ await until("!document.querySelector('[data-collaboration-mode]').hidden");
+ assert.equal(history.threads[0].collaborationMode,'plan','plan mode persists on the conversation');
+ history.threads[0].messages.push({id:'plan:turn-plan',role:'system',kind:'plan',content:'计划已更新\n✓ 检查项目\n→ 验证功能',plan:[{step:'检查项目',status:'completed'},{step:'验证功能',status:'inProgress'}],files:[]});
+ win.webContents.send('task:event',{type:'plan',threadId:'test-thread',turnId:'turn-plan',explanation:'计划已更新',plan:[{step:'检查项目',status:'completed'},{step:'验证功能',status:'inProgress'}]});
+ await until("document.querySelector('[data-conversation]').textContent.includes('验证功能')");await pause(150);
+ fs.writeFileSync(path.join(out,'plan-mode.png'),(await win.webContents.capturePage()).toPNG());
  await run("document.querySelector('[data-thread-menu]').click();document.querySelector('[data-rename]').click();document.querySelector('[data-edit-input]').value='重命名后的对话';document.querySelector('[data-edit-form]').requestSubmit()");
  await until("document.querySelector('[data-thread-id] span').textContent==='重命名后的对话'");
  assert.equal(history.threads[0].title,'重命名后的对话');
@@ -97,5 +110,6 @@ app.whenReady().then(async()=>{try{
  assert.deepEqual(history.recentProjects,[other]);assert.equal(history.selectedThreadId,'other');
  await run("document.querySelector('[data-thread-menu]').click();document.querySelector('[data-delete]').click();document.querySelector('[data-edit-form]').requestSubmit()");
  await until("document.querySelectorAll('[data-thread-menu]').length===0");assert.equal(history.threads.length,0);
- assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({verifiedAt:new Date().toISOString(),ok:true,starts,stops,checks:['account update inside menu','logo','menus at 100/125/150 percent','model and permission controls only','automatic approval gated','fallback model','duplicate submit','running controls','stop','failed start retains input','model retry','rename','delete confirmation and cancellation','same-name projects','remove project and selection fallback'],errors},null,2));console.log('Desktop polish checks passed');win.destroy();setTimeout(()=>app.exit(0),300);
+ assert.ok(preparedModels.length>0&&preparedModels.every(Boolean),'runtime preparation must always bind a selected model');
+ assert.deepEqual(errors,[]);fs.writeFileSync(path.join(out,'results.json'),JSON.stringify({verifiedAt:new Date().toISOString(),ok:true,starts,stops,preparedModels,checks:['account update inside menu','logo','menus at 100/125/150 percent','model and permission controls only','automatic approval gated','model-bound startup preparation','fallback model','duplicate submit','running controls','stop','failed start retains input','model retry','slash command menu','conversation plan mode persistence','native plan event','rename','delete confirmation and cancellation','same-name projects','remove project and selection fallback'],errors},null,2));console.log('Desktop polish checks passed');win.destroy();setTimeout(()=>app.exit(0),300);
  }catch(error){console.error(error);fs.writeFileSync(path.join(out,'failure.txt'),String(error.stack));win?.destroy();setTimeout(()=>app.exit(1),300);}});

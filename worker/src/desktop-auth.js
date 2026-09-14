@@ -188,7 +188,7 @@ export async function desktopCredentialFor(env, rawDeviceToken, { sha256 = defau
 export async function desktopRelayCredentialFor(env, rawKey, { sha256 = defaultSha256 } = {}) {
   if (typeof rawKey !== "string" || !rawKey.startsWith("bgk_")) return null;
   const keyHash = await sha256(rawKey);
-  const credential = await env.DB.prepare("SELECT k.id, k.account_id, a.email, a.credit_balance, a.status FROM api_keys k JOIN accounts a ON a.id = k.account_id JOIN device_tokens d ON d.token_hash = k.device_token_hash WHERE k.key_hash = ? AND k.scope = 'desktop' AND k.revoked_at IS NULL AND d.revoked_at IS NULL AND d.expires_at > ?")
+  const credential = await env.DB.prepare("SELECT k.id, k.account_id, a.email, a.credit_balance, a.status FROM api_keys k JOIN accounts a ON a.id = k.account_id JOIN device_tokens d ON d.token_hash = k.device_token_hash WHERE k.key_hash = ? AND k.scope = 'desktop' AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at > CURRENT_TIMESTAMP) AND d.revoked_at IS NULL AND d.expires_at > ?")
     .bind(keyHash, new Date().toISOString()).first();
   if (!credential || credential.status !== "active") return null;
   const model = executionModelFromVerifiedKey(rawKey);

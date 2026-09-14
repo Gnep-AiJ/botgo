@@ -23,7 +23,7 @@ function createAppServerRunner(settings = {}) {
     });
     connection = current;
     connecting = (async () => {
-      await current.rpc('initialize', { clientInfo: { name: 'botgo_desktop', title: 'BotGo Desktop', version: '1.2.1-preview.6' }, capabilities: { experimentalApi: true } });
+      await current.rpc('initialize', { clientInfo: { name: 'botgo_desktop', title: 'BotGo Desktop', version: '1.2.1-preview.9' }, capabilities: { experimentalApi: true } });
       current.send({ method: 'initialized' });
     })();
     try { await connecting; } catch (error) { current.close(error.message); throw error; }
@@ -100,7 +100,7 @@ function createAppServerRunner(settings = {}) {
       if (p.turn?.id && turnId && p.turn.id !== turnId) return;
       if (/autoApprovalReview|guardianWarning/.test(method)) emit({ type: 'review', operation: method, details: safeMessage(JSON.stringify(p)) });
       if (method === 'guardianWarning') emit({ type: 'activity', message: '自动审核出现警告。请查看审核详情；需要确认时使用下方原生审批卡片。任务不会自动重发。' });
-      if (method === 'turn/plan/updated') emit({ type: 'plan', plan: p.plan, explanation: safeMessage(p.explanation || '') });
+      if (method === 'turn/plan/updated') emit({ type: 'plan', turnId: p.turnId || turnId, plan: p.plan, explanation: safeMessage(p.explanation || '') });
       if (method === 'turn/diff/updated') emit({ type: 'diff', diff: safeMessage(p.diff) });
       if (method === 'item/mcpToolCall/progress') emit({ type: 'activity', message: safeMessage(p.message || 'MCP 正在处理…') });
       if (method === 'item/started' && /mcpToolCall|collabAgent|plan|review/i.test(p.item?.type || '')) emit({ type: 'activity', message: p.item.type, details: safeMessage(JSON.stringify(p.item)) });

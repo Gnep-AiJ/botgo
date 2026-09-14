@@ -12,10 +12,11 @@ contextBridge.exposeInMainWorld("botgo", Object.freeze({
   rememberProject: (projectPath) => invoke("project:remember", projectPath),
   createThread: (projectPath) => invoke("thread:create", projectPath),
   selectThread: (threadId) => invoke("thread:select", threadId),
+  setThreadMode: (id, mode) => invoke('thread:mode', { id, mode }),
   renameThread: (id, title) => invoke('thread:rename', { id, title }),
   deleteThread: (id) => invoke('thread:delete', id),
   removeProject: (projectPath) => invoke('project:remove', projectPath),
-  prepare: (confirmConfigReplace) => invoke("runtime:prepare", { confirmConfigReplace: Boolean(confirmConfigReplace) }),
+  prepare: (model) => invoke("runtime:prepare", { model: typeof model === "string" ? model : "" }),
   openTerminal: (context) => invoke("runtime:open-terminal", context),
   onTerminalEvent: (listener) => {
     const handler = (_event, value) => listener(value);
@@ -38,7 +39,6 @@ contextBridge.exposeInMainWorld("botgo", Object.freeze({
   togglePlugin: (id, enabled) => invoke('plugins:toggle', { id, enabled }),
   forkThread: id => invoke('thread:fork', id),
   archiveThread: (id, archived) => invoke('thread:archive', { id, archived }),
-  chooseAttachments: () => invoke('attachments:choose'),
   steerTask: (threadId, text) => invoke('task:steer', { threadId, text }),
   startTask: (task) => invoke("task:start", task),
   stopTask: () => invoke("task:stop"),

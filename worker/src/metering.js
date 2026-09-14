@@ -69,16 +69,28 @@ export async function settle(env,id,usage,snapshot,state='completed') {
   let cost=0;
   try {if(usage)cost=costMicros(usage,snapshot);else if(state==='completed')state='review';}
   catch {state='review';usage=null;}
-  await env.DB.prepare("UPDATE metered_requests SET state=?,cost_micros=?,usage_json=? WHERE id=? AND state='reserved'").bind(state,cost,usage?JSON.stringify(usage):null,id).run();
-  if(state==='review') await env.DB.prepare("UPDATE model_catalog SET enabled=0 WHERE id=?").bind(snapshot.billingModel||snapshot.model).run();
+  const settled=await env.DB.prepare("UPDATE metered_requests SET state=?,cost_micros=?,usage_json=? WHERE id=? AND state='reserved'").bind(state,cost,usage?JSON.stringify(usage):null,id).run();
+  // Late cancellation/duplicate completion must not change route health or costs.
+  if(settled.meta?.changes===0)return;
+  if(usage && snapshot.costPrice) {
+    const estimate=costMicros(usage,{...snapshot,multiplierPpm:1000000,price:{...snapshot.price,...snapshot.costPrice}});
+    await env.DB.prepare('UPDATE metered_requests SET upstream_cost_estimate_micros=? WHERE id=? AND upstream_cost_estimate_micros IS NULL').bind(estimate,id).run();
+  }
+  if(state==='review' && snapshot.agentProtocol) {
+    await env.DB.prepare('INSERT INTO agent_route_health(model_id,profile_id,protocol,reason) VALUES(?,?,?,?) ON CONFLICT(model_id,profile_id,protocol) DO UPDATE SET reason=excluded.reason,blocked_at=CURRENT_TIMESTAMP')
+      .bind(snapshot.billingModel,snapshot.profileId,snapshot.agentProtocol,'usage_review').run();
+  } else if(state==='review') await env.DB.prepare("UPDATE model_catalog SET enabled=0 WHERE id=?").bind(snapshot.billingModel||snapshot.model).run();
 }
-export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstream,history,billingModel=null}) {
+export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstream,history,billingModel=null,agentRoute=null,taskId=null}) {
+  if(channel==='desktop_opencode' && (!agentRoute || !agentRoute.enabled || !agentRoute.verified_at || agentRoute.blocked_reason || agentRoute.model_id!==body.model || agentRoute.profile_id!==upstream.profileId))return reply({error:'Agent 路由未经验证。'},503);
   // Recover abandoned reservations only after the upstream timeout has elapsed.
   await env.DB.batch([
-    env.DB.prepare("UPDATE model_catalog SET enabled=0 WHERE id IN (SELECT COALESCE(json_extract(snapshot,'$.billingModel'),model) FROM metered_requests WHERE account_id=? AND state='reserved' AND created_at<datetime('now','-10 minutes'))").bind(accountId),
+    env.DB.prepare("INSERT INTO agent_route_health(model_id,profile_id,protocol,reason) SELECT model,json_extract(snapshot,'$.profileId'),json_extract(snapshot,'$.agentProtocol'),'abandoned' FROM metered_requests WHERE account_id=? AND channel='desktop_opencode' AND state='reserved' AND created_at<datetime('now','-10 minutes') ON CONFLICT(model_id,profile_id,protocol) DO UPDATE SET reason='abandoned',blocked_at=CURRENT_TIMESTAMP").bind(accountId),
+    env.DB.prepare("UPDATE model_catalog SET enabled=0 WHERE id IN (SELECT COALESCE(json_extract(snapshot,'$.billingModel'),model) FROM metered_requests WHERE account_id=? AND channel<>'desktop_opencode' AND state='reserved' AND created_at<datetime('now','-10 minutes'))").bind(accountId),
     env.DB.prepare("UPDATE metered_requests SET state='review' WHERE account_id=? AND state='reserved' AND created_at<datetime('now','-10 minutes')").bind(accountId)
   ]);
   const data=await catalog(env);
+  if(agentRoute && await env.DB.prepare('SELECT reason FROM agent_route_health WHERE model_id=? AND profile_id=? AND protocol=?').bind(agentRoute.model_id,agentRoute.profile_id,agentRoute.protocol).first())return reply({error:'上游用量需要核对，请联系管理员。'},503);
   const requestedModel=body.model==='gpt-5.6'?data.settings.default_model:body.model;
   if(requestedModel===AUTO_REVIEW_MODEL_ID)return reply({error:'旧版自动审核协议不可用，请更新客户端。'},503);
   const model=data.models.find(m=>m.id===requestedModel);
@@ -86,7 +98,7 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
   const autoReview=channel==='desktop_codex'&&billingModel&&model.id===AUTO_REVIEW_BILLING_MODEL_ID&&model.id!==billingModel;
   if(billingModel&&model.id!==billingModel&&!autoReview)return reply({error:'执行凭据绑定模型与请求不一致，请重新连接。'},403);
   if(autoReview&&!await autoReviewCapability(env,data))return reply({error:'替我审批暂不可用：生产开关或 Luna 真实用量探测未通过。'},503);
-  if(!autoReview) {
+  if(!autoReview && !agentRoute) {
     const proof=upstream.profileId?await env.DB.prepare("SELECT status FROM upstream_route_probes WHERE profile_id=? AND channel=? AND model_id=? AND status='ok' AND metering_verified=1").bind(upstream.profileId,channel,model.upstream_id).first():null;
     if(!proof)return reply({error:'当前渠道的模型尚未验证，请联系管理员。'},503);
   }
@@ -96,7 +108,8 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
   if(body.n!==undefined&&body.n!==1) return reply({error:'每次请求只支持一个结果。'},400);
   const price=model.price;
   const upstreamModel=model.upstream_id;
-  const snapshot={requestedModel,billingModel:model.id,selectedModel:billingModel||model.id,requestPurpose:autoReview?'auto_review':'task',upstreamModel,profileId:upstream.profileId,price,revision:model.revision,multiplierPpm:model.multiplier_ppm??data.settings.multiplier_ppm,usdCnyPpm:data.settings.usd_cny_ppm,settingsRevision:data.settings.revision};
+  const snapshot={requestedModel,billingModel:model.id,selectedModel:billingModel||model.id,requestPurpose:autoReview?'auto_review':'task',upstreamModel,profileId:upstream.profileId,price,revision:model.revision,multiplierPpm:model.multiplier_ppm??data.settings.multiplier_ppm,usdCnyPpm:data.settings.usd_cny_ppm,settingsRevision:data.settings.revision,
+    ...(agentRoute?{agentProtocol:agentRoute.protocol,routeRevision:agentRoute.revision,taskId,costPrice:agentRoute.cost_price_json?JSON.parse(agentRoute.cost_price_json):null}: {})};
   const requested=body.max_output_tokens??body.max_completion_tokens??body.max_tokens??8192;
   if(!Number.isInteger(requested)||requested<1) return reply({error:'输出上限无效。'},400);
   const maxOutput=Math.min(requested,16384);
@@ -107,10 +120,18 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
   if(retryKey&&!/^[a-zA-Z0-9_-]{16,128}$/.test(retryKey))return reply({error:'请求标识无效。'},400);
   const id=retryKey?`${accountId}:${channel}:${retryKey}`:crypto.randomUUID();
   try {await env.DB.prepare('INSERT INTO metered_requests(id,account_id,channel,model,snapshot,reserved_micros) VALUES(?,?,?,?,?,?)').bind(id,accountId,channel,requestedModel,JSON.stringify(snapshot),reserved).run();}
-  catch(error){if(String(error).includes('UNIQUE'))return reply({error:'该请求已受理，请勿重复提交。',requestId:id},409);if(String(error).includes('BILLING_INSUFFICIENT'))return reply({error:'可用余额不足或账户需要核对，请充值后重试。'},402);throw error;}
-  const chat=channel==='web_chat';
+  catch(error){
+    const message=String(error);
+    if(message.includes('UNIQUE'))return reply({error:'该请求已受理，请勿重复提交。',code:'REQUEST_EXISTS',requestId:id},409);
+    if(message.includes('BILLING_INSUFFICIENT'))return reply({error:'余额不足或账户受限，请查看账户。',code:'BILLING_UNAVAILABLE'},402);
+    if(message.includes('AGENT_CONCURRENCY_LIMIT'))return reply({error:'运行中的请求较多，请稍后再试。',code:'AGENT_CONCURRENCY_LIMIT'},429);
+    if(message.includes('AGENT_REVIEW_LIMIT'))return reply({error:'用量待核对，请联系管理员。',code:'AGENT_REVIEW_LIMIT'},409);
+    throw error;
+  }
+  const chat=agentRoute?agentRoute.protocol==='chat':channel==='web_chat';
   const payload={...body,model:upstreamModel,service_tier:'default',...(chat?{max_completion_tokens:maxOutput,stream:true,stream_options:{include_usage:true}}:{max_output_tokens:maxOutput})};
   delete payload.max_tokens;
+  if(chat)delete payload.max_output_tokens;else delete payload.max_completion_tokens;
   const abort=new AbortController();
   const timeout=setTimeout(()=>abort.abort(),180000);
   let response;
@@ -146,7 +167,7 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
 export async function handleMeteringAdmin(request,env,path,admin,audit) {
   if(!path.startsWith('/admin/metering'))return null;
   if(request.method==='GET' && path==='/admin/metering') {
-    const data=await catalog(env);const ledger=await env.DB.prepare('SELECT id,account_id,channel,model,state,cost_micros,charged_micros,usage_json,snapshot,created_at,reviewed_at,review_note FROM metered_requests ORDER BY created_at DESC LIMIT 100').all();
+    const data=await catalog(env);const ledger=await env.DB.prepare('SELECT id,account_id,channel,model,state,cost_micros,charged_micros,upstream_cost_estimate_micros,usage_json,snapshot,created_at,reviewed_at,review_note FROM metered_requests ORDER BY created_at DESC LIMIT 100').all();
     return reply({...data,ledger:ledger.results||[]});
   }
   const body=await request.json().catch(()=>null);
@@ -174,6 +195,7 @@ export async function handleMeteringAdmin(request,env,path,admin,audit) {
   const match=path.match(/^\/admin\/metering\/models\/([a-z0-9.-]+)$/);
   if(match?.[1]===AUTO_REVIEW_MODEL_ID)return reply({error:'codex-auto-review 是保留的原生内部路由，不属于模型目录或价格配置。'},400);
   if(match&&request.method==='DELETE') {
+    if(await env.DB.prepare('SELECT model_id FROM agent_model_routes WHERE model_id=?').bind(match[1]).first())return reply({error:'该模型仍有 OpenCode 路由配置，请先禁用模型并保留历史。'},409);
     const model=await env.DB.prepare('SELECT id,upstream_id FROM model_catalog WHERE id=? AND archived=0').bind(match[1]).first();
     if(!model)return reply({error:'模型不存在。'},404);
     const used=await env.DB.prepare('SELECT id FROM metering_settings WHERE default_model=? UNION ALL SELECT channel FROM upstream_routes WHERE model_id=?').bind(model.id,model.upstream_id).first();
@@ -196,7 +218,8 @@ export async function handleMeteringAdmin(request,env,path,admin,audit) {
     // Only successfully probed profile/channel/model combinations may be enabled.
     for(const [flag,channel] of [['web','web_chat'],['agent','desktop_codex']]) if(body.enabled&&body[flag]) {
       const probe=await env.DB.prepare("SELECT p.status FROM upstream_route_probes p JOIN upstream_routes r ON r.profile_id=p.profile_id AND r.channel=p.channel WHERE p.channel=? AND p.model_id=? AND p.status='ok' AND p.metering_verified=1 AND p.tested_at>datetime('now','-1 day') ORDER BY p.tested_at DESC LIMIT 1").bind(channel,upstreamId).first();
-      if(!probe)return reply({error:`请先验证 ${channel} 的对应模型能力。`},409);
+      const nativeProbe=!probe && flag==='agent'?await env.DB.prepare('SELECT model_id FROM agent_model_routes WHERE model_id=? AND verified_at IS NOT NULL').bind(match[1]).first():null;
+      if(!probe&&!nativeProbe)return reply({error:`请先验证 ${channel} 的对应模型能力。`},409);
     }
     await env.DB.prepare('UPDATE model_catalog SET upstream_id=?,enabled=?,web_enabled=?,agent_enabled=?,multiplier_ppm=?,price_json=?,revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(upstreamId,body.enabled?1:0,body.web?1:0,body.agent?1:0,body.multiplierPpm,JSON.stringify(p),match[1]).run();
     await audit(env,admin.id,'model_pricing_changed',{model:match[1],enabled:!!body.enabled,upstreamId,price:p,multiplierPpm:body.multiplierPpm});return reply({ok:true});

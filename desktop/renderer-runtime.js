@@ -57,11 +57,25 @@ function handleRuntimeEvent(event) {
   if (event.type === 'activity') setMessage(event.message);
   if (event.type === 'connection-closed') setMessage(event.message, true);
   if (event.type === 'runtime-notification' && event.message) setMessage(event.message);
-  if (['review', 'plan', 'diff'].includes(event.type)) {
-    let panel = document.querySelector('[data-runtime-details]');
-    if (!panel) { panel = document.createElement('details'); panel.dataset.runtimeDetails = ''; panel.className = 'runtime-details'; const summary = document.createElement('summary'); summary.textContent = '查看执行详情'; panel.append(summary); document.querySelector('[data-conversation]').append(panel); }
-    const text = document.createElement('pre'); text.textContent = event.type === 'review' ? `${event.operation}\n${event.details}` : event.type === 'diff' ? event.diff : `${event.explanation}\n${(event.plan || []).map(p => `${p.status} ? ${p.step}`).join('\n')}`;
-    panel.append(text); if (event.type === 'review') panel.open = true;
+  if (event.type === 'plan') {
+    const thread = currentThread();
+    if (thread) {
+      const id = `plan:${event.turnId || 'current'}`;
+      const content = [event.explanation || '计划已更新', ...(event.plan || []).map(item => `${item.status === 'completed' ? '✓' : item.status === 'inProgress' ? '→' : '○'} ${item.step}`)].filter(Boolean).join('\n');
+      const existing = thread.messages.find(message => message.id === id);
+      if (existing) Object.assign(existing, { kind: 'plan', content, plan: event.plan || [] });
+      else thread.messages.push({ id, role: 'system', kind: 'plan', content, plan: event.plan || [], files: [], createdAt: new Date().toISOString() });
+      renderConversation();
+    }
+  }
+  if (event.type === 'diff' || event.type === 'review') {
+    const thread = currentThread();
+    if (thread) {
+      thread.messages.push({ id: crypto.randomUUID(), role: 'system', kind: event.type,
+        content: event.type === 'diff' ? `代码改动\n${event.diff || ''}` : `${event.operation || '审核'}\n${event.details || ''}`,
+        files: [], createdAt: new Date().toISOString() });
+      renderConversation();
+    }
   }
   if (['delta', 'progress'].includes(event.type)) {
     const key = event.threadId + ':' + event.itemId;

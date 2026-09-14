@@ -17,8 +17,9 @@
       const form=document.createElement('form');form.className='settings-form';
       const label=document.createElement('label');label.textContent=`核对 ${record.model} · ${record.id}`;
       const input=document.createElement('input');input.required=true;input.minLength=4;input.maxLength=500;input.placeholder='记录核对结果及处理说明';label.append(input);
-      const button=document.createElement('button');button.type='submit';button.textContent='确认核对并解除此记录限制';
-      form.append(label,button);form.onsubmit=e=>{e.preventDefault();save('/admin/metering/review','POST',{id:record.id,note:input.value});};form.classList.add('review-card');button.className='button secondary';root.querySelector('[data-ledger]').append(form);
+      const button=document.createElement('button');button.type='submit';button.textContent='确认核对';
+      form.append(label,button);form.onsubmit=e=>{e.preventDefault();save('/admin/metering/review','POST',{id:record.id,note:input.value});};form.classList.add('review-card');button.className='button secondary';
+      root.querySelector(`[data-ledger-index="${data.ledger.indexOf(record)}"] details`).append(form);
     }
     root.querySelector('[data-settings]').onsubmit=e=>{e.preventDefault();const f=new FormData(e.target);save('/admin/metering/settings','PUT',{multiplierPpm:Math.round(Number(f.get('multiplier'))*1e6),usdCnyPpm:Math.round(Number(f.get('usdCny'))*1e6),defaultModel:f.get('defaultModel')});};
     root.querySelectorAll('[data-model]').forEach(form=>form.onsubmit=e=>{e.preventDefault();const f=new FormData(form),price={tier:'default',source:f.get('source'),date:f.get('date')};for(const k of ['input','cached','write','output','longThreshold','longInput','longOutput'])price[k]=Number(f.get(k));save(`/admin/metering/models/${form.dataset.model}`,'PUT',{upstreamId:f.get('upstreamId'),enabled:f.has('enabled'),web:f.has('web'),agent:f.has('agent'),multiplierPpm:f.get('multiplier')===''?null:Math.round(Number(f.get('multiplier'))*1e6),price});});
@@ -43,16 +44,36 @@
     const labels=[...ledger.querySelectorAll('th')].map(th=>th.textContent);const states={reserved:'处理中',completed:'已结算',refunded:'已退回',review:'待核对'};
     ledger.querySelectorAll('tbody tr').forEach(row=>[...row.children].forEach((cell,i)=>{cell.dataset.label=labels[i];if(i===3)cell.classList.add('numeric');if(i===2){const state=cell.textContent;cell.textContent='';const badge=document.createElement('span');badge.className='status-pill '+(state==='review'?'warning':state==='completed'?'success':'neutral');badge.textContent=states[state]||state;cell.append(badge);}}));
     ledger.querySelectorAll('details').forEach(detail=>detail.classList.add('ledger-details'));
+    const filters=document.createElement('div');filters.className='ledger-filters';
+    filters.innerHTML='<label>查找<input type="search" placeholder="请求、账户或模型" data-query></label><label>状态<select data-state><option value="">全部</option><option value="review">待核对</option><option value="reserved">处理中</option><option value="completed">已结算</option><option value="refunded">已退回</option></select></label><label>渠道<select data-channel><option value="">全部</option><option value="desktop_opencode">客户端</option><option value="desktop_codex">旧客户端</option><option value="web_chat">网页</option></select></label><p role="status" data-count></p>';
+    const rows=[...ledger.querySelectorAll('tbody tr')];
+    rows.forEach((row,index)=>{
+      row.dataset.ledgerIndex=index;
+      const record=data.ledger[index],identity=document.createElement('p');identity.className='ledger-identity';
+      identity.textContent=`请求 ${record.id} · 账户 ${record.account_id}`;
+      row.querySelector('details').prepend(identity);
+      const channel=row.children[1].querySelector('small');
+      channel.textContent=({desktop_opencode:'客户端',desktop_codex:'旧客户端',web_chat:'网页'})[record.channel]||record.channel;
+    });
+    const filter=()=>{
+      const query=filters.querySelector('[data-query]').value.trim().toLowerCase(),state=filters.querySelector('[data-state]').value,channel=filters.querySelector('[data-channel]').value;
+      let count=0;
+      rows.forEach((row,index)=>{const r=data.ledger[index];row.hidden=Boolean((state&&r.state!==state)||(channel&&r.channel!==channel)||(query&&!`${r.id} ${r.account_id} ${r.model}`.toLowerCase().includes(query)));if(!row.hidden)count++;});
+      filters.querySelector('[data-count]').textContent=`${count} / ${rows.length} 条`;
+    };
+    filters.addEventListener('input',filter);filter();ledgerPanel.insertBefore(filters,ledger);
+    ledger.querySelectorAll('tbody tr').forEach((row,index)=>{const estimate=data.ledger[index]?.upstream_cost_estimate_micros;if(estimate!==null&&estimate!==undefined){const note=document.createElement('small');note.textContent='上游估算 ¥'+(estimate/1e6).toFixed(6);row.children[3].append(note);}});
     if(!data.ledger.length){const empty=document.createElement('p');empty.className='empty-state';empty.textContent='暂无请求记录';ledger.replaceChildren(empty);}
     const toolbar=document.createElement('div');toolbar.className='view-actions';toolbar.innerHTML='<p class="view-lead">管理模型、价格与请求用量。</p><button class="button secondary" data-reload>刷新数据</button>';toolbar.querySelector('button').onclick=load;
     globalPanel.id='meter-global';modelPanel.id='meter-models';ledgerPanel.id='meter-usage';
+    const nativePanel=section();nativePanel.id='meter-opencode';window.BotGoAgentAdmin?.mount(nativePanel,data.models);
     const tabs=document.createElement('nav');tabs.className='meter-tabs';tabs.setAttribute('aria-label','计费分类');
-    for(const [id,label] of [['meter-models','模型目录'],['meter-global','计费设置'],['meter-usage','用量记录']]){
+    for(const [id,label] of [['meter-models','模型目录'],['meter-global','计费设置'],['meter-usage','用量记录'],['meter-opencode','客户端渠道']]){
       const button=document.createElement('button');button.type='button';button.textContent=label;
-      button.onclick=()=>{[modelPanel,globalPanel,ledgerPanel].forEach(panel=>panel.hidden=panel.id!==id);[...tabs.children].forEach(b=>b.setAttribute('aria-pressed',String(b===button)));};
+      button.onclick=()=>{[modelPanel,globalPanel,ledgerPanel,nativePanel].forEach(panel=>panel.hidden=panel.id!==id);[...tabs.children].forEach(b=>b.setAttribute('aria-pressed',String(b===button)));};
       tabs.append(button);
     }
-    root.replaceChildren(toolbar,status,tabs,modelPanel,globalPanel,ledgerPanel);
+    root.replaceChildren(toolbar,status,tabs,modelPanel,globalPanel,ledgerPanel,nativePanel);
     tabs.firstChild.click();
   }
   async function save(path,method,body){

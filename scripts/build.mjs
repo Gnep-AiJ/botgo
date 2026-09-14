@@ -6,7 +6,7 @@ const { copyFile, mkdir, readFile, rm, stat, writeFile } = fs.promises;
 const root = process.cwd();
 const dist = path.join(root, "dist");
 const files = [
-  'ui-kit.js', 'ui-kit.css', 'admin-metering.js',
+  'ui-kit.js', 'ui-kit.css', 'admin-metering.js', 'admin-opencode.js', 'workspace-chat.css',
   "install.ps1",
   "agent-install.js",
   "index.html",
@@ -121,9 +121,10 @@ async function main() {
   ]);
   const versionedScript = withBuildVersion(script, buildVersion);
   await writeFile(path.join(dist, "index.html"), createProductionHome(html, css, versionedScript));
-  await writeFile(path.join(dist, "workspace.html"), withContentVersion(withContentVersion(workspaceHtml, "workspace.css", workspaceCss), "workspace.js", workspaceScript));
+  const workspaceVersioned=withContentVersion(withContentVersion(withContentVersion(workspaceHtml, "workspace.css", workspaceCss), "workspace.js", workspaceScript), 'workspace-chat.css', await readFile(path.join(root,'workspace-chat.css'),'utf8'));
+  await writeFile(path.join(dist, "workspace.html"), workspaceVersioned);
   let adminVersioned=adminHtml;
-  for(const asset of ['admin.css','admin-layout.css','admin.js','admin-platform.js','admin-metering.js'])adminVersioned=withContentVersion(adminVersioned,asset,await readFile(path.join(root,asset),'utf8'));
+  for(const asset of ['admin.css','admin-layout.css','admin.js','admin-platform.js','admin-metering.js','admin-opencode.js'])adminVersioned=withContentVersion(adminVersioned,asset,await readFile(path.join(root,asset),'utf8'));
   await writeFile(path.join(dist,"admin.html"),adminVersioned);
   await writeFile(path.join(dist, "_headers"), createProductionHeaders(headers, versionedScript));
   console.log(`Built ${files.length} production files in dist/`);

@@ -2,6 +2,7 @@ import { grantBalance } from "./account-operations.js";
 import { handleAlipayRoute } from "./alipay-routes.js";
 import { desktopCredentialFor } from './desktop-auth.js';
 import { handleMeteringAdmin, usageObserver } from "./metering.js";
+import { handleAgentAdmin } from './opencode-gateway.js';
 
 const encoder = new TextEncoder();
 const CHANNELS = new Set(["web_chat", "desktop_codex"]);
@@ -59,6 +60,11 @@ async function decryptSecret(ciphertext, iv, env) {
   if (!key) throw new Error("missing upstream encryption key");
   const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decodeBase64url(iv) }, key, decodeBase64url(ciphertext));
   return new TextDecoder().decode(plaintext);
+}
+
+export async function resolveProfileConfig(env, profileId) {
+  const row=await env.DB.prepare('SELECT id,base_url,api_key_ciphertext,api_key_iv FROM upstream_profiles WHERE id=?').bind(profileId).first();
+  return row?{baseUrl:row.base_url,apiKey:await decryptSecret(row.api_key_ciphertext,row.api_key_iv,env),profileId:row.id}:null;
 }
 
 export async function resolveUpstreamConfig(env, channel = "web_chat") {
@@ -220,6 +226,8 @@ async function upstreamRoutes(request, env, path, admin, audit) {
     return json(result, result.ok ? 200 : 502);
   }
   if (request.method === "DELETE" && !match[2]) {
+    const agentUsed=await env.DB.prepare('SELECT model_id FROM agent_model_routes WHERE profile_id=? LIMIT 1').bind(row.id).first();
+    if(agentUsed)return json({error:'该上游仍被 OpenCode 路由引用，请先更换路由。'},409);
     const used = await env.DB.prepare("SELECT channel FROM upstream_routes WHERE profile_id = ? LIMIT 1").bind(row.id).first();
     if (used) return json({ error: "该上游正在被路由使用，不能删除。" }, 409);
     const historical = await env.DB.prepare("SELECT id FROM upstream_route_history WHERE from_profile_id = ? OR to_profile_id = ? LIMIT 1").bind(row.id, row.id).first();
@@ -227,6 +235,8 @@ async function upstreamRoutes(request, env, path, admin, audit) {
     await env.DB.batch([env.DB.prepare("DELETE FROM upstream_route_probes WHERE profile_id = ?").bind(row.id), env.DB.prepare("DELETE FROM upstream_profiles WHERE id = ?").bind(row.id)]); await audit(env, admin.id, "upstream_deleted", { profileId: row.id }); return json({ ok: true });
   }
   if (request.method === "PUT" && !match[2]) {
+    const agentUsed=await env.DB.prepare('SELECT model_id FROM agent_model_routes WHERE profile_id=? AND enabled=1 LIMIT 1').bind(row.id).first();
+    if(agentUsed)return json({error:'请先禁用该上游的 OpenCode 路由再编辑。'},409);
     const used = await env.DB.prepare("SELECT channel FROM upstream_routes WHERE profile_id = ? LIMIT 1").bind(row.id).first();
     if (used) return json({ error: "该上游正在被路由使用，请先切换对应渠道后再编辑。" }, 409);
     const body = await bodyOf(request); const name = typeof body?.name === "string" ? body.name.trim().slice(0, 64) : row.name; const baseUrl = body?.baseUrl ? validUpstreamUrl(body.baseUrl, new URL(request.url).hostname) : row.base_url; const apiKey = typeof body?.apiKey === "string" ? body.apiKey.trim() : "";
@@ -294,7 +304,8 @@ export async function handlePlatformRoute(request, env, path, helpers) {
   if (path.startsWith("/admin/")) {
     const admin = await helpers.activeAdminFor(request, env);
     if (!admin) return json({ error: "需要管理员权限。" }, 403);
-    return await handleMeteringAdmin(request, env, path, admin, helpers.audit)
+    return await handleAgentAdmin(request, env, path, admin, helpers.audit)
+      || await handleMeteringAdmin(request, env, path, admin, helpers.audit)
       || await upstreamRoutes(request, env, path, admin, helpers.audit)
       || await handleAlipayRoute(request, env, path, { ...helpers, admin })
       || await billingAdminRoutes(request, env, path, admin, helpers.audit)

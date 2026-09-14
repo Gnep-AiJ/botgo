@@ -1,0 +1,53 @@
+/* Chat reading surface; shared BotGo branding, account flows and other views stay intact. */
+body[data-active-view="chat"] {
+  --chat-canvas:#fff;
+  --chat-sidebar:#f4f7fb;
+  --chat-ink:#172b40;
+  --chat-muted:#52667c;
+  --chat-line:#dce4ed;
+  --chat-user:#edf3fa;
+}
+:root[data-theme="dark"] body[data-active-view="chat"] {
+  --chat-canvas:#151e29;
+  --chat-sidebar:#111923;
+  --chat-ink:#ecf3fb;
+  --chat-muted:#b0bfce;
+  --chat-line:#364454;
+  --chat-user:#253448;
+}
+body[data-active-view="chat"] .workspace-shell { height:100dvh; min-height:0; grid-template-columns:250px minmax(0,1fr); grid-template-rows:68px minmax(0,1fr); }
+body[data-active-view="chat"] .workspace-header { min-height:0; padding:10px 24px; background:var(--chat-canvas); border-color:var(--chat-line); backdrop-filter:none; }
+body[data-active-view="chat"] .conversation-sidebar { background:var(--chat-sidebar); border-color:var(--chat-line); backdrop-filter:none; padding:20px 14px; overflow-y:auto; }
+body[data-active-view="chat"] .workspace-main,
+body[data-active-view="chat"] .workspace-view--chat { background:var(--chat-canvas); color:var(--chat-ink); }
+body[data-active-view="chat"] .chat-column { box-sizing:border-box; width:min(100%,880px); padding:40px 40px 32px; overscroll-behavior:contain; }
+body[data-active-view="chat"] .welcome-view { padding:clamp(40px,13vh,150px) 0 24px; }
+body[data-active-view="chat"] .welcome-view h1 { color:var(--chat-ink); font-size:36px; font-weight:600; line-height:1.3; }
+body[data-active-view="chat"] .welcome-view>p:not(.view-kicker) { color:var(--chat-muted); }
+body[data-active-view="chat"] .chat-log { gap:28px; }
+body[data-active-view="chat"] .chat-message { color:var(--chat-ink); font-size:16px; line-height:1.8; }
+body[data-active-view="chat"] .chat-message--assistant { max-width:100%; width:100%; padding:0; border:0; background:none; box-shadow:none; }
+body[data-active-view="chat"] .chat-message--user { max-width:82%; padding:12px 18px; border:0; border-radius:20px; background:var(--chat-user); }
+body[data-active-view="chat"] .chat-composer { box-sizing:border-box; width:min(calc(100% - 64px),800px); padding:14px 16px 12px; margin-bottom:max(22px,env(safe-area-inset-bottom)); background:var(--chat-sidebar); border:1px solid var(--chat-line); border-radius:24px; box-shadow:none; backdrop-filter:none; }
+body[data-active-view="chat"] .chat-composer:focus-within { border-color:var(--blue); box-shadow:0 0 0 2px color-mix(in srgb,var(--blue) 12%,transparent); }
+body[data-active-view="chat"] .chat-composer textarea { color:var(--chat-ink); }
+body[data-active-view="chat"] .chat-composer textarea::placeholder,
+body[data-active-view="chat"] .composer-note { color:var(--chat-muted); }
+body[data-active-view="chat"] .send-button { margin-left:auto; width:42px; height:42px; padding:0; border-radius:50%; background:#0878f7; font-size:22px; box-shadow:none; }
+body[data-active-view="chat"] .send-button:disabled { opacity:.4; cursor:not-allowed; }
+body[data-active-view="chat"] :is(.workspace-nav button,.auth-actions button,.new-chat-button,.history-open) { min-height:44px; }
+body[data-active-view="chat"] .new-chat-button { background:transparent; border-color:var(--chat-line); color:var(--chat-ink); font-weight:500; }
+body[data-active-view="chat"] .new-chat-button:hover { background:var(--chat-user); }
+body[data-active-view="chat"] .conversation-history { flex:1; min-height:0; }
+body[data-active-view="chat"] :is(.conversation-history p,.conversation-history button,.back-to-home) { color:var(--chat-muted); }
+@media(max-width:760px) {
+  body[data-active-view="chat"] .workspace-shell { display:grid; grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); }
+  body[data-active-view="chat"] .workspace-header { padding:10px 14px; }
+  body[data-active-view="chat"] .workspace-main { grid-column:1; }
+  body[data-active-view="chat"] .workspace-view--chat { grid-template-rows:44px minmax(0,1fr) auto; }
+  body[data-active-view="chat"] .history-open { position:static; justify-self:start; margin:0 12px; }
+  body[data-active-view="chat"] .chat-column { padding:20px 18px; }
+  body[data-active-view="chat"] .welcome-view { padding:9vh 0 16px; }
+  body[data-active-view="chat"] .welcome-view h1 { font-size:30px; }
+  body[data-active-view="chat"] .chat-composer { width:calc(100% - 24px); margin-bottom:max(12px,env(safe-area-inset-bottom)); }
+}

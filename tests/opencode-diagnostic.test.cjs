@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const path=require('node:path');
+const {diagnostic}=require('../opencode-desktop/runtime/diagnostic.cjs');
+assert.deepEqual(diagnostic({status:404,message:'secret',url:'secret'},'session'),{stage:'session',status:404,code:undefined,kind:'http'});
+assert.equal(diagnostic({cause:{code:'ENOTFOUND'}},'authorize-start').code,'ENOTFOUND');
+assert.equal(diagnostic({name:'TimeoutError'},'authorize-start').kind,'timeout');
+assert.equal(diagnostic({code:'secret',status:900},'secret').stage,'unknown');
+assert.ok(!JSON.stringify(diagnostic({message:'secret',stack:'secret',code:'secret',cause:{code:'secret'}},'secret')).includes('secret'));
+assert.ok(!fs.readFileSync(path.join(__dirname,'../opencode-desktop/overlay/botgo-gate.tsx'),'utf8').includes('botgo.login.privacy'));
+assert.ok(!fs.readFileSync(path.join(__dirname,'../opencode-desktop/prepare.mjs'),'utf8').includes('desktop/lib/credential-store.cjs'));
+console.log('BotGo diagnostics: stage/status classification and secret allowlist passed');

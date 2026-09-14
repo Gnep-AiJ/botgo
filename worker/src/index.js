@@ -578,6 +578,7 @@ async function proxyCodexModels(request, env) {
 
 import { handleAgentRelease } from "./agent-releases.js";
 import { autoReviewCapability, catalog, publicCatalog, meteredProxy } from "./metering.js";
+import { handleOpenCode } from './opencode-gateway.js';
 
 export default {
   async scheduled(event, env, ctx) { ctx.waitUntil(purgeExpiredConversations(env)); },
@@ -585,6 +586,8 @@ export default {
     if (env.BOTGO_MAINTENANCE === "1") return json({ error: "服务更新中，请稍后重试。" }, 503, { "retry-after": "60" });
     if (!env.DB || !env.AUTH_SECRET) return json({ error: "后端绑定尚未配置。" }, 503);
     const path = new URL(request.url).pathname;
+    const openCodeResponse=await handleOpenCode(request,env,ctx,path);
+    if(openCodeResponse)return openCodeResponse;
     if (request.method === 'GET' && path === '/models') {
       const data=await catalog(env),token=bearerToken(request);
       const desktop=token?.startsWith('bgdt_')?await desktopCredentialFor(env,token):null;
