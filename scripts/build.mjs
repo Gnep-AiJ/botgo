@@ -8,6 +8,7 @@ const dist = path.join(root, "dist");
 const files = [
   'admin-metering.js', 'product-account.css', 'product-account.js',
   "index.html",
+  "404.html",
   "styles.css",
   "app.js",
   "download.js",

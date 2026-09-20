@@ -46,6 +46,7 @@ assert.match(accountScript, /botgo:account-refresh/);
 assert.match(accountScript, /window\.botgoAccount = \{ open \}/);
 assert.doesNotMatch(build, /"install\.ps1"|"workspace\.js"|"agent-install\.js"/);
 assert.ok(existsSync(join(root, 'dist', 'product-account.js')));
+assert.ok(existsSync(join(root, 'dist', '404.html')));
 assert.ok(existsSync(join(root, 'dist', 'assets', 'botgo-account-skyline-user.webp')));
 assert.ok(existsSync(join(root, 'dist', 'assets', 'botgo-balance-wave-user.webp')));
 assert.ok(existsSync(join(root, 'dist', 'assets', 'botgo-rocket.svg')));
