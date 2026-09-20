@@ -1,19 +1,18 @@
 (() => {
   const {api,jsonOptions,escapeHtml:esc}=window.BotGoAdmin;
   const root=document.querySelector('[data-admin-view="metering"]');
-  let models=[],drafts=[],profiles=[],routes=[],busy=false,failedBindings=[];
+  let models=[],profiles=[],routes=[],busy=false,failedBindings=[];
   const savedModel=id=>models.find(item=>item.id===id);
-  const savedDraft=id=>drafts.find(item=>item.modelId===id);
   async function load(){
     if(busy||document.getElementById('admin-dashboard').hidden)return;
     busy=true;
-    try{const [metering,staged,upstreams,agent]=await Promise.all([api('/admin/metering'),api('/admin/model-services'),api('/admin/upstreams'),api('/admin/opencode')]);models=metering.models||[];drafts=staged.drafts||[];profiles=upstreams.upstreams||[];routes=agent.routes||[];render();}
+    try{const [metering,upstreams,agent]=await Promise.all([api('/admin/metering'),api('/admin/upstreams'),api('/admin/opencode')]);models=metering.models||[];profiles=upstreams.upstreams||[];routes=agent.routes||[];render();}
     catch(error){root.innerHTML=`<section class="panel"><h2>模型服务加载失败</h2><p role="alert">${esc(error.message)}</p><button class="button secondary" data-retry>重试</button></section>`;root.querySelector('[data-retry]').onclick=()=>{busy=false;load();};}
     finally{busy=false;}
   }
   function render(){
-    const ids=[...new Set([...models.map(item=>item.id),...drafts.map(item=>item.modelId)])];
-    root.innerHTML=`<div class="view-actions"><div><h2>模型服务</h2><p class="view-lead">选择上游中的 GPT 模型，测试通过后自动加入客户端</p></div><div><button class="button secondary" data-test-all>测试全部</button><button class="button primary" data-import>从上游添加</button></div></div><section class="panel"><div class="data-table"><table class="service-table"><thead><tr><th>模型</th><th>官方价 输入 / 输出</th><th>状态</th><th>可用上游</th><th>高级</th></tr></thead><tbody>${ids.map(id=>{const model=savedModel(id),draft=savedDraft(id),route=routes.find(item=>item.model_id===id),price=model?.price;const count=(route?.members||[]).filter(item=>item.enabled&&item.verified_at&&!item.retired_at).length;return `<tr><td><strong>${esc(model?.name||draft?.config.name||id)}</strong><small>${esc(id)}</small></td><td>${price?`$${Number(price.input).toFixed(2)} / $${Number(price.output).toFixed(2)}`:'—'}</td><td><span class="status-pill ${model?.enabled&&route?.enabled?'success':'neutral'}">${model?.enabled&&route?.enabled?'已发布':'未上架'}</span>${draft?'<small>旧草稿待处理</small>':''}</td><td>${count}</td><td>${model?`<button type="button" class="table-button" data-multiplier="${esc(id)}">倍率</button>`:''}</td></tr>`}).join('')}</tbody></table>${ids.length?'':'<p class="empty-state">暂无模型。先添加上游，再从上游选择模型。</p>'}</div></section><p class="action-status" data-status role="status"></p><dialog class="model-editor service-drawer" data-drawer></dialog>`;
+    const ids=models.map(item=>item.id);
+    root.innerHTML=`<div class="view-actions"><div><h2>模型服务</h2><p class="view-lead">选择上游中的 GPT 模型，测试通过后自动加入客户端</p></div><div><button class="button secondary" data-test-all>测试全部</button><button class="button primary" data-import>从上游添加</button></div></div><section class="panel"><div class="data-table"><table class="service-table"><thead><tr><th>模型</th><th>官方价 输入 / 输出</th><th>状态</th><th>可用上游</th><th>高级</th></tr></thead><tbody>${ids.map(id=>{const model=savedModel(id),route=routes.find(item=>item.model_id===id),price=model?.price;const count=(route?.members||[]).filter(item=>item.enabled&&item.verified_at&&!item.retired_at).length;return `<tr><td><strong>${esc(model?.name||id)}</strong><small>${esc(id)}</small></td><td>${price?`$${Number(price.input).toFixed(2)} / $${Number(price.output).toFixed(2)}`:'—'}</td><td><span class="status-pill ${model?.enabled&&route?.enabled?'success':'neutral'}">${model?.enabled&&route?.enabled?'已发布':'未上架'}</span></td><td>${count}</td><td>${model?`<button type="button" class="table-button" data-multiplier="${esc(id)}">倍率</button>`:''}</td></tr>`}).join('')}</tbody></table>${ids.length?'':'<p class="empty-state">暂无模型。先添加上游，再从上游选择模型。</p>'}</div></section><p class="action-status" data-status role="status"></p><dialog class="model-editor service-drawer" data-drawer></dialog>`;
     root.querySelector('[data-import]').onclick=importDialog;
     root.querySelector('[data-test-all]').onclick=()=>testAll();
     root.querySelectorAll('[data-multiplier]').forEach(button=>button.onclick=()=>multiplierDialog(button.dataset.multiplier));

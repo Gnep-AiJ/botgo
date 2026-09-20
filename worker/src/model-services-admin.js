@@ -66,6 +66,7 @@ export async function handleModelServicesAdmin(request,env,path,admin,audit){
     else statements.push(env.DB.prepare('UPDATE agent_model_routes SET enabled=1,verified_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE model_id=?').bind(id));
     if(member)statements.push(env.DB.prepare('UPDATE agent_route_members SET upstream_model_id=?,enabled=1,verified_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE model_id=? AND profile_id=?').bind(id,id,profileId));
     else statements.push(env.DB.prepare('INSERT INTO agent_route_members(model_id,profile_id,upstream_model_id,enabled,priority,verified_at) VALUES(?,?,?,?,(SELECT COALESCE(MAX(priority),0)+10 FROM agent_route_members WHERE model_id=?),CURRENT_TIMESTAMP)').bind(id,profileId,id,1,id));
+    statements.push(env.DB.prepare('DELETE FROM model_service_drafts WHERE model_id=?').bind(id));
     await env.DB.batch(statements);
     await audit(env,admin.id,'official_model_imported',{model:id,profileId,protocol});return reply({ok:true,model:id,backup:!!route});
   }

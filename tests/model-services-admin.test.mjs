@@ -47,8 +47,10 @@ try{
   globalThis.fetch=async(url)=>url.endsWith('/models')?Response.json({data:[{id:'gpt-5.6-sol'},{id:'gpt-5.6-terra'},{id:'custom-alias'}]}):new Response('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"botgo_probe","arguments":"{\\"value\\":\\"OK\\"}"}}]}}]}\n\ndata: {"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\n',{headers:{'content-type':'text/event-stream'}});
   const available=await (await handleModelServicesAdmin(new Request(`https://botgo.invalid/admin/model-services/available?profileId=${profileId}`),env,'/admin/model-services/available',{id:'admin'},async()=>{})).json();
   assert.deepEqual(available.models.map(item=>item.id),['gpt-5.6-sol','gpt-5.6-terra']);
+  db.prepare("INSERT INTO model_service_drafts(model_id,config_json,tested_json) VALUES(?,'{}','{}')").run('gpt-5.6-terra');
   const imported=await (await call('POST','/admin/model-services/import',{profileId,modelId:'gpt-5.6-terra',protocol:'chat'})).json();
   assert.equal(imported.ok,true);
+  assert.equal(db.prepare("SELECT COUNT(*) AS n FROM model_service_drafts WHERE model_id='gpt-5.6-terra'").get().n,0,'successful import removes the superseded legacy draft');
   assert.equal((await (await call('POST','/admin/model-services/import',{profileId,modelId:'gpt-5.6-terra',protocol:'chat'})).json()).backup,true,'reimporting the same model does not duplicate it');
   assert.equal(db.prepare("SELECT price_json FROM model_catalog WHERE id='gpt-5.6-terra'").get().price_json,JSON.stringify(officialModel('gpt-5.6-terra').price));
   assert.equal(db.prepare("SELECT COUNT(*) AS n FROM agent_route_members WHERE model_id='gpt-5.6-terra'").get().n,1);

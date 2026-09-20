@@ -10,7 +10,7 @@ const fixtures={
   '/admin/overview':{admin:{email:'fixture@example.invalid'},overview:{accounts:0,active:0,pendingVerifications:0}},
   '/admin/accounts':{accounts:[],page:1,pages:1,total:0},
   '/admin/metering':{models:[model],settings:{multiplier_ppm:300000,usd_cny_ppm:7000000,default_model:model.id},ledger:[]},
-  '/admin/upstreams':{upstreams:[profile]},'/admin/routes':{routes:[]},'/admin/opencode':{routes:[]},'/admin/model-services':{drafts:[]},
+  '/admin/upstreams':{upstreams:[profile]},'/admin/routes':{routes:[]},'/admin/opencode':{routes:[]},'/admin/model-services':{drafts:[{modelId:'legacy-only',config:{name:'遗留模型'}}]},
   '/admin/desktop/releases':{releases:[]},'/admin/billing/orders':{orders:[]},'/admin/billing/plan':{paymentAvailable:false}
 };
 const allowed=new Set(['admin.html','admin.css','admin-layout.css','admin.js','admin-platform.js','admin-metering.js','ui-kit.js']);
