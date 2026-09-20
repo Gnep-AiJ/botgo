@@ -275,11 +275,11 @@ export async function handleMeteringAdmin(request,env,path,admin,audit) {
     await audit(env,admin.id,'model_draft_created',{model:id});return reply({ok:true,id},201);
   }
   if(path==='/admin/metering/settings' && request.method==='PUT') {
-    if(![body?.multiplierPpm,body?.usdCnyPpm].every(n=>Number.isSafeInteger(n)&&n>0&&n<=100000000))return reply({error:'倍率或汇率无效。'},400);
-    const selected=await env.DB.prepare("SELECT id FROM model_catalog WHERE id=? AND enabled=1").bind(body.defaultModel||'').first();
-    if(!selected)return reply({error:'默认模型尚未启用。'},400);
-    await env.DB.prepare('UPDATE metering_settings SET multiplier_ppm=?,usd_cny_ppm=?,default_model=?,revision=revision+1 WHERE id=1').bind(body.multiplierPpm,body.usdCnyPpm,body.defaultModel).run();
-    await audit(env,admin.id,'metering_settings_changed',{defaultModel:body.defaultModel,multiplierPpm:body.multiplierPpm,usdCnyPpm:body.usdCnyPpm});return reply({ok:true});
+    const fxAuto=body?.fxAuto===true;
+    if(!Number.isSafeInteger(body?.multiplierPpm)||body.multiplierPpm<=0||body.multiplierPpm>100000000||(!fxAuto&&(!Number.isSafeInteger(body?.usdCnyPpm)||body.usdCnyPpm<=0||body.usdCnyPpm>100000000)))return reply({error:'倍率或汇率无效。'},400);
+    if(fxAuto)await env.DB.prepare('UPDATE metering_settings SET multiplier_ppm=?,fx_auto=1,revision=revision+1 WHERE id=1').bind(body.multiplierPpm).run();
+    else await env.DB.prepare("UPDATE metering_settings SET multiplier_ppm=?,usd_cny_ppm=?,fx_auto=0,fx_updated_at=CURRENT_TIMESTAMP,fx_source='manual',revision=revision+1 WHERE id=1").bind(body.multiplierPpm,body.usdCnyPpm).run();
+    await audit(env,admin.id,'metering_settings_changed',{multiplierPpm:body.multiplierPpm,fxAuto,...(!fxAuto?{usdCnyPpm:body.usdCnyPpm}:{})});return reply({ok:true});
   }
   const match=path.match(/^\/admin\/metering\/models\/([a-z0-9._-]+)$/);
   if(match?.[1]===AUTO_REVIEW_MODEL_ID)return reply({error:'codex-auto-review 是保留的原生内部路由，不属于模型目录或价格配置。'},400);

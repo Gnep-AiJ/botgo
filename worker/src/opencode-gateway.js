@@ -90,7 +90,13 @@ export async function handleOpenCode(request, env, ctx, path) {
 }
 
 async function readProbe(response) {
-  if(!response.ok){await response.body?.cancel();throw Error(`HTTP_${response.status}`);}
+  if(!response.ok){
+    const reader=response.body?.getReader();let size=0,raw='';
+    if(reader)try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;raw+=new TextDecoder().decode(value.slice(0,Math.max(0,4096-(size-value.byteLength))));if(size>=4096){await reader.cancel();break;}}}catch{await reader.cancel().catch(()=>{});}
+    const error=Error(`HTTP_${response.status}`);
+    try{const body=JSON.parse(raw),code=body?.error?.code??body?.error?.type??body?.code;if(typeof code==='string'&&/^[A-Za-z0-9._-]{1,64}$/.test(code))error.upstreamCode=code;}catch{}
+    throw error;
+  }
   const reader=response.body.getReader(),chunks=[];let size=0;
   for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>1024*1024){await reader.cancel();throw Error('PROBE_SIZE');}chunks.push(value);}
   const bytes=new Uint8Array(size);let at=0;for(const c of chunks){bytes.set(c,at);at+=c.length;}

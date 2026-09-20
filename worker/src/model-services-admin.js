@@ -1,4 +1,6 @@
 import { probeAgentRoute } from './opencode-gateway.js';
+import { resolveProfileConfig } from './platform-admin.js';
+import { officialModel,officialModelIds } from './official-pricing.js';
 
 const reply=(data,status=200)=>Response.json(data,{status,headers:{'cache-control':'no-store'}});
 const modelIdPattern=/^[a-z0-9][a-z0-9._-]{0,127}$/;
@@ -7,6 +9,8 @@ const priceKeys=['input','cached','write','output','longThreshold','longInput','
 
 function validConfig(value,id){
   if(!value||!modelIdPattern.test(id)||id==='codex-auto-review'||typeof value.name!=='string'||!value.name.trim()||value.name.length>128||!upstreamModelPattern.test(value.upstreamId||''))return false;
+  const locked=officialModel(id)?.price;
+  if(!locked||!value.price||!priceKeys.every(key=>value.price[key]===locked[key])||value.price.source!==locked.source||value.price.date!==locked.date||value.price.tier!==locked.tier)return false;
   const price=value.price;let source;try{source=new URL(price?.source||'');}catch{return false;}
   if(price?.tier!=='default'||priceKeys.some(key=>!Number.isFinite(price[key])||price[key]<0||price[key]>10000000)||price.longThreshold<1||price.longInput<1||price.longOutput<1||source.protocol!=='https:'||source.username||source.password||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(price.date||''))return false;
   if(!Array.isArray(value.members)||value.members.length>50||new Set(value.members.map(item=>item.profileId)).size!==value.members.length)return false;
@@ -21,7 +25,7 @@ async function fingerprint(row,member){
 function probeFailure(error){
   const raw=String(error?.message||'');
   const http=/^HTTP_(\d{3})$/.exec(raw);
-  if(http)return {code:'UPSTREAM_HTTP',stage:'upstream_http',upstreamStatus:Number(http[1])};
+  if(http)return {code:'UPSTREAM_HTTP',stage:'upstream_http',upstreamStatus:Number(http[1]),...(error.upstreamCode?{upstreamCode:error.upstreamCode}:{})};
   if(raw==='MISSING_USAGE'||raw==='INVALID_USAGE')return {code:raw,stage:'usage'};
   if(raw==='MISSING_TOOL')return {code:raw,stage:'tools'};
   if(raw==='EXPECTED_SSE'||raw==='PROBE_SIZE')return {code:raw,stage:'stream'};
@@ -32,6 +36,55 @@ function probeFailure(error){
 
 export async function handleModelServicesAdmin(request,env,path,admin,audit){
   if(!path.startsWith('/admin/model-services'))return null;
+  if(path==='/admin/model-services/available'&&request.method==='GET'){
+    const profileId=new URL(request.url).searchParams.get('profileId');
+    if(!/^[0-9a-f-]{36}$/i.test(profileId||''))return reply({error:'请选择上游。'},400);
+    const profile=await resolveProfileConfig(env,profileId);if(!profile)return reply({error:'上游不存在或已退役。'},404);
+    let response;try{response=await fetch(`${profile.baseUrl}/models`,{headers:{authorization:`Bearer ${profile.apiKey}`},redirect:'manual',signal:AbortSignal.timeout(15000)});}catch{return reply({error:'读取上游模型列表失败。'},502);}
+    if(!response.ok){await response.body?.cancel();return reply({error:`上游模型列表返回 HTTP ${response.status}。`,upstreamStatus:response.status},502);}
+    const reader=response.body?.getReader();if(!reader)return reply({error:'上游模型列表为空。'},502);
+    const chunks=[];let size=0;try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>1024*1024){await reader.cancel();return reply({error:'上游模型列表过大。'},502);}chunks.push(value);}}catch{return reply({error:'读取上游模型列表失败。'},502);}
+    const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
+    let data;try{data=JSON.parse(new TextDecoder().decode(bytes));}catch{return reply({error:'上游模型列表格式无效。'},502);}
+    const ids=[...new Set((Array.isArray(data?.data)?data.data:[]).map(item=>item?.id).filter(id=>typeof id==='string'&&id.length<=128))];
+    return reply({models:ids.filter(id=>/^gpt-/i.test(id)).map(id=>({id,official:officialModel(id)})),supported:officialModelIds});
+  }
+  if(path==='/admin/model-services/import'&&request.method==='POST'){
+    const input=await request.json().catch(()=>null),profileId=String(input?.profileId||''),id=String(input?.modelId||''),protocol=input?.protocol;
+    const official=officialModel(id);
+    if(!/^[0-9a-f-]{36}$/i.test(profileId)||!official||!['chat','responses'].includes(protocol))return reply({error:'仅支持已核实官方价格的 GPT 模型及有效上游。'},400);
+    const profile=await env.DB.prepare('SELECT id,retired_at FROM upstream_profiles WHERE id=?').bind(profileId).first();if(!profile||profile.retired_at)return reply({error:'上游不存在或已退役。'},404);
+    try{await probeAgentRoute(env,{profile_id:profileId,protocol},id);}catch(error){return reply({ok:false,...probeFailure(error)});}
+    const current=await env.DB.prepare('SELECT id FROM model_catalog WHERE id=? AND archived=0').bind(id).first();
+    const route=await env.DB.prepare('SELECT protocol FROM agent_model_routes WHERE model_id=?').bind(id).first();
+    if(route&&route.protocol!==protocol)return reply({error:'现有模型使用另一协议，请选择相同协议。'},409);
+    const member=await env.DB.prepare('SELECT profile_id FROM agent_route_members WHERE model_id=? AND profile_id=?').bind(id,profileId).first();
+    const statements=[];
+    if(!current)statements.push(env.DB.prepare('INSERT INTO model_catalog(id,name,upstream_id,price_json,enabled,web_enabled,agent_enabled) VALUES(?,?,?,?,1,0,1)').bind(id,official.name,id,JSON.stringify(official.price)));
+    else statements.push(env.DB.prepare('UPDATE model_catalog SET price_json=?,enabled=1,web_enabled=0,agent_enabled=1,revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(JSON.stringify(official.price),id));
+    if(!route)statements.push(env.DB.prepare('INSERT INTO agent_model_routes(model_id,profile_id,protocol,enabled,verified_at) VALUES(?,?,?,1,CURRENT_TIMESTAMP)').bind(id,profileId,protocol));
+    else statements.push(env.DB.prepare('UPDATE agent_model_routes SET enabled=1,verified_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE model_id=?').bind(id));
+    if(member)statements.push(env.DB.prepare('UPDATE agent_route_members SET upstream_model_id=?,enabled=1,verified_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE model_id=? AND profile_id=?').bind(id,id,profileId));
+    else statements.push(env.DB.prepare('INSERT INTO agent_route_members(model_id,profile_id,upstream_model_id,enabled,priority,verified_at) VALUES(?,?,?,?,(SELECT COALESCE(MAX(priority),0)+10 FROM agent_route_members WHERE model_id=?),CURRENT_TIMESTAMP)').bind(id,profileId,id,1,id));
+    await env.DB.batch(statements);
+    await audit(env,admin.id,'official_model_imported',{model:id,profileId,protocol});return reply({ok:true,model:id,backup:!!route});
+  }
+  if(path==='/admin/model-services/probe-binding'&&request.method==='POST'){
+    const input=await request.json().catch(()=>null),id=String(input?.modelId||''),profileId=String(input?.profileId||'');
+    if(!modelIdPattern.test(id)||!/^[0-9a-f-]{36}$/i.test(profileId))return reply({error:'模型或上游无效。'},400);
+    const route=await env.DB.prepare('SELECT r.protocol,m.upstream_model_id FROM agent_model_routes r JOIN agent_route_members m ON m.model_id=r.model_id WHERE r.model_id=? AND m.profile_id=? AND m.enabled=1').bind(id,profileId).first();
+    if(!route)return reply({error:'模型绑定不存在。'},404);
+    try{await probeAgentRoute(env,{profile_id:profileId,protocol:route.protocol},route.upstream_model_id||id);return reply({ok:true});}
+    catch(error){return reply({ok:false,...probeFailure(error)});}
+  }
+  const multiplierMatch=path.match(/^\/admin\/model-services\/([a-z0-9._-]+)\/multiplier$/);
+  if(multiplierMatch&&request.method==='PUT'){
+    const input=await request.json().catch(()=>null),ppm=input?.multiplierPpm;
+    if(ppm!==null&&(!Number.isSafeInteger(ppm)||ppm<=0||ppm>100000000))return reply({error:'模型倍率无效。'},400);
+    const changed=await env.DB.prepare('UPDATE model_catalog SET multiplier_ppm=?,revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND archived=0').bind(ppm,multiplierMatch[1]).run();
+    if(!changed.meta?.changes)return reply({error:'模型不存在。'},404);
+    await audit(env,admin.id,'model_multiplier_changed',{model:multiplierMatch[1],multiplierPpm:ppm});return reply({ok:true});
+  }
   if(path==='/admin/model-services'&&request.method==='GET'){
     const rows=(await env.DB.prepare('SELECT model_id,config_json,tested_json,updated_at FROM model_service_drafts ORDER BY updated_at DESC').all()).results||[];
     return reply({drafts:rows.map(row=>({modelId:row.model_id,config:JSON.parse(row.config_json),tested:JSON.parse(row.tested_json),updatedAt:row.updated_at}))});
@@ -62,6 +115,7 @@ export async function handleModelServicesAdmin(request,env,path,admin,audit){
     return reply({ok:results.length>0&&results.every(result=>result.ok),results});
   }
   if(operation==='publish'&&request.method==='POST'){
+    if(!validConfig(config,id))return reply({error:'草稿价格已失效，请从上游重新添加官方模型。'},409);
     if(!config.members.length)return reply({error:'请先绑定至少一个上游。'},409);
     const protocols=new Set(config.members.map(member=>member.protocol));
     if(protocols.size!==1)return reply({error:'同一模型的上游必须使用相同协议。'},409);
