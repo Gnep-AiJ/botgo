@@ -6,15 +6,13 @@ const { copyFile, mkdir, readFile, rm, stat, writeFile } = fs.promises;
 const root = process.cwd();
 const dist = path.join(root, "dist");
 const files = [
-  'ui-kit.js', 'ui-kit.css', 'admin-metering.js', 'admin-opencode.js', 'workspace-chat.css',
-  "install.ps1",
-  "agent-install.js",
+  'admin-metering.js', 'product-account.css', 'product-account.js',
   "index.html",
   "styles.css",
   "app.js",
+  "download.js",
   "workspace.html",
-  "workspace.css",
-  "workspace.js",
+  "workspace-redirect.js",
   "workspace-billing.js",
   "desktop-authorize.html",
   "desktop-authorize.css",
@@ -24,13 +22,18 @@ const files = [
   "admin-layout.css",
   "admin.js",
   "admin-platform.js",
-  "Wechat.jpg",
   "_headers",
   "robots.txt",
   "assets/botgo-city-clean-mobile.webp",
   "assets/botgo-city-clean-v2.webp",
+  "assets/botgo-account-skyline-user.webp",
+  "assets/botgo-balance-wave-user.webp",
+  "assets/botgo-rocket.svg",
   "assets/botgo-robot-dynamic-mobile.webp",
-  "assets/botgo-robot-dynamic-v2.webp"
+  "assets/botgo-robot-dynamic-v2.webp",
+  "assets/botgo-client-chat-original.png",
+  "assets/botgo-client-connect-original.png",
+  "assets/botgo-client-start-original.png"
 ];
 
 async function assertSourceFiles() {
@@ -42,7 +45,7 @@ async function assertSourceFiles() {
     readFile(path.join(root, "desktop-authorize.html"), "utf8")
   ]);
   const referenced = [home, homeScript, workspace, desktopAuthorize]
-    .flatMap((source) => [...source.matchAll(/(?:src|srcset|href)="\.\/([^"?]+)/g)].map((match) => match[1]));
+    .flatMap((source) => [...source.matchAll(/(?:src|srcset|href)="\.\/([^"?#]+)/g)].map((match) => match[1]));
   const missing = [];
   for (const file of new Set(referenced)) {
     try { await stat(path.join(root, file)); }
@@ -107,24 +110,21 @@ async function main() {
     await copyFile(path.join(root, file), target);
   }
 
-  const [html, css, script, headers, workspaceHtml, workspaceCss, workspaceScript, adminHtml, adminCss, adminScript] = await Promise.all([
+  const [html, css, script, headers, workspaceHtml, adminHtml] = await Promise.all([
     readFile(path.join(root, "index.html"), "utf8"),
     readFile(path.join(root, "styles.css"), "utf8"),
     readFile(path.join(root, "app.js"), "utf8"),
     readFile(path.join(root, "_headers"), "utf8"),
     readFile(path.join(root, "workspace.html"), "utf8"),
-    readFile(path.join(root, "workspace.css"), "utf8"),
-    readFile(path.join(root, "workspace.js"), "utf8"),
-    readFile(path.join(root, "admin.html"), "utf8"),
-    readFile(path.join(root, "admin.css"), "utf8"),
-    readFile(path.join(root, "admin.js"), "utf8")
+    readFile(path.join(root, "admin.html"), "utf8")
   ]);
   const versionedScript = withBuildVersion(script, buildVersion);
-  await writeFile(path.join(dist, "index.html"), createProductionHome(html, css, versionedScript));
-  const workspaceVersioned=withContentVersion(withContentVersion(withContentVersion(workspaceHtml, "workspace.css", workspaceCss), "workspace.js", workspaceScript), 'workspace-chat.css', await readFile(path.join(root,'workspace-chat.css'),'utf8'));
-  await writeFile(path.join(dist, "workspace.html"), workspaceVersioned);
+  let homeVersioned = createProductionHome(html, css, versionedScript);
+  for (const asset of ['product-account.css', 'product-account.js', 'workspace-billing.js', 'download.js']) homeVersioned = withContentVersion(homeVersioned, asset, await readFile(path.join(root, asset), 'utf8'));
+  await writeFile(path.join(dist, "index.html"), homeVersioned);
+  await writeFile(path.join(dist, "workspace.html"), withContentVersion(workspaceHtml, "workspace-redirect.js", await readFile(path.join(root, "workspace-redirect.js"), "utf8")));
   let adminVersioned=adminHtml;
-  for(const asset of ['admin.css','admin-layout.css','admin.js','admin-platform.js','admin-metering.js','admin-opencode.js'])adminVersioned=withContentVersion(adminVersioned,asset,await readFile(path.join(root,asset),'utf8'));
+  for(const asset of ['admin.css','admin-layout.css','admin.js','admin-platform.js','admin-metering.js'])adminVersioned=withContentVersion(adminVersioned,asset,await readFile(path.join(root,asset),'utf8'));
   await writeFile(path.join(dist,"admin.html"),adminVersioned);
   await writeFile(path.join(dist, "_headers"), createProductionHeaders(headers, versionedScript));
   console.log(`Built ${files.length} production files in dist/`);

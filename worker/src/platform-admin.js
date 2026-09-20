@@ -67,15 +67,28 @@ export async function resolveProfileConfig(env, profileId) {
   return row?{baseUrl:row.base_url,apiKey:await decryptSecret(row.api_key_ciphertext,row.api_key_iv,env),profileId:row.id}:null;
 }
 
+export async function resolveUpstreamCandidates(env, channel = "web_chat") {
+  if (!CHANNELS.has(channel)) return [];
+  const rows=await env.DB.prepare(`SELECT m.profile_id,m.model_id AS route_model_id,m.upstream_model_id,m.protocol,m.priority,p.base_url,
+    p.api_key_ciphertext,p.api_key_iv,p.max_concurrency,COUNT(l.id) AS active_leases
+    FROM upstream_route_members m JOIN upstream_profiles p ON p.id=m.profile_id
+    LEFT JOIN upstream_leases l ON l.profile_id=p.id AND l.state='active' AND l.expires_at>CURRENT_TIMESTAMP
+    WHERE m.channel=? AND m.enabled=1 AND p.status='active'
+    GROUP BY m.profile_id,m.model_id,m.upstream_model_id,m.protocol,m.priority,p.base_url,p.api_key_ciphertext,p.api_key_iv,p.max_concurrency
+    ORDER BY (COUNT(l.id)*1.0/p.max_concurrency),m.priority,m.profile_id`).bind(channel).all();
+  const candidates=[];
+  for(const row of rows.results||[]) {
+    try {
+      candidates.push({profileId:row.profile_id,routeModelId:row.route_model_id,upstreamModelId:row.upstream_model_id||row.route_model_id,protocol:row.protocol,baseUrl:row.base_url,
+        apiKey:await decryptSecret(row.api_key_ciphertext,row.api_key_iv,env),
+        activeLeases:Number(row.active_leases)||0,maxConcurrency:Number(row.max_concurrency)||5});
+    } catch { /* A broken key is isolated from the rest of the pool. */ }
+  }
+  return candidates;
+}
+
 export async function resolveUpstreamConfig(env, channel = "web_chat") {
-  if (!CHANNELS.has(channel)) return null;
-  const routed = await env.DB.prepare("SELECT p.base_url, p.api_key_ciphertext, p.api_key_iv, r.model_id, p.id AS profile_id FROM upstream_routes r JOIN upstream_profiles p ON p.id = r.profile_id WHERE r.channel = ? LIMIT 1").bind(channel).first();
-  if (routed) return { baseUrl: routed.base_url, apiKey: await decryptSecret(routed.api_key_ciphertext, routed.api_key_iv, env), modelId: routed.model_id, profileId: routed.profile_id };
-  const legacy = await env.DB.prepare("SELECT id, base_url, api_key_ciphertext, api_key_iv FROM upstream_profiles WHERE status = 'active' LIMIT 1").first();
-  if (legacy) return { baseUrl: legacy.base_url, apiKey: await decryptSecret(legacy.api_key_ciphertext, legacy.api_key_iv, env), modelId: "gpt-5.6", profileId: legacy.id };
-  const baseUrl = typeof env.UPSTREAM_BASE_URL === "string" ? env.UPSTREAM_BASE_URL.trim().replace(/\/$/, "") : "";
-  const apiKey = typeof env.UPSTREAM_API_KEY === "string" ? env.UPSTREAM_API_KEY.trim() : "";
-  return baseUrl && apiKey ? { baseUrl, apiKey, modelId: "gpt-5.6", profileId: null } : null;
+  return (await resolveUpstreamCandidates(env,channel))[0]||null;
 }
 
 function classifyFailure(status) {
@@ -97,7 +110,7 @@ async function fetchWithTimeout(url, options, timeoutMs = 12000) {
   } finally { clearTimeout(timeout); }
 }
 
-export async function probeProfile(env, row, channel, modelId) {
+export async function probeProfile(env, row, channel, modelId, protocol = channel === 'web_chat' ? 'chat' : 'responses') {
   const apiKey = await decryptSecret(row.api_key_ciphertext, row.api_key_iv, env);
   const headers = { authorization: `Bearer ${apiKey}`, "content-type": "application/json" };
   let models = { ok: false, status: 0, latencyMs: 0, errorCode: "network_error" };
@@ -106,10 +119,10 @@ export async function probeProfile(env, row, channel, modelId) {
     models = { ok: result.response.ok, status: result.response.status, latencyMs: result.latencyMs, errorCode: result.response.ok ? null : classifyFailure(result.response.status) };
   } catch (error) { models.errorCode = error?.name === "AbortError" ? "timeout" : "network_error"; }
 
-  const endpoint = channel === "web_chat" ? "chat/completions" : "responses";
-  const payload = channel === "web_chat"
+  const endpoint = protocol === 'chat' ? "chat/completions" : "responses";
+  const payload = protocol === 'chat'
     ? { model: modelId, messages: [{ role: "user", content: "Reply OK" }], max_completion_tokens: 32, stream: true, stream_options:{include_usage:true} }
-    : { model: modelId, input: "Call botgo_probe with value OK.", max_output_tokens: 128, stream: true, tools:[{type:'function',name:'botgo_probe',parameters:{type:'object',properties:{value:{type:'string'}},required:['value'],additionalProperties:false},strict:true}],tool_choice:{type:'function',name:'botgo_probe'} };
+    : channel === 'web_chat' ? {model:modelId,input:'Reply OK',max_output_tokens:128,stream:true} : { model: modelId, input: "Call botgo_probe with value OK.", max_output_tokens: 128, stream: true, tools:[{type:'function',name:'botgo_probe',parameters:{type:'object',properties:{value:{type:'string'}},required:['value'],additionalProperties:false},strict:true}],tool_choice:{type:'function',name:'botgo_probe'} };
   let capability = { ok: false, status: 0, latencyMs: 0, errorCode: "network_error" };
   try {
     const started=Date.now();
@@ -119,8 +132,10 @@ export async function probeProfile(env, row, channel, modelId) {
       const observer=usageObserver(),reader=response.body.getReader(),decoder=new TextDecoder();let text='',size=0;
       for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>1024*1024){await reader.cancel();throw new Error('probe_too_large');}observer.push(value);text+=decoder.decode(value,{stream:true});}
       const usage=observer.finish();
-      capability.ok=!!usage;
-      capability.errorCode=usage?null:'missing_usage';
+      const textOutput=protocol==='chat'?text.includes('"content"'):text.includes('response.output_text.delta')||text.includes('"output_text"');
+      capability.ok=!!usage && (channel!=='web_chat'||textOutput);
+      capability.errorCode=!usage?'missing_usage':!capability.ok?'missing_text':null;
+      capability.text=!!textOutput;capability.streaming=true;capability.usage=!!usage;
       if(channel==='desktop_codex'&&usage){
         const completed=text.split(/\r?\n/).filter(l=>l.startsWith('data:')).map(l=>{try{return JSON.parse(l.slice(5));}catch{return null;}}).find(e=>e?.type==='response.completed');
         const output=completed?.response?.output||[];
@@ -136,118 +151,126 @@ export async function probeProfile(env, row, channel, modelId) {
     }else await response.body?.cancel();
   } catch (error) { capability.errorCode = ['AbortError','TimeoutError'].includes(error?.name) ? "timeout" : /redirect/i.test(error?.message||'') ? 'redirect_error' : error?.name==='TypeError' ? 'request_type_error' : "network_error"; }
 
-  await env.DB.prepare("INSERT INTO upstream_route_probes (profile_id, channel, model_id, status, http_status, latency_ms, error_code, tested_at, metering_verified) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1) ON CONFLICT(profile_id, channel, model_id) DO UPDATE SET status = excluded.status, http_status = excluded.http_status, latency_ms = excluded.latency_ms, error_code = excluded.error_code, tested_at = CURRENT_TIMESTAMP, metering_verified=1")
-    .bind(row.id, channel, modelId, capability.ok ? "ok" : "failed", capability.status, capability.latencyMs, capability.errorCode).run();
+  const latest=await env.DB.prepare('SELECT base_url,api_key_ciphertext FROM upstream_profiles WHERE id=?').bind(row.id).first();
+  if(!latest||latest.base_url!==row.base_url||latest.api_key_ciphertext!==row.api_key_ciphertext)return {ok:false,models,capability:{...capability,ok:false,errorCode:'configuration_changed'}};
+  await env.DB.prepare("INSERT INTO upstream_route_probes (profile_id, channel, model_id, protocol, status, http_status, latency_ms, error_code, tested_at, metering_verified) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 1) ON CONFLICT(profile_id, channel, model_id) DO UPDATE SET protocol=excluded.protocol,status = excluded.status, http_status = excluded.http_status, latency_ms = excluded.latency_ms, error_code = excluded.error_code, tested_at = CURRENT_TIMESTAMP, metering_verified=1")
+    .bind(row.id, channel, modelId, protocol, capability.ok ? "ok" : "failed", capability.status, capability.latencyMs, capability.errorCode).run();
   await env.DB.prepare("UPDATE upstream_profiles SET last_tested_at = CURRENT_TIMESTAMP, last_test_status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(capability.ok ? "ok" : "failed", row.id).run();
   return { ok: capability.ok, models, capability };
 }
 
 function publicProfile(row, routeMap = new Map()) {
-  return { id: row.id, name: row.name, baseUrl: row.base_url, keyHint: row.key_hint, lastTestedAt: row.last_tested_at, lastTestStatus: row.last_test_status, updatedAt: row.updated_at, assignedChannels: routeMap.get(row.id) || [] };
+  return { id: row.id, name: row.name, baseUrl: row.base_url, keyHint: row.key_hint, maxConcurrency:Number(row.max_concurrency)||5, activeRequests:Number(row.active_requests)||0, lastTestedAt: row.last_tested_at, lastTestStatus: row.last_test_status, updatedAt: row.updated_at, assignedChannels: routeMap.get(row.id) || [] };
 }
 
 async function listRoutes(env) {
-  const rows = await env.DB.prepare("SELECT r.channel, r.profile_id, r.model_id, r.updated_at, p.name AS profile_name, p.base_url FROM upstream_routes r JOIN upstream_profiles p ON p.id = r.profile_id ORDER BY r.channel").all();
-  const history = await env.DB.prepare("SELECT h.channel, h.from_profile_id, h.from_model_id, h.created_at, p.name AS from_profile_name FROM upstream_route_history h LEFT JOIN upstream_profiles p ON p.id = h.from_profile_id WHERE h.id IN (SELECT id FROM upstream_route_history h2 WHERE h2.channel = h.channel ORDER BY h2.created_at DESC LIMIT 1)").all();
-  const previous = Object.fromEntries((history.results || []).map((row) => [row.channel, { profileId: row.from_profile_id, profileName: row.from_profile_name, modelId: row.from_model_id, switchedAt: row.created_at }]));
-  return (rows.results || []).map((row) => ({ channel: row.channel, profileId: row.profile_id, profileName: row.profile_name, baseUrl: row.base_url, modelId: row.model_id, updatedAt: row.updated_at, previous: previous[row.channel] || null }));
+  const rows=await env.DB.prepare(`SELECT m.id,m.channel,m.model_id,m.upstream_model_id,m.protocol,m.profile_id,m.enabled,m.priority,m.updated_at,
+    p.name AS profile_name,p.base_url,p.max_concurrency,COUNT(l.id) AS active_requests,
+    q.status AS probe_status,q.error_code,q.tested_at
+    FROM upstream_route_members m JOIN upstream_profiles p ON p.id=m.profile_id
+    LEFT JOIN upstream_leases l ON l.profile_id=p.id AND l.state='active' AND l.expires_at>CURRENT_TIMESTAMP
+    LEFT JOIN upstream_route_probes q ON q.profile_id=m.profile_id AND q.channel=m.channel AND q.model_id=COALESCE(m.upstream_model_id,m.model_id) AND q.protocol=m.protocol
+    GROUP BY m.id,m.channel,m.model_id,m.upstream_model_id,m.protocol,m.profile_id,m.enabled,m.priority,m.updated_at,p.name,p.base_url,p.max_concurrency,q.status,q.error_code,q.tested_at
+    ORDER BY m.channel,m.model_id,m.priority,p.name`).all();
+  const groups=new Map();
+  for(const row of rows.results||[]){
+    const key=`${row.channel}:${row.model_id}`;
+    if(!groups.has(key))groups.set(key,{channel:row.channel,modelId:row.model_id,updatedAt:row.updated_at,members:[]});
+    groups.get(key).members.push({id:row.id,profileId:row.profile_id,profileName:row.profile_name,baseUrl:row.base_url,upstreamModelId:row.upstream_model_id||row.model_id,protocol:row.protocol,enabled:!!row.enabled,priority:row.priority,maxConcurrency:Number(row.max_concurrency)||5,activeRequests:Number(row.active_requests)||0,probeStatus:row.probe_status||null,probeError:row.error_code||null,testedAt:row.tested_at||null});
+  }
+  return [...groups.values()];
 }
 
 async function upstreamRoutes(request, env, path, admin, audit) {
   if (path === "/admin/routes" && request.method === "GET") return json({ routes: await listRoutes(env) });
   const routeMatch = path.match(/^\/admin\/routes\/(web_chat|desktop_codex)(?:\/(rollback))?$/);
   if (routeMatch && request.method === "PUT" && !routeMatch[2]) {
-    const channel = routeMatch[1]; const body = await bodyOf(request);
-    const profileId = String(body?.profileId || ""); const modelId = String(body?.modelId || "").trim().slice(0, 128);
-    const profile = await env.DB.prepare("SELECT id FROM upstream_profiles WHERE id = ?").bind(profileId).first();
-    const probe = await env.DB.prepare("SELECT status, tested_at FROM upstream_route_probes WHERE profile_id = ? AND channel = ? AND model_id = ?").bind(profileId, channel, modelId).first();
-    const testedAt = Date.parse(`${String(probe?.tested_at || "").replace(" ", "T")}Z`);
-    if (!profile || !modelId) return json({ error: "路由配置不完整。" }, 400);
-    if (probe?.status !== "ok" || !Number.isFinite(testedAt) || Date.now() - testedAt > 10 * 60 * 1000) return json({ error: "必须先通过最近 10 分钟内的对应能力测试。" }, 409);
-    const current = await env.DB.prepare("SELECT profile_id, model_id FROM upstream_routes WHERE channel = ?").bind(channel).first();
-    const historyId = crypto.randomUUID();
-    await env.DB.batch([
-      env.DB.prepare("INSERT INTO upstream_route_history (id, channel, from_profile_id, from_model_id, to_profile_id, to_model_id, actor_id) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(historyId, channel, current?.profile_id || null, current?.model_id || null, profileId, modelId, admin.id),
-      env.DB.prepare("INSERT INTO upstream_routes (channel, profile_id, model_id, updated_by, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(channel) DO UPDATE SET profile_id = excluded.profile_id, model_id = excluded.model_id, updated_by = excluded.updated_by, updated_at = CURRENT_TIMESTAMP").bind(channel, profileId, modelId, admin.id)
-    ]);
-    await audit(env, admin.id, "upstream_route_changed", { channel, profileId, modelId, previousProfileId: current?.profile_id || null });
-    return json({ ok: true });
+    const channel=routeMatch[1],body=await bodyOf(request),modelId=String(body?.modelId||'').trim().slice(0,128);
+    const members=Array.isArray(body?.members)?body.members.map(item=>({profileId:String(item?.profileId||''),upstreamModelId:String(item?.upstreamModelId||modelId),protocol:item?.protocol||'chat',enabled:item?.enabled!==false,priority:Number.isInteger(item?.priority)?item.priority:100})):[];
+    if(!modelId||!/^[A-Za-z0-9._:/-]{1,128}$/.test(modelId)||!members.length||members.length>50||new Set(members.map(item=>item.profileId)).size!==members.length||members.some(item=>!/^[A-Za-z0-9._:/-]{1,128}$/.test(item.upstreamModelId)||!['chat','responses'].includes(item.protocol)||(channel==='desktop_codex'&&item.protocol!=='responses')))return json({error:'请填写模型、协议并至少选择一个不重复的上游。'},400);
+    for(const member of members){
+      const profile=await env.DB.prepare('SELECT id FROM upstream_profiles WHERE id=?').bind(member.profileId).first();
+      const probe=await env.DB.prepare("SELECT status FROM upstream_route_probes WHERE profile_id=? AND channel=? AND model_id=? AND protocol=?").bind(member.profileId,channel,member.upstreamModelId,member.protocol).first();
+      if(!profile)return json({error:'所选上游不存在。'},400);
+      if(member.enabled&&probe?.status!=='ok')return json({error:'启用成员前必须通过对应模型能力测试。',profileId:member.profileId},409);
+    }
+    const current=await env.DB.prepare('SELECT profile_id,enabled,priority FROM upstream_route_members WHERE channel=? AND model_id=? ORDER BY priority,profile_id').bind(channel,modelId).all();
+    const statements=[
+      env.DB.prepare('INSERT INTO upstream_route_pool_history(id,channel,model_id,members_json,actor_id) VALUES(?,?,?,?,?)').bind(crypto.randomUUID(),channel,modelId,JSON.stringify(current.results||[]),admin.id),
+      env.DB.prepare('DELETE FROM upstream_route_members WHERE channel=? AND model_id=?').bind(channel,modelId)
+    ];
+    for(const member of members)statements.push(env.DB.prepare('INSERT INTO upstream_route_members(id,channel,model_id,profile_id,upstream_model_id,protocol,enabled,priority) VALUES(?,?,?,?,?,?,?,?)').bind(crypto.randomUUID(),channel,modelId,member.profileId,member.upstreamModelId,member.protocol,member.enabled?1:0,member.priority));
+    const first=members.find(member=>member.enabled)||members[0];
+    statements.push(env.DB.prepare("INSERT INTO upstream_routes(channel,profile_id,model_id,updated_by,updated_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(channel) DO UPDATE SET profile_id=excluded.profile_id,model_id=excluded.model_id,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP").bind(channel,first.profileId,modelId,admin.id));
+    if(members.some(member=>member.enabled))statements.push(env.DB.prepare(`UPDATE model_catalog SET ${channel==='web_chat'?'web_enabled':'agent_enabled'}=1 WHERE upstream_id=? AND archived=0`).bind(modelId));
+    await env.DB.batch(statements);
+    await audit(env,admin.id,'upstream_route_pool_changed',{channel,modelId,profileIds:members.map(member=>member.profileId)});
+    return json({ok:true});
   }
   if (routeMatch && request.method === "POST" && routeMatch[2] === "rollback") {
-    const channel = routeMatch[1];
-    const previous = await env.DB.prepare("SELECT from_profile_id, from_model_id FROM upstream_route_history WHERE channel = ? AND from_profile_id IS NOT NULL ORDER BY created_at DESC LIMIT 1").bind(channel).first();
-    if (!previous) return json({ error: "没有可回滚的历史路由。" }, 409);
-    const probe = await env.DB.prepare("SELECT status, tested_at FROM upstream_route_probes WHERE profile_id = ? AND channel = ? AND model_id = ?").bind(previous.from_profile_id, channel, previous.from_model_id).first();
-    const testedAt = Date.parse(`${String(probe?.tested_at || "").replace(" ", "T")}Z`);
-    if (probe?.status !== "ok" || !Number.isFinite(testedAt) || Date.now() - testedAt > 10 * 60 * 1000) return json({ error: "原路由需要重新测试后才能回滚。" }, 409);
-    const current = await env.DB.prepare("SELECT profile_id, model_id FROM upstream_routes WHERE channel = ?").bind(channel).first();
-    await env.DB.batch([
-      env.DB.prepare("INSERT INTO upstream_route_history (id, channel, from_profile_id, from_model_id, to_profile_id, to_model_id, actor_id) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), channel, current?.profile_id || null, current?.model_id || null, previous.from_profile_id, previous.from_model_id, admin.id),
-      env.DB.prepare("UPDATE upstream_routes SET profile_id = ?, model_id = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE channel = ?").bind(previous.from_profile_id, previous.from_model_id, admin.id, channel)
-    ]);
-    await audit(env, admin.id, "upstream_route_rolled_back", { channel, profileId: previous.from_profile_id, modelId: previous.from_model_id });
-    return json({ ok: true });
+    const body=await bodyOf(request),channel=routeMatch[1],modelId=String(body?.modelId||'').trim();
+    if(!modelId)return json({error:'请指定要回滚的模型路由。'},400);
+    const previous=await env.DB.prepare('SELECT members_json FROM upstream_route_pool_history WHERE channel=? AND model_id=? ORDER BY created_at DESC LIMIT 1').bind(channel,modelId).first();
+    if(!previous)return json({error:'没有可回滚的历史路由。'},409);
+    let members;try{members=JSON.parse(previous.members_json);}catch{return json({error:'历史路由记录无效。'},409);}
+    if(!Array.isArray(members)||!members.length)return json({error:'历史路由为空，不能回滚。'},409);
+    for(const member of members){const probe=await env.DB.prepare("SELECT status FROM upstream_route_probes WHERE profile_id=? AND channel=? AND model_id=?").bind(member.profile_id,channel,modelId).first();if(member.enabled&&probe?.status!=='ok')return json({error:'历史成员需要重新测试后才能回滚。'},409);}
+    const statements=[env.DB.prepare('DELETE FROM upstream_route_members WHERE channel=? AND model_id=?').bind(channel,modelId)];
+    for(const member of members)statements.push(env.DB.prepare('INSERT INTO upstream_route_members(id,channel,model_id,profile_id,enabled,priority) VALUES(?,?,?,?,?,?)').bind(crypto.randomUUID(),channel,modelId,member.profile_id,member.enabled?1:0,member.priority||100));
+    const first=members.find(member=>member.enabled)||members[0];
+    statements.push(env.DB.prepare("INSERT INTO upstream_routes(channel,profile_id,model_id,updated_by,updated_at) VALUES(?,?,?,?,CURRENT_TIMESTAMP) ON CONFLICT(channel) DO UPDATE SET profile_id=excluded.profile_id,model_id=excluded.model_id,updated_by=excluded.updated_by,updated_at=CURRENT_TIMESTAMP").bind(channel,first.profile_id,modelId,admin.id));
+    await env.DB.batch(statements);await audit(env,admin.id,'upstream_route_pool_rolled_back',{channel,modelId});return json({ok:true});
   }
   if (path === "/admin/upstreams" && request.method === "GET") {
     const [profiles, routes, probes] = await Promise.all([
-      env.DB.prepare("SELECT id, name, base_url, key_hint, last_tested_at, last_test_status, updated_at FROM upstream_profiles ORDER BY updated_at DESC").all(),
-      env.DB.prepare("SELECT channel, profile_id FROM upstream_routes").all(),
+      env.DB.prepare(`SELECT p.id,p.name,p.base_url,p.key_hint,p.max_concurrency,p.last_tested_at,p.last_test_status,p.updated_at,COUNT(l.id) AS active_requests
+        FROM upstream_profiles p LEFT JOIN upstream_leases l ON l.profile_id=p.id AND l.state='active' AND l.expires_at>CURRENT_TIMESTAMP
+        GROUP BY p.id,p.name,p.base_url,p.key_hint,p.max_concurrency,p.last_tested_at,p.last_test_status,p.updated_at ORDER BY p.updated_at DESC`).all(),
+      env.DB.prepare("SELECT channel,profile_id FROM upstream_route_members UNION ALL SELECT 'desktop_opencode',profile_id FROM agent_route_members").all(),
       env.DB.prepare("SELECT profile_id, channel, model_id, status, http_status, latency_ms, error_code, tested_at FROM upstream_route_probes ORDER BY tested_at DESC").all()
     ]);
     const routeMap = new Map();
     for (const route of routes.results || []) routeMap.set(route.profile_id, [...(routeMap.get(route.profile_id) || []), route.channel]);
-    return json({ upstreams: (profiles.results || []).map((row) => ({ ...publicProfile(row, routeMap), probes: (probes.results || []).filter((probe) => probe.profile_id === row.id) })), fallbackConfigured: Boolean(env.UPSTREAM_BASE_URL && env.UPSTREAM_API_KEY) });
-  }
-  if (path === "/admin/upstreams/import-fallback" && request.method === "POST") {
-    const baseUrl = validUpstreamUrl(env.UPSTREAM_BASE_URL, new URL(request.url).hostname); const apiKey = String(env.UPSTREAM_API_KEY || "").trim();
-    if (!baseUrl || !apiKey) return json({ error: "当前 Worker 没有可导入的回退上游。" }, 409);
-    const existing = await env.DB.prepare("SELECT id FROM upstream_profiles WHERE base_url = ? LIMIT 1").bind(baseUrl).first();
-    if (existing) return json({ error: "该地址已经存在于上游列表。", profileId: existing.id }, 409);
-    const encrypted = await encryptSecret(apiKey, env); const id = crypto.randomUUID();
-    await env.DB.prepare("INSERT INTO upstream_profiles (id, name, base_url, api_key_ciphertext, api_key_iv, key_hint) VALUES (?, ?, ?, ?, ?, ?)").bind(id, "当前 Worker 上游", baseUrl, encrypted.ciphertext, encrypted.iv, `••••${apiKey.slice(-4)}`).run();
-    await audit(env, admin.id, "upstream_fallback_imported", { profileId: id, baseUrl });
-    return json({ id }, 201);
+    return json({ upstreams: (profiles.results || []).map((row) => ({ ...publicProfile(row, routeMap), probes: (probes.results || []).filter((probe) => probe.profile_id === row.id) })) });
   }
   if (path === "/admin/upstreams" && request.method === "POST") {
-    const body = await bodyOf(request); const name = typeof body?.name === "string" ? body.name.trim().slice(0, 64) : ""; const baseUrl = validUpstreamUrl(body?.baseUrl, new URL(request.url).hostname); const apiKey = typeof body?.apiKey === "string" ? body.apiKey.trim() : "";
-    if (!name || !baseUrl || apiKey.length < 8 || apiKey.length > 4096) return json({ error: "请填写有效名称、HTTPS 上游地址和 API Key。" }, 400);
+    const body = await bodyOf(request); const baseUrl = validUpstreamUrl(body?.baseUrl, new URL(request.url).hostname); const apiKey = typeof body?.apiKey === "string" ? body.apiKey.trim() : ""; const capacity=Number(body?.maxConcurrency??5);
+    const name = typeof body?.name === "string" && body.name.trim() ? body.name.trim().slice(0,64) : (()=>{try{return new URL(baseUrl).hostname.slice(0,64);}catch{return '';}})();
+    if (!name || !baseUrl || apiKey.length < 8 || apiKey.length > 4096 || !Number.isInteger(capacity) || capacity<1 || capacity>1000) return json({ error: "请填写有效的 HTTPS 端点、API Key 和并发上限。" }, 400);
     const encrypted = await encryptSecret(apiKey, env); const id = crypto.randomUUID();
-    await env.DB.prepare("INSERT INTO upstream_profiles (id, name, base_url, api_key_ciphertext, api_key_iv, key_hint) VALUES (?, ?, ?, ?, ?, ?)").bind(id, name, baseUrl, encrypted.ciphertext, encrypted.iv, `••••${apiKey.slice(-4)}`).run();
-    await audit(env, admin.id, "upstream_created", { profileId: id, name }); return json({ upstream: { id, name, baseUrl, keyHint: `••••${apiKey.slice(-4)}` } }, 201);
+    await env.DB.prepare("INSERT INTO upstream_profiles (id, name, base_url, api_key_ciphertext, api_key_iv, key_hint,max_concurrency) VALUES (?, ?, ?, ?, ?, ?,?)").bind(id, name, baseUrl, encrypted.ciphertext, encrypted.iv, `••••${apiKey.slice(-4)}`,capacity).run();
+    await audit(env, admin.id, "upstream_created", { profileId: id, name,capacity }); return json({ upstream: { id, name, baseUrl, keyHint: `••••${apiKey.slice(-4)}`,maxConcurrency:capacity } }, 201);
   }
   const match = path.match(/^\/admin\/upstreams\/([0-9a-f-]+)(?:\/(test))?$/i);
   if (!match) return null;
   const row = await env.DB.prepare("SELECT * FROM upstream_profiles WHERE id = ?").bind(match[1]).first();
   if (!row) return json({ error: "上游配置不存在。" }, 404);
   if (request.method === "POST" && match[2] === "test") {
-    const body = await bodyOf(request); const channel = String(body?.channel || ""); const modelId = String(body?.modelId || "").trim().slice(0, 128);
-    if (!CHANNELS.has(channel) || !modelId) return json({ error: "请选择测试渠道并填写模型。" }, 400);
-    const result = await probeProfile(env, row, channel, modelId); await audit(env, admin.id, "upstream_tested", { profileId: row.id, channel, modelId, ok: result.ok, status: result.capability.status });
-    return json(result, result.ok ? 200 : 502);
+    const body = await bodyOf(request); const channel = String(body?.channel || ""); const modelId = String(body?.modelId || "").trim().slice(0, 128);const protocol=body?.protocol|| (channel==='web_chat'?'chat':'responses');
+    if (!CHANNELS.has(channel) || !/^[A-Za-z0-9._:/-]{1,128}$/.test(modelId)||!['chat','responses'].includes(protocol)) return json({ error: "请选择测试渠道、协议并填写模型。" }, 400);
+    const result = await probeProfile(env, row, channel, modelId,protocol); await audit(env, admin.id, "upstream_tested", { profileId: row.id, channel, modelId,protocol, ok: result.ok, status: result.capability.status });
+    return json(result.ok?result:{...result,error:`探测失败：${result.capability.errorCode||'unknown'}（HTTP ${result.capability.status||0}）`,code:result.capability.errorCode,stage:'stream_or_usage',upstreamStatus:result.capability.status}, result.ok ? 200 : 502);
   }
   if (request.method === "DELETE" && !match[2]) {
-    const agentUsed=await env.DB.prepare('SELECT model_id FROM agent_model_routes WHERE profile_id=? LIMIT 1').bind(row.id).first();
+    const agentUsed=await env.DB.prepare('SELECT model_id FROM agent_route_members WHERE profile_id=? LIMIT 1').bind(row.id).first();
     if(agentUsed)return json({error:'该上游仍被 OpenCode 路由引用，请先更换路由。'},409);
-    const used = await env.DB.prepare("SELECT channel FROM upstream_routes WHERE profile_id = ? LIMIT 1").bind(row.id).first();
+    const used = await env.DB.prepare("SELECT channel FROM upstream_route_members WHERE profile_id = ? LIMIT 1").bind(row.id).first();
     if (used) return json({ error: "该上游正在被路由使用，不能删除。" }, 409);
     const historical = await env.DB.prepare("SELECT id FROM upstream_route_history WHERE from_profile_id = ? OR to_profile_id = ? LIMIT 1").bind(row.id, row.id).first();
     if (historical) return json({ error: "该上游存在路由历史，为保留审计记录不能删除。" }, 409);
     await env.DB.batch([env.DB.prepare("DELETE FROM upstream_route_probes WHERE profile_id = ?").bind(row.id), env.DB.prepare("DELETE FROM upstream_profiles WHERE id = ?").bind(row.id)]); await audit(env, admin.id, "upstream_deleted", { profileId: row.id }); return json({ ok: true });
   }
   if (request.method === "PUT" && !match[2]) {
-    const agentUsed=await env.DB.prepare('SELECT model_id FROM agent_model_routes WHERE profile_id=? AND enabled=1 LIMIT 1').bind(row.id).first();
-    if(agentUsed)return json({error:'请先禁用该上游的 OpenCode 路由再编辑。'},409);
-    const used = await env.DB.prepare("SELECT channel FROM upstream_routes WHERE profile_id = ? LIMIT 1").bind(row.id).first();
-    if (used) return json({ error: "该上游正在被路由使用，请先切换对应渠道后再编辑。" }, 409);
-    const body = await bodyOf(request); const name = typeof body?.name === "string" ? body.name.trim().slice(0, 64) : row.name; const baseUrl = body?.baseUrl ? validUpstreamUrl(body.baseUrl, new URL(request.url).hostname) : row.base_url; const apiKey = typeof body?.apiKey === "string" ? body.apiKey.trim() : "";
-    if (!name || !baseUrl || (apiKey && (apiKey.length < 8 || apiKey.length > 4096))) return json({ error: "上游配置不正确。" }, 400);
+    const body = await bodyOf(request); const name = typeof body?.name === "string" ? body.name.trim().slice(0, 64) : row.name; const baseUrl = body?.baseUrl ? validUpstreamUrl(body.baseUrl, new URL(request.url).hostname) : row.base_url; const apiKey = typeof body?.apiKey === "string" ? body.apiKey.trim() : ""; const capacity=Number(body?.maxConcurrency??row.max_concurrency??5);
+    if (!name || !baseUrl || (apiKey && (apiKey.length < 8 || apiKey.length > 4096)) || !Number.isInteger(capacity) || capacity<1 || capacity>1000) return json({ error: "上游配置不正确。" }, 400);
     let ciphertext = row.api_key_ciphertext; let iv = row.api_key_iv; let hint = row.key_hint;
     if (apiKey) { const encrypted = await encryptSecret(apiKey, env); ciphertext = encrypted.ciphertext; iv = encrypted.iv; hint = `••••${apiKey.slice(-4)}`; }
-    await env.DB.batch([
-      env.DB.prepare("UPDATE upstream_profiles SET name = ?, base_url = ?, api_key_ciphertext = ?, api_key_iv = ?, key_hint = ?, last_tested_at = NULL, last_test_status = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(name, baseUrl, ciphertext, iv, hint, row.id),
+    const changed=baseUrl!==row.base_url||Boolean(apiKey);
+    await env.DB.batch(changed?[
+      env.DB.prepare("UPDATE upstream_profiles SET name = ?, base_url = ?, api_key_ciphertext = ?, api_key_iv = ?, key_hint = ?,max_concurrency=?,last_tested_at=NULL,last_test_status=NULL,updated_at=CURRENT_TIMESTAMP WHERE id = ?").bind(name,baseUrl,ciphertext,iv,hint,capacity,row.id),
       env.DB.prepare("DELETE FROM upstream_route_probes WHERE profile_id = ?").bind(row.id)
-    ]);
-    await audit(env, admin.id, "upstream_updated", { profileId: row.id }); return json({ ok: true });
+    ]:[env.DB.prepare("UPDATE upstream_profiles SET name=?,max_concurrency=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(name,capacity,row.id)]);
+    await audit(env, admin.id, "upstream_updated", { profileId: row.id,capacity }); return json({ ok: true });
   }
   return json({ error: "接口不存在。" }, 404);
 }

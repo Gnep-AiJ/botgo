@@ -1,39 +1,30 @@
-# BotGo 发布
+# BotGo deployment
 
-当前证据：[Release 2026-09-12](docs/notes/Release%202026-09-12.md)。
+The current desktop product is BotGo Desktop 1.3.1 from `opencode-desktop/`. It uses the existing Pages, Worker, D1 and private R2 release bucket. Do not reintroduce the retired `desktop/` build flow.
 
-2026-09-13 用户授权先发布自签名预览，Desktop 1.2.1-preview.3 / CLI 0.2.2 已激活，Pages bb4da74d 已上线；跨设备安装验收由用户上线后完成。以下历史迁移流程不适用于本轮，没有执行迁移或 Worker 更新。自签名预览使用 `desktop/scripts/package-preview.ps1`，保持当前用户个人证书库中的固定非导出私钥，不安装根信任证书。Windows 默认仍不信任该身份，可能出现 SmartScreen 警告。精确保留版本、清理结果和元数据恢复脚本见 [本轮证据](docs/evidence/2026-09-13-release/final-state.json)；不存在已完整验收的上一 Desktop 回滚版。
+Create every upstream endpoint and API key through the Web admin. Keys are encrypted with the `UPSTREAM_CONFIG_KEY` Worker Secret; do not add upstream credentials to Wrangler vars, client packages, release metadata, build logs, or the repository.
 
-使用现有 Pages `botgo`、Worker `botgo-api`、D1 `botgo`、私有 R2 `botgo-desktop-releases`。网站域名 `https://botgo.win`，GitHub `Gnep-AiJ/botgo`。保留 Git 历史、应用身份和下载入口。
-
-现有 Secrets：`AUTH_SECRET`、`ADMIN_EMAIL`、`QQ_SMTP_USER`、`QQ_SMTP_AUTH_CODE`、`UPSTREAM_CONFIG_KEY`。`UPSTREAM_API_KEY` 为旧上游回退凭据；主要上游由后台加密配置并分别测试 Chat/Responses 路由。`UPSTREAM_CONFIG_KEY` 必须保留，否则无法解密已有配置。支付密钥按 `docs/ALIPAY_PAYMENT.md` 管理。
-
-## 验证
+Before any remote action, run:
 
 ```powershell
 npm test
 npm run check
+npm run opencode:build
 git diff --check
+npm run opencode:verify
 ```
 
-Wrangler 固定使用项目脚本指定的 4.125.0。发布前核对账户/绑定、远程迁移、当前版本，并将 D1 导出放入已忽略的 `.secrets/`。0013 只应用一次，将历史元单位余额转成分；随后应用 0014，加入精细计费账本与模型目录。
+Build the signed Windows candidate only after those checks:
 
-## 顺序
+```powershell
+powershell -File opencode-desktop/package.ps1
+node scripts/verify-release-candidate.cjs
+```
 
-1. 提交审查后的源码、测试与文档，验证 GitHub 远端提交。
-2. 本轮需要明确批准 main 更新和短暂 API 维护窗口，见当前发布记录。备份 D1 后先部署维护模式（`BOTGO_MAINTENANCE=1`），再运行 `npm run migrate:worker`；部署与分单位余额兼容的最终 Worker 并明确设置 `BOTGO_MAINTENANCE=0`，验证健康和余额契约。不要在旧 Worker 仍接受请求时直接迁移余额单位。
-3. `npm --prefix agent run package:win`；将 zip 上传到 R2 `agent/<version>/botgo-agent-win-x64.zip`。下载校验通过后才更新 `agent/current.json`。
-4. 桌面：设置 `BOTGO_API_ORIGIN=https://botgo.win` 后执行 `npm --prefix desktop run package:win`；签名及干净机器验证完成后计算最终哈希、上传 R2，再登记/激活发布元数据。
-5. `npm run build`、`npm run deploy:pages`；检查健康接口、账户、CLI 安装脚本与版本包、桌面下载、一次真实中转任务和余额。
+`package.ps1` requires the existing local certificate identity with thumbprint `104C109C454B26C3B5028EE66D8B225F447F953F`. Do not publish if it is absent, expired, or does not sign the candidate.
 
-完整 `npm run deploy` 会执行迁移及 Worker/Pages 发布，不能在未完成备份与兼容核查时盲目执行。
+Publish the native release only after the verified installer has been uploaded to private R2 and a `desktop_releases` entry with exact version, file name, object key, size and SHA-256 is published. Validate `GET /api/desktop/releases/current` with a device token. Retire 1.2.x release objects and rows only after this check succeeds.
 
-## 回滚与边界
+The Sol route must be saved disabled, pass the authorized two-request metered route probe, and then be enabled. It must remain unavailable when route verification, enablement or health requirements are absent.
 
-2026-09-12 只读核查发现生产尚无 upstream_profiles/upstream_routes。首次初始化入口为 `worker/scripts/bootstrap-metering.js`：仅返回维护 503；同时满足维护标记与本轮发布标记时，定时事件才使用现有 Worker 密钥加密导入配置、实际探测六个模型并启用通过者。已有路由直接拒绝，审计主键保证只执行一次。失败会保留审计与禁用状态，不能删审计后盲目重跑。它不是正式 Worker 入口，也不提供公开管理接口。
-
-该入口在用户批准完整升级方案后已执行，0013/0014 已迁移。首次探测因 Worker 不支持 redirect:error 失败，修正为 manual 后通过独立重试锁完成，原审计保留。正式 Worker 已设置 `BOTGO_MAINTENANCE=0`、`BOTGO_RELEASE_BOOTSTRAP=0`、`BOTGO_RELEASE_RETRY=0`，cron 已经 Cloudflare API 回读确认为空。不要重跑首次初始化或删除审计锁；后续上游调整走既有后台。生产数据已迁移后不得恢复旧元单位代码。
-
-保留上一份 CLI manifest、安装目录和桌面发布记录。代码回滚不会回滚 D1，0013 后不能直接恢复使用元单位的旧 Worker；需要对应的兼容版本或按备份受控恢复。
-
-Worker Secrets 不进入仓库、参数或日志。支付宝配置及真实付款状态见支付文档和当前发布记录。未签名桌面包不能标记为正式签名版本；本地 HTTP、测试成功不代表生产登录/扣费/安装已通过。
+`npm run deploy` may migrate and deploy production resources. Do not run it as a substitute for the signed-client publication sequence.

@@ -229,7 +229,7 @@ assert.match(routeSource, /await request\.text\(\)/);
 assert.match(routeSource, /paymentHtml = await createPaymentForm/);
 assert.match(routeSource, /paymentUrl = await createPaymentUrl/);
 assert.match(routeSource, /findAdminOrder\(env, outTradeNo\)/);
-assert.match(routeSource, /workspace\.html\?view=subscription.*out_trade_no/);
+assert.match(routeSource, /index\.html\?panel=recharge.*out_trade_no/);
 assert.match(routeSource, /decodePathValue\(orderQuery\[1\]\)/);
 assert.match(workerEntry, /handlePlatformRoute/);
 assert.match(workspaceSource, /billing\/query/);

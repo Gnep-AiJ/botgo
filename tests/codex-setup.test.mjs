@@ -6,15 +6,17 @@ const root = process.cwd();
 const read = (file) => fs.readFileSync(path.join(root, file), "utf8");
 
 const workspace = read("workspace.html");
+const home = read("index.html");
+const downloadScript = read("download.js");
 const workspaceStyles = read("workspace.css");
-const client = read("workspace.js");
+const client = read("product-account.js");
 const worker = read("worker/src/index.js");
 const migration = read("worker/migrations/0002_codex_access.sql");
 
-assert.match(workspace, /BotGo Desktop/, "网页应保留 BotGo Desktop 产品说明");
-assert.match(workspace, /data-desktop-open>下载 Desktop/, "桌面端仅查询已发布版本");
-assert.match(workspace, /id="desktop-install-dialog"/, "桌面端说明应使用独立对话框");
-assert.match(client, /desktopInstallDialog\.showModal\(\)/, "客户端应打开桌面端说明对话框");
+assert.match(home, /桌面工作台/, "首页应保留 BotGo 产品说明");
+assert.match(home, /data-download/, "首页应提供直接下载入口");
+assert.match(workspace, /workspace-redirect\.js/, "旧账户地址应跳回首页");
+assert.match(downloadScript, /\/desktop\/releases\/current/, "下载页仅查询已发布版本");
 assert.doesNotMatch(workspace, /\/downloads\/BotGo-Desktop-Setup\.exe/, "未托管安装包不应在网页提供下载入口");
 assert.doesNotMatch(workspace, /API Key|Codex CLI|Claude Code|chatgpt\.com\/download/, "网页不应展示凭据或第三方下载入口");
 assert.doesNotMatch(client, /bootstrapCommand|\/account\/codex-key|navigator\.clipboard/, "网页脚本不应生成命令或处理凭据复制");

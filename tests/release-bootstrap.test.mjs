@@ -14,7 +14,7 @@ globalThis.fetch=async(url,init)=>{
  const body=JSON.parse(init.body);
  if(['gpt-5.4','gpt-6-astra'].includes(body.model))return new Response('',{status:429});
  const usage={input_tokens:2,output_tokens:1};
- const result=url.endsWith('/responses')?{type:'response.completed',response:{usage,output:[{type:'function_call',name:'botgo_probe',call_id:'test-call',arguments:'{"value":"OK"}'}]}}:{usage};
+ const result=url.endsWith('/responses')?{type:'response.completed',response:{usage,output:[{type:'function_call',name:'botgo_probe',call_id:'test-call',arguments:'{"value":"OK"}'}]}}:{choices:[{delta:{content:'OK'}}],usage};
  return new Response(`data: ${JSON.stringify(result)}\n\n`,{headers:{'content-type':'text/event-stream'}});
 };
 try{

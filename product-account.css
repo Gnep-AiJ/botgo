@@ -1,0 +1,212 @@
+/* Homepage account dialog shares the site's blue and city imagery. */
+[hidden]{display:none!important}
+.header-cta,footer button{font:inherit;cursor:pointer}
+.header-cta{font-size:.9rem;font-weight:650}
+footer button{margin-left:auto;padding:0;border:0;background:none;color:inherit;font-size:.82rem}
+footer button:hover{text-decoration:underline}
+#account-dialog{position:fixed;width:min(820px,calc(100vw - 32px));max-width:none;max-height:min(760px,calc(100dvh - 32px));padding:0;overflow:auto;border:1px solid rgba(191,220,238,.9);border-radius:22px;background:#f7fbff;color:#143247;box-shadow:0 32px 90px rgba(7,40,64,.3)}
+#account-dialog::backdrop{background:rgba(8,31,49,.56);backdrop-filter:blur(5px)}
+.account-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:23px 30px;border-bottom:1px solid #d0e5f0;background:linear-gradient(100deg,rgba(242,250,255,.94),rgba(212,237,251,.76)),url("./assets/botgo-city-clean-v2.webp") center/cover}
+.account-kicker{font-size:.67rem;font-weight:800;letter-spacing:.16em;color:#226d9c}
+.account-dialog-head h2{margin:5px 0 0;font-size:clamp(1.5rem,3vw,2rem);letter-spacing:-.045em}
+.account-close{display:grid;place-items:center;width:44px;height:44px;flex:none;border:1px solid #bed9e9;border-radius:50%;background:rgba(255,255,255,.7);color:#31536d;font-size:1.7rem;line-height:1;cursor:pointer}
+.account-close:hover{background:#fff}
+.account-dialog-body{display:grid;grid-template-columns:minmax(220px,.86fr) minmax(0,1.14fr);min-height:410px}
+.account-intro{position:relative;display:flex;align-items:flex-end;min-height:410px;overflow:hidden;padding:35px;background:linear-gradient(145deg,#0d4167,#177fb3)}
+.account-intro::after{content:"";position:absolute;right:-100px;bottom:-170px;width:430px;height:430px;border:1px solid rgba(207,239,255,.22);border-radius:50%;box-shadow:0 0 0 55px rgba(207,239,255,.06),0 0 0 110px rgba(207,239,255,.04)}
+.account-intro img{position:absolute;top:4%;left:18%;width:65%;height:65%;object-fit:contain;filter:drop-shadow(0 15px 20px rgba(0,28,53,.3))}
+.account-intro p{position:relative;z-index:1;margin:0;color:#fff;font-size:1.6rem;font-weight:750;line-height:1.25;letter-spacing:-.05em}
+.account-content{display:flex;flex-direction:column;justify-content:center;min-width:0;padding:34px 42px}
+.auth-form{display:grid;gap:11px}.auth-form label,.recharge-input-label{font-size:.85rem;font-weight:650;color:#3d6178}
+.auth-form input,.recharge-input-wrap{width:100%;min-height:48px;padding:0 14px;border:1px solid #bad5e5;border-radius:9px;background:#fff;color:#143247;font:inherit}
+.auth-form input:focus,.recharge-input-wrap:focus-within{outline:2px solid #218ac5;outline-offset:2px}
+.auth-form small{color:#648296}
+.form-status,.subscription-status{min-height:20px;margin:3px 0;color:#53738a;font-size:.83rem}
+.form-status.is-error,.subscription-status.is-error{color:#a22626}.form-status.is-success,.subscription-status.is-success{color:#176e4e}
+.account-main-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 22px;border:0;border-radius:9px;background:#0b65a2;color:#fff;font:inherit;font-weight:700;cursor:pointer}
+.account-main-button:hover:not(:disabled){background:#075684}.account-main-button:disabled{opacity:.55;cursor:not-allowed}
+.account-back{min-height:40px;padding:0;border:0;background:none;color:#356885;font:inherit;font-size:.85rem;font-weight:650;cursor:pointer;text-align:left}
+.account-back:hover,.account-feedback:hover{text-decoration:underline;text-underline-offset:4px}
+.account-balance{display:grid;gap:4px;padding:25px;border-radius:14px;background:linear-gradient(120deg,#0d4167,#1379ac);color:#d3efff}
+.account-balance span,.account-email span{font-size:.78rem;font-weight:650}
+.account-balance strong{color:#fff;font-size:clamp(2.1rem,4vw,3rem);line-height:1.2;font-variant-numeric:tabular-nums}
+.account-email{display:grid;gap:4px;padding:20px 3px;border-bottom:1px solid #d0e5f0;color:#55768b}
+.account-email strong{overflow-wrap:anywhere;color:#143247;font-size:.98rem}
+.account-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:22px}
+.account-feedback{align-self:flex-start;margin-top:26px;color:#376b8a;font-size:.84rem;font-weight:650;text-decoration:none}
+.account-section-back{margin-bottom:6px}#account-recharge h3{margin:0 0 16px;font-size:1.3rem}
+.recharge-options{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.recharge-options button{min-height:48px;border:1px solid #bad5e5;border-radius:9px;background:#fff;color:#143247;font:inherit;font-weight:650;cursor:pointer}
+.recharge-options button[aria-checked=true]{border-color:#0b65a2;background:#e3f3fc;color:#0b65a2}
+.recharge-options button:disabled{opacity:.5;cursor:not-allowed}
+.recharge-input-label{display:block;margin-top:18px}
+.recharge-input-wrap{display:flex;align-items:center;gap:8px;margin-top:7px}
+.recharge-input-wrap input{width:100%;height:44px;border:0;outline:0;background:transparent;color:inherit;font:inherit}
+.recharge-help{margin:8px 0 0;color:#648296;font-size:.78rem}
+.recharge-submit{width:100%;margin-top:20px}
+.subscription-status:empty{display:none}
+@media(max-width:650px){#account-dialog{width:calc(100vw - 20px);max-height:calc(100dvh - 20px);border-radius:17px}.account-dialog-head{padding:18px 20px}.account-dialog-body{grid-template-columns:1fr}.account-intro{min-height:125px;padding:20px 110px 20px 22px}.account-intro img{top:-22px;left:auto;right:8px;width:110px;height:135px}.account-intro p{font-size:1.25rem}.account-content{padding:25px 23px 30px}.account-feedback{margin-top:20px}}
+@media(prefers-reduced-motion:no-preference){#account-dialog[open]{animation:account-in 180ms ease-out}@keyframes account-in{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}}
+
+/* A quieter sign-in composition: compact brand illustration and a clear form. */
+.site-header nav button{min-height:44px;padding:0;border:0;background:none;color:#31536d;font:inherit;font-size:.88rem;font-weight:600;cursor:pointer}
+.site-header nav button:hover{text-decoration:underline;text-underline-offset:5px}
+#account-dialog{width:min(760px,calc(100vw - 32px));background:#fff}
+.account-dialog-head{padding:22px 28px;background:#f6fbff;border-bottom:1px solid #e2edf3}
+.account-dialog-head h2{font-size:1.42rem}
+.account-dialog-body{grid-template-columns:230px minmax(0,1fr);min-height:360px}
+.account-intro{min-height:360px;align-items:flex-end;padding:25px;background:linear-gradient(160deg,#e7f6ff,#c9e8fa)}
+.account-intro::after{right:-90px;bottom:-190px;border-color:rgba(14,98,153,.15);box-shadow:0 0 0 55px rgba(14,98,153,.04),0 0 0 110px rgba(14,98,153,.025)}
+.account-intro img{top:12%;left:17%;width:66%;height:57%;filter:drop-shadow(0 15px 20px rgba(15,68,102,.18))}
+.account-intro p{color:#123d5c;font-size:1.12rem;line-height:1.4}
+.account-intro p span{display:block;color:#56778d;font-size:.81rem;font-weight:600;letter-spacing:0}
+.account-content{padding:31px 40px 26px}
+.auth-heading{margin-bottom:27px}
+.auth-heading h3{margin:0 0 5px;color:#123247;font-size:1.6rem;letter-spacing:-.04em;line-height:1.25}
+.auth-heading p{margin:0;color:#627d8d;font-size:.87rem}
+.auth-form{gap:9px}
+.auth-form label{font-size:.82rem}
+.auth-form input{min-height:51px;border-color:#c7dce8;border-radius:8px}
+.auth-form input::placeholder{color:#9aaeba}
+.auth-form input:focus{outline:2px solid #0b65a2;outline-offset:1px}
+.auth-form .form-status:empty{display:none}
+.auth-form .account-main-button{justify-content:space-between;width:100%;margin-top:15px}
+.auth-form small{margin-top:8px;color:#697f8e;font-size:.78rem}
+#account-auth + .account-feedback{margin-top:27px}
+.account-feedback{font-size:.8rem}
+@media(max-width:650px){
+  .site-header nav{display:flex;gap:6px;margin:auto}
+  .site-header nav a{display:inline-flex;align-items:center;font-size:.79rem;white-space:nowrap}
+  .site-header nav button{padding:0 8px;font-size:.79rem;white-space:nowrap}
+  .site-header .header-cta{padding:6px 9px;font-size:.79rem;white-space:nowrap}
+  #account-dialog{width:calc(100vw - 20px)}
+  .account-dialog-head{padding:18px 20px}
+  .account-dialog-body{display:block}
+  .account-intro{min-height:104px;padding:17px 110px 16px 20px}
+  .account-intro img{top:-20px;left:auto;right:12px;width:105px;height:130px}
+  .account-content{padding:27px 25px 30px}
+  .auth-heading{margin-bottom:23px}
+}
+@media(max-width:380px){.site-header nav{gap:3px}.site-header nav a,.site-header nav button{font-size:.73rem}.site-header nav button{padding:0 4px}.site-header .header-cta{font-size:.73rem}}
+
+/* Keep both nav controls on one baseline and use one calm blue surface in the dialog. */
+.site-header nav{height:100%;align-items:center;gap:30px}
+.site-header nav a,.site-header nav button{display:inline-flex;align-items:center;justify-content:center;height:44px;min-height:44px;margin:0;padding:0;color:#244b67;font-size:.88rem;font-weight:650;line-height:1;white-space:nowrap}
+.site-header nav button{appearance:none}
+#account-dialog{border-color:#b8d9eb;background:#f2f9fd;box-shadow:0 26px 72px rgba(8,55,86,.24)}
+.account-dialog-head{background:#f2f9fd;border-bottom-color:#d2e7f2}
+.account-dialog-body{background:#f2f9fd}
+.account-intro{background:#e4f3fb;border-right:1px solid #d2e7f2}
+.account-intro::after{opacity:.35}
+.account-content{background:#f2f9fd}
+.auth-form input{background:#fff;border-color:#a9ccdf}
+.account-main-button{background:#0c659c}
+.account-main-button:hover:not(:disabled){background:#084c78}
+.account-feedback{color:#235b7e}
+@media(max-width:650px){.site-header nav{gap:10px}.site-header nav a,.site-header nav button{font-size:.79rem}.account-intro{border-right:0;border-bottom:1px solid #d2e7f2}}
+@media(max-width:380px){.site-header nav{gap:5px}.site-header nav a,.site-header nav button{font-size:.73rem}}
+
+/* Split sign-in: a dark BotGo identity panel and a quiet form panel. */
+#account-dialog{width:min(900px,calc(100vw - 32px));border:1px solid #c8d6e2;border-radius:20px;background:#fff;box-shadow:0 28px 82px rgba(8,28,51,.32)}
+.account-dialog-body{grid-template-columns:42% 58%;min-height:520px;background:#fff}
+.account-dialog-head{position:absolute;z-index:2;top:0;right:0;width:58%;height:150px;align-items:flex-end;padding:34px 50px 18px;border:0;background:#fff}
+.account-kicker{display:none}
+.account-dialog-head h2{font-size:clamp(1.8rem,3vw,2.45rem);line-height:1.15;letter-spacing:-.055em;color:#10283c}
+.account-close{position:absolute;top:27px;right:28px;background:#fff}
+.account-intro{min-height:520px;overflow:hidden;padding:42px;background:linear-gradient(180deg,rgba(8,25,46,.94),rgba(7,40,70,.82)),url("./assets/botgo-city-clean-v2.webp") center/cover;border:0}
+.account-intro::after{display:none}
+.account-intro p{position:absolute;top:42px;left:42px;color:#fff;font-size:2rem;font-weight:800;letter-spacing:-.06em}
+.account-intro p span{margin-top:3px;color:#c8d9ea;font-size:.86rem;font-weight:500;letter-spacing:.01em}
+.account-intro img{top:auto;left:15%;bottom:-7%;width:72%;height:72%;filter:drop-shadow(0 20px 24px rgba(0,8,23,.44))}
+.account-content{justify-content:center;padding:140px 50px 35px;background:#fff}
+.auth-heading{margin-bottom:24px}
+.auth-heading h3{display:none}
+.auth-heading p{color:#5e7488;font-size:.91rem}
+.auth-form input{border-color:#bed0df;background:#fff}
+.auth-form .account-main-button{min-height:52px;background:#0d6cb6}
+.auth-form .account-main-button:hover:not(:disabled){background:#095991}
+.auth-form small{font-size:.78rem}
+.account-feedback{margin-top:32px}
+@media(max-width:650px){
+  #account-dialog{width:calc(100vw - 20px)}
+  .account-dialog-body{display:block}
+  .account-intro{min-height:132px;padding:22px 25px}
+  .account-intro p{top:22px;left:25px;font-size:1.55rem}
+  .account-intro img{top:-12px;right:10px;bottom:auto;left:auto;width:115px;height:145px}
+  .account-dialog-head{top:132px;left:0;right:0;width:100%;height:105px;align-items:flex-end;padding:24px 25px 12px}
+  .account-dialog-head h2{font-size:1.8rem}
+  .account-close{top:17px;right:18px}
+  .account-content{padding:130px 25px 30px}
+  .auth-heading{margin-bottom:18px}
+}
+
+/* Account panel follows the reference hierarchy with only the available actions. */
+.account-intro{background:linear-gradient(180deg,rgba(8,28,55,.38),rgba(6,23,47,.08)),url("./assets/botgo-account-city-v1.webp") center/cover}
+.account-intro::after{display:block;content:"Good AI\a A Better You.";position:absolute;top:168px;left:43px;right:auto;bottom:auto;width:auto;height:auto;border:0;border-radius:0;box-shadow:none;opacity:.9;white-space:pre;color:#e5f4ff;font:italic 1.4rem/1.18 "Segoe Print","Comic Sans MS",cursive;letter-spacing:.02em;transform:rotate(-7deg)}
+.account-intro img{left:10%;bottom:-5%;width:80%;height:62%;filter:drop-shadow(0 22px 25px rgba(0,15,37,.5))}
+.account-dialog-head{height:124px;padding-top:25px;padding-bottom:13px}
+.account-content{justify-content:flex-start;padding-top:132px}
+#account-signed-in{position:relative}
+.account-balance{min-height:132px;padding:22px 28px;border:1px solid #bbdcf7;border-radius:14px;background:linear-gradient(110deg,#e6f4ff,#d4ebff);color:#476f8d}
+.account-balance strong{color:#102c47;font-size:clamp(2.2rem,4vw,3rem)}
+.account-email{padding:21px 2px 17px}
+.account-actions{justify-content:flex-end;margin-top:18px}
+#account-signed-in .account-actions #open-recharge{position:absolute;top:43px;right:22px;min-height:48px;background:#116fcc}
+#account-signed-in .account-actions #open-recharge:hover{background:#095ba8}
+#account-signed-in .account-actions #logout-button{min-height:44px}
+.account-feedback{margin-top:22px}
+#account-signed-in:not([hidden]) ~ .account-feedback{margin-top:-46px}
+@media(max-width:650px){
+  .account-intro{background-position:center 67%}
+  .account-intro::after{display:none}
+  .account-intro img{top:-12px;right:10px;bottom:auto;left:auto;width:115px;height:145px}
+  .account-dialog-head{height:105px}
+  .account-content{padding-top:130px}
+  .account-balance{min-height:116px;padding:18px 21px}
+  .account-balance strong{font-size:2.3rem}
+  #account-signed-in .account-actions #open-recharge{position:static}
+  .account-actions{justify-content:space-between}
+  #account-signed-in:not([hidden]) ~ .account-feedback{margin-top:18px}
+}
+
+/* Balance, recharge, email, then quiet account actions. */
+#account-dialog{width:min(970px,calc(100vw - 32px))}
+.account-dialog-body,.account-intro{min-height:590px}
+.account-dialog-head{height:136px;padding:28px 50px 12px}
+.account-dialog-head h2{font-size:clamp(2rem,3vw,2.65rem)}
+.account-content{position:relative;padding:146px 50px 36px}
+.account-intro::after{display:none}
+.account-intro img{left:8%;bottom:-5%;width:84%;height:69%}
+.account-balance{min-height:142px;overflow:hidden;padding:24px 29px;background:radial-gradient(circle at 103% 120%,rgba(106,180,249,.35),transparent 48%),linear-gradient(120deg,#e7f4ff,#d9edff)}
+.account-balance span{font-size:.85rem}
+.account-balance strong{font-size:clamp(2.6rem,4.3vw,3.4rem)}
+#account-signed-in .account-recharge-button{display:flex;width:100%;min-height:57px;margin-top:19px;justify-content:center;gap:18px;background:#126fce;font-size:1rem}
+#account-signed-in .account-recharge-button:hover{background:#095ba8}
+.account-email{min-height:70px;margin-top:19px;padding:12px 20px;border:1px solid #d9e8f5;border-radius:11px;background:#f7fbff}
+.account-email span{font-size:.76rem}
+.account-email strong{font-size:.96rem}
+.account-actions{justify-content:center;margin-top:28px}
+#account-signed-in .account-actions #logout-button{color:#1d69af;font-size:.9rem}
+#account-signed-in:not([hidden]) ~ .account-feedback{position:absolute;right:50px;bottom:43px;margin:0;color:#2c668f}
+@media(max-width:650px){
+  #account-dialog{width:calc(100vw - 20px)}
+  .account-dialog-body{min-height:0}
+  .account-intro{min-height:132px}
+  .account-intro img{top:-12px;right:10px;bottom:auto;left:auto;width:115px;height:145px}
+  .account-dialog-head{height:105px}
+  .account-content{padding:130px 25px 28px}
+  .account-balance{min-height:116px;padding:18px 21px}
+  .account-balance strong{font-size:2.3rem}
+  #account-signed-in .account-recharge-button{min-height:50px;margin-top:14px}
+  .account-email{margin-top:14px}
+  .account-actions{margin-top:16px}
+  #account-signed-in:not([hidden]) ~ .account-feedback{position:static;align-self:flex-end;margin-top:-39px}
+}
+
+/* User-supplied city and wave artwork. */
+.account-intro{background:linear-gradient(180deg,rgba(8,27,58,.2),rgba(8,27,58,.04)),url("./assets/botgo-account-skyline-user.webp") center/cover}
+.account-balance{border-radius:18px;background:#e7f4ff url("./assets/botgo-balance-wave-user.webp") center/100% 100% no-repeat}
+#account-signed-in .account-recharge-button{border-radius:15px}
+.account-intro img{right:1%;left:auto;bottom:2%;width:65%;height:58%}
+.account-balance{background-size:110% 118%}
+@media(max-width:650px){.account-intro img{top:-12px;right:10px;bottom:auto;left:auto;width:100px;height:130px}}

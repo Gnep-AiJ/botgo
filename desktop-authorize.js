@@ -26,12 +26,11 @@
 
   function applyClientCopy() {
     if (!isAgentClient) return;
-    document.title = "授权 BotGo Agent";
-    $("[data-client-label]").textContent = "BOTGO AGENT";
-    $("[data-client-heading]").textContent = "在浏览器中确认 BotGo Agent 登录";
-    $("[data-client-connection]").textContent = "将连接到 BotGo Agent CLI";
-    $("[data-approve]").textContent = "授权 BotGo Agent";
-    $("[data-client-return]").textContent = "确认后返回终端。";
+    document.title = "BotGo 桌面客户端";
+    $("[data-client-label]").textContent = "BOTGO DESKTOP";
+    $("[data-client-heading]").textContent = "请使用 BotGo 桌面客户端";
+    $("[data-client-connection]").textContent = "终端版已停止提供。";
+    $("[data-client-return]").textContent = "请返回官网下载桌面客户端。";
   }
 
   function validateRequest() {
@@ -53,13 +52,17 @@
     $("[data-approval-actions]").hidden = false;
     $("[data-account-email]").textContent = result.account.email;
     $("[data-device-label]").textContent = result.authorization.deviceLabel;
-    $("[data-authorization-copy]").textContent = isAgentClient
-      ? "确认后，这台设备将获得 BotGo Agent CLI 的本地使用凭据。"
-      : "确认后，这台设备将获得 BotGo Desktop 的本地使用凭据。";
+    $("[data-authorization-copy]").textContent = "确认后，这台设备将获得 BotGo Desktop 的本地使用凭据。";
     status("");
   }
 
   async function loadAuthorization() {
+    if (isAgentClient) {
+      $("[data-login-panel]").hidden = true;
+      $("[data-approval-actions]").hidden = true;
+      status("终端版授权已停止，请使用 BotGo 桌面客户端。", true);
+      return;
+    }
     if (!validateRequest()) {
       status(isAgentClient ? "授权链接无效。请回到终端重新开始。" : "授权链接无效。请回到 BotGo Desktop 后重新开始。", true);
       return;

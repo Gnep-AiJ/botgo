@@ -14,8 +14,14 @@ worker/.dev.vars
 assets/*
 !assets/botgo-city-clean-mobile.webp
 !assets/botgo-city-clean-v2.webp
+!assets/botgo-account-skyline-user.webp
+!assets/botgo-balance-wave-user.webp
+!assets/botgo-rocket.svg
 !assets/botgo-robot-dynamic-mobile.webp
 !assets/botgo-robot-dynamic-v2.webp
+!assets/botgo-client-chat-original.png
+!assets/botgo-client-connect-original.png
+!assets/botgo-client-start-original.png
 
 # Local AI/agent skill overlays and reversible cleanup archives
 .codex/

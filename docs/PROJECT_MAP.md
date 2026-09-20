@@ -2,62 +2,29 @@
 type: moc
 project: BotGo
 status: active
-updated: 2026-09-13
-tags: [botgo, agent, architecture]
+updated: 2026-09-14
 ---
-# BotGo 项目地图
 
-先核对工作区状态，再沿任务入口阅读。不要从生成产物反推源码。当前验证状态见 [[notes/Release 2026-09-12]]。
+# BotGo project map
 
-| 任务 | 事实来源与代码入口 | 验收 |
+Inspect the working tree before edits. Generated content under `dist/` and `artifacts/opencode/` is never source of truth.
+
+| Area | Source of truth | Verification |
 | --- | --- | --- |
-| 首页 | `index.html`、`styles.css`、`app.js` | 首页契约与浏览器 |
-| 网页工作台与账户面板 | [[notes/UI Workspace]]；`workspace.html/css/js`、`workspace-billing.js` | 响应式、主题、真实对话 |
-| Web 云端历史记录 | [[notes/Web History]]；`worker/src/conversations.js`、迁移 0015 | 账户隔离、刷新、流中断、幂等与删除 |
-| 登录、支付与扣费 | [[notes/Account and Billing]]；`worker/src/index.js`、`worker/src/desktop-auth.js`、`worker/src/alipay-*.js` | 授权、验签、幂等、金额单位 |
-| 模型目录与 token 计费 | [[notes/Models and Metering]]；`worker/src/metering.js`、`worker/migrations/0014_metered_models.sql`、`admin-metering.js` | 真实用量、原子预留、快照、能力探测 |
-| OpenCode 重建候选 | [[notes/OpenCode Rebuild]]；`opencode-desktop/`、`worker/src/opencode-gateway.js`、迁移 0017 | 原生构建、用户本机登录页通过；登录计费及安装验收未完成 |
-| 桌面交互、本地历史与更新 | [[notes/Desktop and CLI]]；`desktop/main.cjs`、`agent/lib/app-server.cjs`、`desktop/lib/updater.cjs` | 流式、审批、停止、恢复、更新验签 |
-| CLI 与共用运行器 | [[notes/Desktop and CLI]]；`agent/bin/botgo.cjs`、`agent/lib/` | `npm --prefix agent test` |
-| 安装与发布 | `install.ps1`、`agent/scripts/package.ps1`、`DEPLOYMENT.md` | 干净安装、哈希、升级回滚 |
-| 后台 | `admin*.js/html/css`、`worker/src/platform-admin.js` | 管理员授权与发布元数据 |
-| 预览及构建 | [[notes/Dev Preview]]；`scripts/build.mjs`、`scripts/dev.mjs` | `npm run check` |
+| Website, download and account UI | Root HTML/CSS/JS, `functions/`, `worker/src/` | `npm run build`, browser checks |
+| Billing and model routing | `worker/src/metering.js`, `worker/src/opencode-gateway.js`, migrations | SQLite route and metering tests |
+| Native BotGo client | `opencode-desktop/` overlay/runtime/package scripts | `npm run opencode:build`, isolated Electron check |
+| Device authorization and releases | `worker/src/desktop-auth.js`, `worker/src/platform-admin.js` | device/release authorization tests |
+| Historical CLI source | `agent/` | No longer part of website build or public release |
 
-```mermaid
-flowchart LR
-  Web[网页] --> Pages[Pages /api 代理]
-  Pages --> Worker[botgo-api Worker]
-  Desktop[Electron 对话界面] --> Codex[隔离 Codex CLI]
-  CLI[BotGo Agent CLI] --> Codex
-  Codex --> Worker
-  Native[BotGo OpenCode 候选] --> Bridge[主进程本地鉴权桥]
-  Bridge --> Worker
-  Worker --> D1[账户 / 分单位余额 / 账本]
-  Worker --> R2[私有版本文件]
-  Worker --> Upstream[Chat 与 Responses 独立上游]
-  Worker --> Payment[支付宝验签与订单查询]
-```
+## Native client
 
-后台样式与隔离发布流程：[[notes/Admin UI]]。
-开放注册、赠送余额及三端历史保留：[[notes/Open Registration and Retention]]。
+`opencode-desktop/prepare.mjs` reproduces BotGo overlays in the ignored upstream build copy at `artifacts/opencode/`. Do not edit that copy by hand. The client is BotGo Desktop 1.3.1: its visible brand is BotGo, its model list comes only from verified server routes, and its updater uses the signed BotGo release endpoint.
 
-## 目录导航
+The native client keeps project/session navigation, models, permissions, MCP, Skills, subagents, terminal and settings from the pinned upstream engine. Product copy, title bar, account controls, help targets and errors must not show OpenCode branding. MIT/legal attribution remains in license material only. The website is a product, download, account and recharge surface; web chat and CLI distribution have been removed from the candidate build.
 
-[目录与产物](ARTIFACTS.md) 说明源码、生成目录和归档证据的位置。新验证材料统一写入 `artifacts/verification/`。主 MOC 是唯一任务导航；按任务读取上表对应模块，不扫描依赖、浏览器 profile 或历史产物。
+## Evidence and release state
 
-## 代码边界
+Write new screenshots, isolated profiles, test logs and release snapshots under `artifacts/verification/`. Do not inspect archived profiles or credentials. The current release record is [[notes/Release 2026-09-14]].
 
-- 网站：原生 HTML/CSS/JS；不在网页中运行本地任务。安装教程允许展示 CLI 安装命令。
-- Pages Function：`functions/api/[[path]].js` 经 `BOTGO_API` Service Binding 转发。
-- Worker：D1 `botgo`，R2 `botgo-desktop-releases`；资源 ID 以 Wrangler 配置为准。
-- 桌面：安全 preload 窄 IPC；设备凭据用 Electron safeStorage。Codex 配置在应用数据目录，旧全局配置备份仍可恢复。
-- 新桌面候选：`opencode-desktop/` 保存可重放覆盖层，`artifacts/opencode/` 为固定上游的短路径构建副本；旧 `desktop/` 不代表新产品。操作入口见 `opencode-desktop/README.md`。
-- CLI：Windows Credential Manager 存设备凭据；`%LOCALAPPDATA%/BotGo/Agent/codex` 为隔离配置。
-- 共用执行实现位于 `agent/lib/codex-runner.cjs`、`native.cjs`、`codex-config.cjs`；桌面打包复制这份实现及固定 Codex 二进制。
-- `dist/`、`desktop/dist/`、`agent/dist/`、`.tmp-*` 为产物；`.secrets/`、工具缓存和本地技能不提交。
-
-## 验证与维护
-
-执行 `npm test`、`npm run check`、`git diff --check`。静态检查不能替代真实登录、扣费、原生安装或视觉验收。
-
-文档使用 Obsidian wikilink；发布记录保存日期、操作、证据和限制，禁止把旧版本的成功描述成当前成功。保留数据库迁移、用户数据和 Git 历史；清理只针对确认冗余且已有承接说明的文件。
+Required local checks are `npm test`, `npm run check`, `git diff --check`, native build, and an actual isolated Electron render. Local tests do not prove production deployment, model probe success, signature availability, upload, or remote release publication.

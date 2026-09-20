@@ -1,7 +1,7 @@
 import { consumeLoginCode } from "./account-operations.js";
 import { connect } from "cloudflare:sockets";
 import { DesktopAuthError, approveDesktopWebAuthorization, cancelDesktopWebAuthorization, desktopCredentialFor, desktopRelayCredentialFor, desktopWebAuthorizationFor, exchangeDesktopWebAuthorization, executionKey, executionModelFromVerifiedKey, issueDesktopKey, revokeDesktopDevice, startDesktopWebAuthorization, validateExecutionModel } from "./desktop-auth.js";
-import { handlePlatformRoute, resolveUpstreamConfig } from "./platform-admin.js";
+import { handlePlatformRoute, resolveUpstreamCandidates } from "./platform-admin.js";
 import { conversationRoute, startConversationTurn, purgeExpiredConversations } from "./conversations.js";
 
 const encoder = new TextEncoder();
@@ -593,33 +593,35 @@ export default {
       const desktop=token?.startsWith('bgdt_')?await desktopCredentialFor(env,token):null;
       return json(publicCatalog(data,{autoReview:desktop?await autoReviewCapability(env,data):false}));
     }
+    if (path === '/chat/stream' || path === '/conversations' || path.startsWith('/conversations/')) {
+      return json({error:'网页对话已停用，请下载 BotGo 桌面客户端。'},410);
+    }
     if (path === '/conversations' || path.startsWith('/conversations/')) {
       const identity = await sessionFor(request, env);
       return await conversationRoute(request, env, identity?.sub, path) || json({error:'对话不存在。'},404);
     }
-    if (request.method === 'POST' && (path === '/v1/responses' || path === '/chat/stream')) {
-      const channel = path === '/chat/stream' ? 'web_chat' : 'desktop_codex';
-      const identity = channel === 'web_chat' ? await sessionFor(request, env) : await credentialFor(request, env, true);
+    if (request.method === 'POST' && path === '/v1/responses') {
+      const channel = 'desktop_codex';
+      const identity = await credentialFor(request, env, true);
       if (!identity) return json({error:'请先登录 BotGo。'},401);
       const body = await bodyOf(request);
-      if (!body || typeof body.model !== 'string' || (channel === 'web_chat' && !body.conversationId && !Array.isArray(body.messages))) return json({error:'请求不完整。'},400);
-      const upstream = await resolveUpstreamConfig(env, channel);
-      if (!upstream) return json({error:'上游服务尚未配置。'},503);
+      if (!body || typeof body.model !== 'string') return json({error:'请求不完整。'},400);
+      const candidates = await resolveUpstreamCandidates(env, channel);
+      if (!candidates.length) return json({error:'上游服务尚未配置。'},503);
       const accountId=identity.sub || identity.account_id;
       if(channel==='web_chat' && body.conversationId) {
         const turn=await startConversationTurn(env,accountId,body);
         if(turn.response)return turn.response;
         try {
           const headers=new Headers(request.headers);headers.set('idempotency-key',body.requestId);
-          const response=await meteredProxy(new Request(request.url,{method:request.method,headers,signal:request.signal}),env,ctx,{accountId,channel,body:turn.body,upstream,history:turn.history});
+          const response=await meteredProxy(new Request(request.url,{method:request.method,headers,signal:request.signal}),env,ctx,{accountId,channel,body:turn.body,candidates,history:turn.history});
           if(!response.ok)await turn.history.finish('failed');
           return response;
         } catch(error) {await turn.history.finish('failed');throw error;}
       }
-      return meteredProxy(request, env, ctx, {accountId, channel, body, upstream, billingModel: channel==='desktop_codex'?identity.model:null});
+      return meteredProxy(request, env, ctx, {accountId, channel, body, candidates, billingModel: channel==='desktop_codex'?identity.model:null});
     }
-    const agentRelease = await handleAgentRelease(request, env, path);
-    if (agentRelease) return agentRelease;
+    if (path.startsWith('/agent/releases/')) return json({error:'BotGo CLI 已停止发布，请使用桌面客户端。'},410);
     const platformResponse = await handlePlatformRoute(request, env, path, { activeAdminFor, audit, sessionFor });
     if (platformResponse) return platformResponse;
     if (request.method === "GET" && path === "/health") return json({ ok: true, service: "botgo-api" });

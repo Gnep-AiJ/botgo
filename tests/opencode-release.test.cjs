@@ -5,7 +5,7 @@ const prepare = fs.readFileSync('opencode-desktop/prepare.mjs', 'utf8');
 const installer = fs.readFileSync('opencode-desktop/installer.cjs', 'utf8');
 const authorize = fs.readFileSync('opencode-desktop/runtime/authorize.cjs', 'utf8');
 
-assert.match(prepare, /pkg\.version='1\.3\.0-preview\.1'/);
+assert.match(prepare, /pkg\.version='1\.3\.1'/);
 assert.match(prepare, /pkg\.name='@botgo\/desktop'/);
 assert.match(installer, /appId: 'com\.botgo\.desktop'/);
 assert.match(installer, /productName: 'BotGo Desktop'/);

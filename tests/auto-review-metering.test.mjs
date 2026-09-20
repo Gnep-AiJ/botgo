@@ -12,9 +12,9 @@ const price='{"input":1,"cached":0.1,"write":1,"output":4,"longThreshold":272000
 sql.prepare("INSERT INTO model_catalog(id,name,upstream_id,enabled,web_enabled,agent_enabled,price_json) VALUES(?,?,?,?,?,?,?)").run('gpt-5.6-sol','Sol','vendor-sol',1,0,1,price);
 sql.prepare("INSERT INTO model_catalog(id,name,upstream_id,enabled,web_enabled,agent_enabled,price_json) VALUES(?,?,?,?,?,?,?)").run('gpt-5.6-terra','Terra','vendor-terra',1,0,1,price);
 sql.prepare("INSERT INTO model_catalog(id,name,upstream_id,enabled,web_enabled,agent_enabled,price_json) VALUES(?,?,?,?,?,?,?)").run(AUTO_REVIEW_BILLING_MODEL_ID,'Luna','vendor-luna',1,0,1,price);
-sql.exec("INSERT INTO upstream_route_probes(profile_id,channel,model_id,status,metering_verified) VALUES('review-profile','desktop_codex','vendor-sol','ok',1)");
-sql.exec("INSERT INTO upstream_route_probes(profile_id,channel,model_id,status,metering_verified) VALUES('review-profile','desktop_codex','vendor-terra','ok',1)");
-sql.exec("INSERT INTO upstream_route_probes(profile_id,channel,model_id,status,metering_verified) VALUES('review-profile','desktop_codex','vendor-luna','ok',1)");
+sql.exec("INSERT INTO upstream_route_probes(profile_id,channel,model_id,protocol,status,metering_verified) VALUES('review-profile','desktop_codex','vendor-sol','responses','ok',1)");
+sql.exec("INSERT INTO upstream_route_probes(profile_id,channel,model_id,protocol,status,metering_verified) VALUES('review-profile','desktop_codex','vendor-terra','responses','ok',1)");
+sql.exec("INSERT INTO upstream_route_probes(profile_id,channel,model_id,protocol,status,metering_verified) VALUES('review-profile','desktop_codex','vendor-luna','responses','ok',1)");
 function statement(query){let values=[];return {bind(...args){values=args;return this;},async first(){return sql.prepare(query).get(...values)||null;},async all(){return {results:sql.prepare(query).all(...values)};},async run(){const result=sql.prepare(query).run(...values);return {meta:{changes:Number(result.changes)}};}};}
 const env={AUTO_REVIEW_ENABLED:'1',DB:{prepare:statement,async batch(statements){sql.exec('BEGIN');try{const results=[];for(const item of statements)results.push(await item.run());sql.exec('COMMIT');return results;}catch(error){sql.exec('ROLLBACK');throw error;}}}};
 
@@ -54,7 +54,7 @@ try{
   assert.equal(pending.state,'review');assert.equal(pending.charged_micros,0,'missing reviewer usage releases the reservation and requires reconciliation');
   assert.equal(await autoReviewCapability(env,await catalog(env)),false,'runtime usage failure closes the capability');
 
-  sql.prepare("UPDATE model_catalog SET enabled=1 WHERE id=?").run(AUTO_REVIEW_BILLING_MODEL_ID);
+  sql.exec("UPDATE metered_requests SET reviewed_at=CURRENT_TIMESTAMP,review_note='verified in test' WHERE id='review-account:desktop_codex:auto-review-missing-usage'");
   sql.exec("UPDATE accounts SET credit_balance=0,credit_remainder_micros=0,billing_blocked=0 WHERE id='review-account'");
   includeUsage=true;
   const insufficient=await meteredProxy(new Request('https://botgo.test/v1/responses',{method:'POST',headers:{'idempotency-key':'auto-review-insufficient-123'}}),env,{waitUntil:promise=>jobs.push(promise)},{...base,body:{model:AUTO_REVIEW_BILLING_MODEL_ID,input:'review'}});

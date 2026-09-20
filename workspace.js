@@ -409,7 +409,7 @@
       if (!data || data === "[DONE]") return;
       try {
         const payload = JSON.parse(data);
-        const delta = payload.choices?.[0]?.delta?.content;
+        const delta = payload.choices?.[0]?.delta?.content || (payload.type === 'response.output_text.delta' ? payload.delta : '');
         if (delta) { const follow=nearBottom();answer += delta;target.textContent = answer;if(follow)scrollArea.scrollTop=scrollArea.scrollHeight;else latestButton.hidden=false; }
       } catch { /* 忽略上游 SSE 保活事件。 */ }
     };
@@ -461,7 +461,14 @@
         if(response.status===401 && requestEpoch===historyEpoch){clearWebSession();}
         throw new Error(body.error || "对话请求未完成。");
       }
-      const answer = await consumeStream(response, responseNode, requestEpoch);
+      const type=response.headers.get('content-type')||'';
+      let answer;
+      if(type.includes('text/event-stream'))answer=await consumeStream(response,responseNode,requestEpoch);
+      else if(type.includes('application/json')){
+        const result=await response.json();
+        answer=result.choices?.[0]?.message?.content||result.output_text||result.output?.flatMap(item=>item.content||[]).filter(item=>item.type==='output_text').map(item=>item.text).join('')||'';
+        if(!answer&&result.error)throw new Error(result.error);
+      }else throw new Error('上游返回了不支持的响应格式。');
       if(requestEpoch!==historyEpoch)return;
       if (answer) {messages.push({ role: "assistant", content: answer, model:requestModel });finishMessage(answer);}
       else responseNode.textContent = "模型没有返回内容，请重试。";

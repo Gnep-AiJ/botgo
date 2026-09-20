@@ -334,8 +334,8 @@ async function returnPage(request, env, helpers) {
     try { current = (await queryForOrder(env, order)).order; } catch { /* query fallback is retried by the client */ }
   }
   const status = current?.status === "paid" ? "支付结果已确认" : current?.status === "closed" ? "订单已关闭" : "正在确认支付结果";
-  const detail = current ? `订单 ${htmlEscape(current.out_trade_no)}：${status}。` : "请返回 BotGo，在账户页面查询订单状态。";
-  const returnPath = current?.out_trade_no ? `/workspace.html?view=subscription&out_trade_no=${encodeURIComponent(current.out_trade_no)}` : "/workspace.html?view=subscription";
+  const detail = current ? `订单 ${htmlEscape(current.out_trade_no)}：${status}。` : "请返回 BotGo，在首页账户窗口查询订单状态。";
+  const returnPath = current?.out_trade_no ? `/index.html?panel=recharge&out_trade_no=${encodeURIComponent(current.out_trade_no)}` : "/index.html?panel=recharge";
   return new Response(`<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BotGo 支付结果</title><body style="font-family:system-ui,sans-serif;max-width:42rem;margin:4rem auto;padding:0 1.25rem;color:#172033"><h1>${htmlEscape(status)}</h1><p>${detail}</p><p><a href="${htmlEscape(returnPath)}">返回 BotGo 账户</a></p></body></html>`, {
     status: current ? 200 : 404,
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" }

@@ -48,13 +48,20 @@ try{
   const missing=await meteredProxy(new Request('https://botgo.test/'),env,ctx,options);await missing.text();await Promise.all(jobs);
   assert.equal(balance(),9998740,'missing usage does not invent a charge');
   assert.equal(sql.prepare("SELECT enabled FROM model_catalog WHERE id=?").get(route.model_id).enabled,1,'upstream issue must not disable the global model');
-  assert.equal(availableAgentRoutes(await agentRoutes(env)).length,1,'unrelated Responses model remains available');
-  const blocked=await meteredProxy(new Request('https://botgo.test/'),env,ctx,options);assert.equal(blocked.status,503);
+  assert.equal(availableAgentRoutes(await agentRoutes(env)).length,2,'missing usage does not globally remove an otherwise verified Agent route');
+  const blocked=await meteredProxy(new Request('https://botgo.test/'),env,ctx,options);assert.equal(blocked.status,402,'the account that owns a review remains restricted without globally disabling the route');
   sql.exec('DELETE FROM agent_route_health');
+  sql.exec("UPDATE metered_requests SET state='refunded' WHERE account_id='a' AND state='review'; UPDATE accounts SET billing_blocked=0 WHERE id='a'");
+  const cancelledId='cancelled-stream';
+  sql.prepare("INSERT INTO metered_requests(id,account_id,channel,model,snapshot,reserved_micros) VALUES(?,'a','desktop_opencode',?,?,1)")
+    .run(cancelledId,route.model_id,JSON.stringify({billingModel:route.model_id,profileId:'p',agentProtocol:'chat'}));
+  await settle(env,cancelledId,null,{billingModel:route.model_id,profileId:'p',agentProtocol:'chat'},'review',false);
+  assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM agent_route_health').get().n,0,'a client-cancelled stream must not block the upstream route');
   const denied=await handleAgentAdmin(new Request('https://botgo.test/',{method:'PUT',body:JSON.stringify({profileId:'q',protocol:'chat',enabled:true})}),env,'/admin/opencode/models/gpt-5.6-sol',{id:'a'},async()=>{});
   assert.equal(denied.status,409,'cannot enable a changed unverified route');
   const saved=await handleAgentAdmin(new Request('https://botgo.test/',{method:'PUT',body:JSON.stringify({profileId:'q',protocol:'chat',enabled:false})}),env,'/admin/opencode/models/gpt-5.6-sol',{id:'a'},async()=>{});
   assert.equal(saved.status,200);assert.equal(sql.prepare('SELECT verified_at FROM agent_model_routes WHERE model_id=?').get(route.model_id).verified_at,null);
+  assert.equal((await agentRoutes(env)).find(item=>item.model_id===route.model_id).enabled,0,'route state is not replaced by its selected member state');
   const unauth=await handleOpenCode(new Request('https://botgo.test/opencode/v1/models'),env,ctx,'/opencode/v1/models');assert.equal(unauth.status,401);
   const reserve=id=>sql.prepare("INSERT INTO metered_requests(id,account_id,channel,model,snapshot,reserved_micros) VALUES(?,'b','desktop_opencode','gpt-5.6-sol','{}',1)").run(id);
   for(let n=0;n<3;n++){
@@ -71,11 +78,21 @@ try{
   const encrypted=await encryptSecret('fixture-upstream-secret',env);
   sql.prepare('UPDATE upstream_profiles SET api_key_ciphertext=?,api_key_iv=? WHERE id=?').run(encrypted.ciphertext,encrypted.iv,'p');
   assert.equal(sql.prepare("SELECT verified_at FROM agent_model_routes WHERE model_id='gpt-5.6-terra'").get().verified_at,null,'credential changes invalidate prior probes');
-  sql.exec("UPDATE agent_model_routes SET profile_id='p',enabled=1,verified_at=CURRENT_TIMESTAMP WHERE model_id='gpt-5.6-sol'");
+  // Sol is in the catalog but is absent from the native session until its own route is verified and enabled.
+  sql.exec("UPDATE agent_model_routes SET enabled=0,verified_at=NULL WHERE model_id='gpt-5.6-sol'");
+  sql.exec("UPDATE agent_model_routes SET enabled=1,verified_at=CURRENT_TIMESTAMP WHERE model_id='gpt-5.6-terra'");
   const device='bgdt_fixturedevice',hash=Buffer.from(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(device))).toString('base64url');
   sql.prepare("INSERT INTO device_tokens(token_hash,account_id,label,expires_at) VALUES(?,'a','fixture',?)").run(hash,new Date(Date.now()+86400000).toISOString());
-  const sessionResponse=await handleOpenCode(new Request('https://botgo.test/desktop/opencode/session',{method:'POST',headers:{authorization:'Bearer '+device}}),env,ctx,'/desktop/opencode/session');
-  assert.equal(sessionResponse.status,201);const session=await sessionResponse.json();assert.ok(session.key.startsWith('bgk_'));assert.equal(session.models.length,1);
+  const sessionRequest=()=>new Request('https://botgo.test/desktop/opencode/session',{method:'POST',headers:{authorization:'Bearer '+device}});
+  const hiddenSessionResponse=await handleOpenCode(sessionRequest(),env,ctx,'/desktop/opencode/session');
+  assert.equal(hiddenSessionResponse.status,201);const hiddenSession=await hiddenSessionResponse.json();assert.ok(hiddenSession.key.startsWith('bgk_'));assert.equal(hiddenSession.models.some(model=>model.id==='gpt-5.6-sol'),false,'unverified or disabled Sol is never returned to a native session');
+  const hiddenModels=await handleOpenCode(new Request('https://botgo.test/opencode/v1/models',{headers:{authorization:'Bearer '+hiddenSession.key}}),env,ctx,'/opencode/v1/models');
+  assert.equal(hiddenModels.status,200);assert.equal((await hiddenModels.json()).data.some(model=>model.id==='gpt-5.6-sol'),false,'unverified or disabled Sol is never listed by the native models endpoint');
+  sql.exec("UPDATE model_catalog SET enabled=1 WHERE id='gpt-5.6-sol'; UPDATE agent_model_routes SET profile_id='p',enabled=1,verified_at=CURRENT_TIMESTAMP WHERE model_id='gpt-5.6-sol'");
+  const sessionResponse=await handleOpenCode(sessionRequest(),env,ctx,'/desktop/opencode/session');
+  assert.equal(sessionResponse.status,201);const session=await sessionResponse.json();assert.ok(session.key.startsWith('bgk_'));assert.equal(session.models.some(model=>model.id==='gpt-5.6-sol'),true,'verified enabled Sol is returned to a native session');
+  const visibleModels=await handleOpenCode(new Request('https://botgo.test/opencode/v1/models',{headers:{authorization:'Bearer '+session.key}}),env,ctx,'/opencode/v1/models');
+  assert.equal(visibleModels.status,200);assert.equal((await visibleModels.json()).data.some(model=>model.id==='gpt-5.6-sol'),true,'verified enabled Sol is listed by the native models endpoint');
   assert.equal(JSON.stringify(session).includes('fixture-upstream-secret'),false,'upstream key never reaches client');
   globalThis.fetch=async(url,init)=>{
     assert.equal(url,'https://upstream.invalid/v1/chat/completions');assert.equal(init.headers.authorization,'Bearer fixture-upstream-secret');

@@ -23,7 +23,7 @@ function createAppServerRunner(settings = {}) {
     });
     connection = current;
     connecting = (async () => {
-      await current.rpc('initialize', { clientInfo: { name: 'botgo_desktop', title: 'BotGo Desktop', version: '1.2.1-preview.9' }, capabilities: { experimentalApi: true } });
+      await current.rpc('initialize', { clientInfo: { name: 'botgo_agent', title: 'BotGo Agent', version: '1.3.1' }, capabilities: { experimentalApi: true } });
       current.send({ method: 'initialized' });
     })();
     try { await connecting; } catch (error) { current.close(error.message); throw error; }

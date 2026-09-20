@@ -72,13 +72,14 @@ export async function startConversationTurn(env,accountId,body) {
     if(!text)return;
     const item=JSON.parse(text),choice=item.choices?.[0];
     if(typeof choice?.delta?.content==='string')answer+=choice.delta.content;
-    if(choice?.finish_reason)terminal=true;
+    if(item.type==='response.output_text.delta'&&typeof item.delta==='string')answer+=item.delta;
+    if(choice?.finish_reason||['response.completed','response.failed','response.incomplete'].includes(item.type))terminal=true;
     if(answer.length>4000000)throw new Error('RESPONSE_TOO_LARGE');
   };
   const history={
     async push(bytes){buffer+=decoder.decode(bytes,{stream:true});let at;while((at=buffer.indexOf('\n'))>=0){line(buffer.slice(0,at).replace(/\r$/,''));buffer=buffer.slice(at+1);}if(buffer.length>2*1024*1024)throw new Error('SSE_FRAME_TOO_LARGE');if(Date.now()-lastSave>1000)await save();},
     async finish(state){buffer+=decoder.decode();try{if(buffer)line(buffer);}catch{state='failed';}buffer='';await save(state==='completed'&&!terminal?'stopped':state);},
-    async result(result){answer=result.choices?.[0]?.message?.content||'';terminal=true;await save('completed');}
+    async result(result){answer=result.choices?.[0]?.message?.content||result.output_text||result.output?.flatMap(item=>item.content||[]).filter(item=>item.type==='output_text').map(item=>item.text).join('')||'';terminal=true;await save('completed');}
   };
   try {
     const rows=await env.DB.prepare("SELECT content,answer FROM web_chat_turns WHERE conversation_id=? AND request_id<>? AND state IN ('completed','stopped') AND created_at>datetime('now','-30 days') ORDER BY rowid").bind(body.conversationId,body.requestId).all();

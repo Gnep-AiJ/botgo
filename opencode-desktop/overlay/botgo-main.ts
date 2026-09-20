@@ -12,6 +12,9 @@ export type BotGoState = { status: "signed-out" | "connecting" | "waiting" | "re
 
 export function createBotGo() {
   const origin = "https://botgo.win"
+  // The isolated Electron smoke test has no device credential and never ships.
+  // Its fake state permits renderer checks without touching account data or network.
+  const nativeSmoke = process.env.BOTGO_NATIVE_SMOKE === "1" && !app.isPackaged
   const storage = credentialModule.createCredentialStore({ filePath: join(app.getPath("userData"), "device.enc"), safeStorage })
   let state: BotGoState = { status: "signed-out" }
   let bridge: Awaited<ReturnType<typeof bridgeModule.createBridge>> | undefined
@@ -27,6 +30,10 @@ export function createBotGo() {
 
   async function connect() {
     stage = "storage"
+    if (nativeSmoke) {
+      state = { status: "ready", email: "native-smoke@invalid", balanceMicros: 12000000 }
+      return
+    }
     const credential = storage.load()
     if (!credential?.deviceToken) return
     state = { status: "connecting" }
@@ -42,7 +49,6 @@ export function createBotGo() {
     process.env.BOTGO_MANAGED_CONFIG = JSON.stringify(bridge.config())
     process.env.OPENCODE_CONFIG_CONTENT = process.env.BOTGO_MANAGED_CONFIG
     state = { status: "ready", email: account.email, balanceMicros: account.balanceMicros }
-    ready.resolve()
   }
   function error(error: unknown) {
     write("botgo-auth", "sign-in failed", diagnosticModule.diagnostic(error, stage), "warn")
@@ -69,17 +75,39 @@ export function createBotGo() {
       stage = "authorize-exchange"
       state = { status: "waiting", url: authorization.url }
       void shell.openExternal(authorization.url).catch(() => undefined)
-      void authorization.done.then(() => connect()).catch(error).finally(() => { authorization = undefined })
+      void authorization.done
+        .then(async () => {
+          await connect()
+          // The local service reads its managed model configuration on startup.
+          // Restart only after an approved device credential has been saved so the
+          // next process starts that service with the account configuration.
+          if (state.status === "ready") {
+            app.relaunch()
+            app.quit()
+          }
+        })
+        .catch(error)
+        .finally(() => { authorization = undefined })
     })().catch(error).finally(() => { pending = undefined })
     await pending
     return { ...state }
   }
-  async function initialize() { await connect().catch(error) }
+  // A first launch has no saved credential. Resolving after that storage check
+  // lets the local service and sign-in renderer start, instead of waiting for a
+  // sign-in action that cannot be shown yet.
+  async function initialize() {
+    try { await connect() }
+    catch (failure) { error(failure) }
+    finally { ready.resolve() }
+  }
   app.once("before-quit", () => { authorization?.cancel(); void bridge?.close() })
   return {
     ready: ready.promise, initialize, login,
+    // Main process only. The device token is never exposed through preload.
+    deviceToken: () => storage.load()?.deviceToken,
     state: () => ({ ...state }),
     async account() {
+      if (nativeSmoke) return { email: "native-smoke@invalid", balanceMicros: 12000000 }
       const credential = storage.load()
       if (!credential?.deviceToken) throw Error("No device credential")
       const response = await fetch(`${origin}/api/desktop/account`, { redirect: "error",

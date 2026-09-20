@@ -5,17 +5,32 @@ import { resolveProfileConfig } from './platform-admin.js';
 const reply = (data, status=200) => Response.json(data, {status, headers:{'cache-control':'no-store'}});
 const bearer = request => request.headers.get('authorization')?.replace(/^Bearer\s+/i,'') || '';
 const protocols = new Set(['chat','responses']);
+const usableMember = member => Boolean(member.enabled&&member.verified_at&&!member.blocked_reason);
 
 export async function agentRoutes(env) {
-  return (await env.DB.prepare(`SELECT r.*, m.name, m.upstream_id, m.price_json, m.multiplier_ppm,
+  const routes=(await env.DB.prepare(`SELECT r.*, m.name, m.upstream_id, m.price_json, m.multiplier_ppm,
     m.enabled AS model_enabled, m.agent_enabled, h.reason AS blocked_reason
     FROM agent_model_routes r JOIN model_catalog m ON m.id=r.model_id
     LEFT JOIN agent_route_health h ON h.model_id=r.model_id AND h.profile_id=r.profile_id AND h.protocol=r.protocol
     WHERE m.archived=0`).all()).results || [];
+  const members=(await env.DB.prepare(`SELECT a.model_id,a.profile_id,a.upstream_model_id,a.enabled,a.verified_at,a.priority,a.revision,
+    p.name AS profile_name,p.base_url,p.max_concurrency,COUNT(l.id) AS active_requests,h.reason AS blocked_reason
+    FROM agent_route_members a JOIN upstream_profiles p ON p.id=a.profile_id
+    JOIN agent_model_routes r ON r.model_id=a.model_id
+    LEFT JOIN upstream_leases l ON l.profile_id=a.profile_id AND l.state='active' AND l.expires_at>CURRENT_TIMESTAMP
+    LEFT JOIN agent_route_health h ON h.model_id=a.model_id AND h.profile_id=a.profile_id AND h.protocol=r.protocol
+    GROUP BY a.model_id,a.profile_id,a.upstream_model_id,a.enabled,a.verified_at,a.priority,a.revision,p.name,p.base_url,p.max_concurrency,h.reason
+    ORDER BY a.model_id,(COUNT(l.id)*1.0/p.max_concurrency),a.priority,a.profile_id`).all()).results||[];
+  return routes.map(route=>{
+    let routeMembers=members.filter(member=>member.model_id===route.model_id).map(member=>({...member,max_concurrency:Number(member.max_concurrency)||5,active_requests:Number(member.active_requests)||0}));
+    if(!routeMembers.some(member=>member.profile_id===route.profile_id))routeMembers.unshift({model_id:route.model_id,profile_id:route.profile_id,enabled:1,verified_at:route.verified_at,priority:100,revision:route.revision,max_concurrency:5,active_requests:0,blocked_reason:route.blocked_reason||null});
+    const primary=routeMembers.find(member=>member.profile_id===route.profile_id)||routeMembers[0];
+    return {...route,...primary,enabled:route.enabled,profile_id:primary?.profile_id||route.profile_id,members:routeMembers};
+  });
 }
 
 export function availableAgentRoutes(routes) {
-  return routes.filter(r=>r.enabled && r.model_enabled && r.agent_enabled && r.verified_at && !r.blocked_reason);
+  return routes.filter(r=>r.enabled && r.model_enabled && r.agent_enabled && r.members?.some(usableMember));
 }
 
 export async function handleOpenCode(request, env, ctx, path) {
@@ -57,11 +72,16 @@ export async function handleOpenCode(request, env, ctx, path) {
     if(identity.model && identity.model!==body.model)return reply({error:'凭据不允许访问该模型。'},403);
     const route=availableAgentRoutes(await agentRoutes(env)).find(r=>r.model_id===body.model && r.protocol===protocol);
     if(!route)return reply({error:'模型或协议未启用，或上游用量需要核对。'},503);
-    const upstream=await resolveProfileConfig(env,route.profile_id);
-    if(!upstream)return reply({error:'上游配置不可用。'},503);
+    const members=route.members.filter(usableMember)
+      .sort((a,b)=>(a.active_requests/a.max_concurrency)-(b.active_requests/b.max_concurrency)||a.priority-b.priority);
+    const candidates=(await Promise.all(members.map(async member=>{
+      const upstream=await resolveProfileConfig(env,member.profile_id);
+      return upstream?{...upstream,upstreamModelId:member.upstream_model_id||route.upstream_id,activeLeases:member.active_requests,maxConcurrency:member.max_concurrency}:null;
+    }))).filter(Boolean);
+    if(!candidates.length)return reply({error:'上游配置不可用。'},503);
     const taskId=request.headers.get('x-botgo-task-id');
     if(taskId && !/^[A-Za-z0-9_-]{1,128}$/.test(taskId))return reply({error:'任务标识无效。'},400);
-    return await meteredProxy(request,env,ctx,{accountId:identity.account_id,channel:'desktop_opencode',body,upstream,
+    return await meteredProxy(request,env,ctx,{accountId:identity.account_id,channel:'desktop_opencode',body,candidates,
       agentRoute:route,taskId:taskId||null});
   } catch(error) {
     if(error?.status)return reply({error:error.message},error.status);
@@ -113,34 +133,53 @@ export async function handleAgentAdmin(request,env,path,admin,audit) {
   if(match[2] && request.method==='POST'){
     const route=(await agentRoutes(env)).find(r=>r.model_id===match[1]);
     if(!route)return reply({error:'请先保存路由。'},404);
+    const body=await request.json().catch(()=>null),profileId=String(body?.profileId||route.profile_id||'');
+    if(body?.protocol&&body.protocol!==route.protocol)return reply({error:'协议尚未保存，请先保存禁用草稿后再探测。',code:'STALE_DRAFT'},409);
+    const member=route.members.find(item=>item.profile_id===profileId);
+    if(!member)return reply({error:'路由成员不存在。'},404);
     try{
-      await probeAgentRoute(env,route,route.upstream_id);
+      await probeAgentRoute(env,{...route,profile_id:profileId},member.upstream_model_id||route.upstream_id);
       const changes=await env.DB.batch([
-        env.DB.prepare("UPDATE agent_model_routes SET verified_at=CURRENT_TIMESTAMP WHERE model_id=? AND revision=?").bind(route.model_id,route.revision),
-        env.DB.prepare('DELETE FROM agent_route_health WHERE model_id=? AND profile_id=? AND protocol=? AND EXISTS(SELECT 1 FROM agent_model_routes WHERE model_id=? AND revision=? AND verified_at IS NOT NULL)').bind(route.model_id,route.profile_id,route.protocol,route.model_id,route.revision)
+        env.DB.prepare("UPDATE agent_route_members SET verified_at=CURRENT_TIMESTAMP,revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE model_id=? AND profile_id=? AND revision=?").bind(route.model_id,profileId,member.revision),
+        env.DB.prepare("UPDATE agent_model_routes SET verified_at=CURRENT_TIMESTAMP WHERE model_id=?").bind(route.model_id),
+        env.DB.prepare('DELETE FROM agent_route_health WHERE model_id=? AND profile_id=? AND protocol=?').bind(route.model_id,profileId,route.protocol)
       ]);
       if(!changes[0].meta?.changes)return reply({error:'测试期间配置已变化，请重新测试。'},409);
-      await audit(env,admin.id,'opencode_route_verified',{model:route.model_id,revision:route.revision});return reply({ok:true});
-    }catch{
-      await env.DB.prepare('UPDATE agent_model_routes SET verified_at=NULL,enabled=0 WHERE model_id=? AND revision=?').bind(route.model_id,route.revision).run();
-      await audit(env,admin.id,'opencode_route_probe_failed',{model:route.model_id});return reply({error:'流式工具调用、续接或 usage 验证失败。'},502);
+      await audit(env,admin.id,'opencode_route_member_verified',{model:route.model_id,profileId});return reply({ok:true});
+    }catch(error){
+      await env.DB.batch([
+        env.DB.prepare('UPDATE agent_route_members SET verified_at=NULL WHERE model_id=? AND profile_id=?').bind(route.model_id,profileId),
+        env.DB.prepare('UPDATE agent_model_routes SET verified_at=(SELECT MAX(verified_at) FROM agent_route_members WHERE model_id=?) WHERE model_id=?').bind(route.model_id,route.model_id)
+      ]);
+      const code=/^(HTTP_\d+|EXPECTED_SSE|MISSING_TOOL|PROBE_SIZE|MISSING_USAGE)$/.test(String(error?.message))?error.message:'PROBE_FAILED';
+      await audit(env,admin.id,'opencode_route_probe_failed',{model:route.model_id,profileId,code});return reply({error:`原生能力探测失败（${code}）。`,code,stage:'tool_or_usage'},502);
     }
   }
   if(request.method!=='PUT')return reply({error:'方法不支持。'},405);
   const body=await request.json().catch(()=>null);
   if(!body||!protocols.has(body.protocol)||typeof body.enabled!=='boolean')return reply({error:'路由配置无效。'},400);
   const model=await env.DB.prepare('SELECT id FROM model_catalog WHERE id=? AND archived=0').bind(match[1]).first();
-  const profile=await env.DB.prepare('SELECT id FROM upstream_profiles WHERE id=?').bind(body.profileId).first();
-  if(!model||!profile)return reply({error:'模型或上游不存在。'},400);
+  const members=Array.isArray(body.members)?body.members.map(item=>({profileId:String(item?.profileId||''),upstreamModelId:String(item?.upstreamModelId||''),enabled:item?.enabled!==false,priority:Number.isInteger(item?.priority)?item.priority:100})):body.profileId?[{profileId:String(body.profileId),upstreamModelId:'',enabled:true,priority:100}]:[];
+  if(!model||!members.length||members.length>50||new Set(members.map(item=>item.profileId)).size!==members.length||members.some(item=>item.upstreamModelId&&!/^[A-Za-z0-9._:/-]{1,128}$/.test(item.upstreamModelId)))return reply({error:'模型或上游成员无效。'},400);
+  for(const member of members)if(!await env.DB.prepare('SELECT id FROM upstream_profiles WHERE id=?').bind(member.profileId).first())return reply({error:'模型或上游不存在。'},400);
   const old=(await agentRoutes(env)).find(r=>r.model_id===match[1]);
-  const unchanged=old?.profile_id===body.profileId && old?.protocol===body.protocol;
-  if(body.enabled&&(!unchanged||!old.verified_at||old.blocked_reason))return reply({error:'请保存禁用配置，通过探测后再启用。'},409);
+  const unchangedProtocol=old?.protocol===body.protocol;
+  const verifiedMember=unchangedProtocol&&members.some(member=>member.enabled&&old?.members?.some(existing=>existing.profile_id===member.profileId&&(!member.upstreamModelId||member.upstreamModelId===(existing.upstream_model_id||old.upstream_id))&&usableMember(existing)));
+  if(body.enabled&&!verifiedMember)return reply({error:'请先保存禁用配置，并至少通过一个成员探测后再启用。'},409);
   const cost=body.costPrice||null;
   if(cost&&!['input','cached','write','output'].every(k=>Number.isFinite(cost[k])&&cost[k]>=0&&cost[k]<=10000000))return reply({error:'成本单价无效，单位为美元/百万 token。'},400);
-  await env.DB.prepare(`INSERT INTO agent_model_routes(model_id,profile_id,protocol,enabled,cost_price_json) VALUES(?,?,?,?,?)
+  const primary=members.find(member=>member.enabled)||members[0];
+  const statements=[env.DB.prepare(`INSERT INTO agent_model_routes(model_id,profile_id,protocol,enabled,cost_price_json) VALUES(?,?,?,?,?)
     ON CONFLICT(model_id) DO UPDATE SET profile_id=excluded.profile_id,protocol=excluded.protocol,enabled=excluded.enabled,
-    verified_at=CASE WHEN agent_model_routes.profile_id=excluded.profile_id AND agent_model_routes.protocol=excluded.protocol THEN verified_at ELSE NULL END,
-    cost_price_json=excluded.cost_price_json,revision=revision+1,updated_at=CURRENT_TIMESTAMP`).bind(match[1],body.profileId,body.protocol,body.enabled?1:0,cost?JSON.stringify(cost):null).run();
-  await audit(env,admin.id,'opencode_route_changed',{model:match[1],profileId:body.profileId,protocol:body.protocol,enabled:body.enabled});
+    verified_at=CASE WHEN ? THEN verified_at ELSE NULL END,
+    cost_price_json=excluded.cost_price_json,revision=revision+1,updated_at=CURRENT_TIMESTAMP`).bind(match[1],primary.profileId,body.protocol,body.enabled?1:0,cost?JSON.stringify(cost):null,verifiedMember?1:0),
+    env.DB.prepare(`DELETE FROM agent_route_members WHERE model_id=? AND profile_id NOT IN (${members.map(()=>'?').join(',')})`).bind(match[1],...members.map(member=>member.profileId))];
+  for(const member of members)statements.push(env.DB.prepare(`INSERT INTO agent_route_members(model_id,profile_id,upstream_model_id,enabled,priority) VALUES(?,?,?,?,?)
+    ON CONFLICT(model_id,profile_id) DO UPDATE SET upstream_model_id=excluded.upstream_model_id,enabled=excluded.enabled,priority=excluded.priority,
+    verified_at=CASE WHEN ? AND COALESCE(agent_route_members.upstream_model_id,'')=COALESCE(excluded.upstream_model_id,'') THEN agent_route_members.verified_at ELSE NULL END,revision=agent_route_members.revision+1,updated_at=CURRENT_TIMESTAMP`).bind(match[1],member.profileId,member.upstreamModelId||null,member.enabled?1:0,member.priority,unchangedProtocol?1:0));
+  if(body.enabled)statements.push(env.DB.prepare('UPDATE model_catalog SET agent_enabled=1 WHERE id=?').bind(match[1]));
+  if(!unchangedProtocol)statements.push(env.DB.prepare('DELETE FROM agent_route_health WHERE model_id=?').bind(match[1]));
+  await env.DB.batch(statements);
+  await audit(env,admin.id,'opencode_route_pool_changed',{model:match[1],profileIds:members.map(member=>member.profileId),protocol:body.protocol,enabled:body.enabled});
   return reply({ok:true});
 }

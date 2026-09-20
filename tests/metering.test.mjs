@@ -40,8 +40,8 @@ assert.equal(balance(),0);assert.equal(account().billing_reserved_micros,0);asse
 assert.equal(sql.prepare("SELECT state FROM metered_requests WHERE id='overrun'").get().state,'review');
 sql.exec("UPDATE accounts SET credit_balance=1000,billing_blocked=0 WHERE id='test'");
 for(const model of MODEL_SEEDS)sql.prepare('INSERT INTO model_catalog(id,name,upstream_id,price_json,enabled,web_enabled,agent_enabled) VALUES(?,?,?,?,?,?,?)').run(model.id,model.name,model.id,JSON.stringify(model.price),model===MODEL_SEEDS[0]?1:0,1,1);
-sql.exec("INSERT INTO upstream_profiles(id,name,base_url,api_key_ciphertext,api_key_iv,key_hint) VALUES('test-profile','test','https://upstream.invalid/v1','unused','unused','test')");
-sql.exec("INSERT INTO upstream_route_probes(profile_id,channel,model_id,status,metering_verified) VALUES('test-profile','web_chat','gpt-5.6-sol','ok',1)");
+sql.exec("INSERT INTO upstream_profiles(id,name,base_url,api_key_ciphertext,api_key_iv,key_hint,max_concurrency) VALUES('test-profile','test','https://upstream.invalid/v1','unused','unused','test',1),('test-profile-2','test-2','https://upstream-2.invalid/v1','unused','unused','test',1)");
+sql.exec("INSERT INTO upstream_route_probes(profile_id,channel,model_id,status,metering_verified) VALUES('test-profile','web_chat','gpt-5.6-sol','ok',1),('test-profile-2','web_chat','gpt-5.6-sol','ok',1)");
 const originalFetch=globalThis.fetch;let calls=0;const jobs=[];
 globalThis.fetch=async(_url,init)=>{calls++;const payload=JSON.parse(init.body);assert.equal(payload.model,'gpt-5.6-sol');assert.equal(payload.stream_options.include_usage,true);return new Response('data: {"choices":[{"delta":{"content":"OK"}}]}\n\ndata: {"usage":{"prompt_tokens":1000,"completion_tokens":100}}\n\ndata: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}});};
 const makeRequest=()=>new Request('https://botgo.test/chat/stream',{method:'POST',headers:{'idempotency-key':'same-request-123456'}});
@@ -53,17 +53,49 @@ try{
   assert.equal(response.status,200);assert.match(await response.text(),/OK/);await Promise.all(jobs);assert.equal(balance(),9987400);
   assert.equal(sql.prepare('SELECT answer FROM web_chat_turns WHERE request_id=?').get('same-request-123456').answer,'OK');
   assert.equal(sql.prepare('SELECT state FROM web_chat_turns WHERE request_id=?').get('same-request-123456').state,'completed');
+  sql.prepare("UPDATE upstream_route_probes SET protocol='responses' WHERE profile_id='test-profile' AND channel='web_chat'").run();
+  const responseCandidate={...options.upstream,protocol:'responses',upstreamModelId:snapshot.model};
+  globalThis.fetch=async(url,init)=>{assert.match(url,/\/responses$/);const payload=JSON.parse(init.body);assert.equal(payload.input.at(-1).content,'responses');assert.equal(payload.messages,undefined);return new Response('data: {"type":"response.output_text.delta","delta":"OK"}\n\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":0,"output_tokens":0}}}\n\n',{headers:{'content-type':'text/event-stream'}});};
+  const responsesTurn=await startConversationTurn(env,'test',{conversationId,requestId:'responses-stream-123456',content:'responses',model:snapshot.model});
+  const responsesResult=await meteredProxy(new Request('https://botgo.test/chat/stream'),env,{waitUntil:p=>jobs.push(p)},{...options,upstream:responseCandidate,body:responsesTurn.body,history:responsesTurn.history});
+  assert.equal(responsesResult.status,200);await responsesResult.text();await Promise.all(jobs);
+  assert.equal(sql.prepare('SELECT answer FROM web_chat_turns WHERE request_id=?').get('responses-stream-123456').answer,'OK');
+  sql.prepare("UPDATE upstream_route_probes SET protocol='chat' WHERE profile_id='test-profile' AND channel='web_chat'").run();
   const duplicate=await meteredProxy(makeRequest(),env,{waitUntil:p=>jobs.push(p)},options);assert.equal(duplicate.status,409);assert.equal(calls,1);assert.equal(account().billing_reserved_micros,0);
+  // A full first profile is skipped atomically; the same endpoint with another key/profile is an independent candidate.
+  reserve('held-profile-slot',1);
+  sql.prepare("INSERT INTO upstream_leases(id,request_id,account_id,profile_id,expires_at) VALUES('held-lease','held-profile-slot','test','test-profile',datetime('now','+5 minutes'))").run();
+  const pool=[options.upstream,{profileId:'test-profile-2',baseUrl:'https://upstream-2.invalid/v1',apiKey:'second-key'}];
+  globalThis.fetch=async(url)=>{assert.equal(url,'https://upstream-2.invalid/v1/chat/completions');return new Response('data: {"usage":{"prompt_tokens":0,"completion_tokens":0}}\n\ndata: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}});};
+  const balanced=await meteredProxy(new Request('https://botgo.test/chat/stream',{headers:{'idempotency-key':'capacity-route-123456'}}),env,{waitUntil:p=>jobs.push(p)},{...options,candidates:pool,upstream:null});
+  assert.equal(balanced.status,200);await balanced.text();await Promise.all(jobs);
+  assert.equal(sql.prepare("SELECT json_extract(snapshot,'$.profileId') AS profile FROM metered_requests WHERE id=?").get('test:web_chat:capacity-route-123456').profile,'test-profile-2');
+  await settle(env,'held-profile-slot',null,snapshot,'refunded');
+  // 429 before any response bytes retries the next independently keyed member.
+  const attempted=[];globalThis.fetch=async(url)=>{attempted.push(url);if(url.includes('upstream.invalid'))return new Response('',{status:429});return new Response('data: {"usage":{"prompt_tokens":0,"completion_tokens":0}}\n\ndata: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}});};
+  const failedOver=await meteredProxy(new Request('https://botgo.test/chat/stream',{headers:{'idempotency-key':'failover-route-123456'}}),env,{waitUntil:p=>jobs.push(p)},{...options,candidates:pool,upstream:null});
+  assert.equal(failedOver.status,200);await failedOver.text();await Promise.all(jobs);assert.equal(attempted.length,2);
+  // A network failure after HTTP 200 but before the first response byte is still eligible for failover.
+  let bodyAttempts=0;globalThis.fetch=async()=>{bodyAttempts++;if(bodyAttempts===1)return new Response(new ReadableStream({start(controller){controller.error(new Error('connection reset'));}}),{headers:{'content-type':'text/event-stream'}});return new Response('data: {"usage":{"prompt_tokens":0,"completion_tokens":0}}\n\ndata: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}});};
+  const firstByteFailover=await meteredProxy(new Request('https://botgo.test/chat/stream',{headers:{'idempotency-key':'first-byte-route-123456'}}),env,{waitUntil:p=>jobs.push(p)},{...options,candidates:pool,upstream:null});
+  assert.equal(firstByteFailover.status,200);await firstByteFailover.text();await Promise.all(jobs);assert.equal(bodyAttempts,2);
+  // The lease trigger enforces the approved per-account limit independently from the legacy Agent limit of eight.
+  reserve('held-account-1',1);reserve('held-account-2',1);
+  sql.prepare("INSERT INTO upstream_leases(id,request_id,account_id,profile_id,expires_at) VALUES('account-lease-1','held-account-1','test','test-profile',datetime('now','+5 minutes'))").run();
+  sql.prepare("INSERT INTO upstream_leases(id,request_id,account_id,profile_id,expires_at) VALUES('account-lease-2','held-account-2','test','test-profile-2',datetime('now','+5 minutes'))").run();
+  const accountLimited=await meteredProxy(new Request('https://botgo.test/chat/stream',{headers:{'idempotency-key':'account-limit-123456'}}),env,{waitUntil:p=>jobs.push(p)},{...options,candidates:pool,upstream:null});
+  assert.equal(accountLimited.status,429);assert.equal((await accountLimited.json()).code,'ACCOUNT_CONCURRENCY_LIMIT');
+  await settle(env,'held-account-1',null,snapshot,'refunded');await settle(env,'held-account-2',null,snapshot,'refunded');
   const invalid=await meteredProxy(makeRequest(),env,{}, {...options,body:{...options.body,model:'unknown'}});assert.equal(invalid.status,400);
   globalThis.fetch=async()=>new Response('data: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}});
-  const missing=await meteredProxy(new Request('https://botgo.test/chat/stream'),env,{waitUntil:p=>jobs.push(p)},options);await missing.text();await Promise.all(jobs);assert.equal(balance(),9987400);assert.equal(sql.prepare('SELECT enabled FROM model_catalog WHERE id=?').get(snapshot.model).enabled,0,'missing usage disables the unmetered route');
-  sql.prepare('UPDATE model_catalog SET enabled=1 WHERE id=?').run(snapshot.model);
+  const missing=await meteredProxy(new Request('https://botgo.test/chat/stream'),env,{waitUntil:p=>jobs.push(p)},options);await missing.text();await Promise.all(jobs);assert.equal(balance(),9987400);assert.equal(sql.prepare('SELECT enabled FROM model_catalog WHERE id=?').get(snapshot.model).enabled,1,'missing usage must not disable a shared model');
   let upstreamCancelled=false;
   globalThis.fetch=async()=>new Response(new ReadableStream({start(controller){controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'));},cancel(){upstreamCancelled=true;}}),{headers:{'content-type':'text/event-stream'}});
   const interrupted=await startConversationTurn(env,'test',{conversationId,requestId:'interrupted-request-123456',content:'continue',model:snapshot.model});
   const stopped=await meteredProxy(new Request('https://botgo.test/chat/stream'),env,{waitUntil:p=>jobs.push(p)},{...options,history:interrupted.history});
   const downstream=stopped.body.getReader();await downstream.read();await downstream.cancel();await Promise.all(jobs);
   assert.equal(upstreamCancelled,true);assert.equal(account().billing_reserved_micros,0);assert.equal(balance(),9987400,'cancel without usage does not invent a fee');
+  assert.equal(sql.prepare('SELECT enabled FROM model_catalog WHERE id=?').get(snapshot.model).enabled,1,'stopping one request must not disable the model for other users');
   assert.equal(sql.prepare('SELECT answer FROM web_chat_turns WHERE request_id=?').get('interrupted-request-123456').answer,'partial');
   assert.equal(sql.prepare('SELECT state FROM web_chat_turns WHERE request_id=?').get('interrupted-request-123456').state,'stopped');
 }finally{globalThis.fetch=originalFetch;sql.close();}

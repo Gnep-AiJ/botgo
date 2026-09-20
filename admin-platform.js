@@ -1,66 +1,215 @@
 (() => {
   "use strict";
   const { api, jsonOptions, setStatus, formatTime, cell, table, escapeHtml } = window.BotGoAdmin;
-  const $ = (selector) => document.querySelector(selector); const $$ = (selector) => [...document.querySelectorAll(selector)];
-  const labels = { web_chat: "网页对话", desktop_codex: "桌面 Codex" };
-  const state = { upstreams: [], routes: [], releases: [], orderPage: 1 };
-  const pill = (status) => `<span class="status-pill ${status === "ok" ? "success" : status === "failed" ? "danger" : "neutral"}">${status === "ok" ? "可用" : status === "failed" ? "失败" : "未测试"}</span>`;
+  const $ = (selector) => document.querySelector(selector);
+  const $$ = (selector) => [...document.querySelectorAll(selector)];
+  const labels = { desktop_codex: "兼容客户端", desktop_opencode: "BotGo 客户端" };
+  const state = { upstreams: [], routes: [], agentRoutes: [], models: [], releases: [], routingBusy: false, selectedRoute: null };
+
+  const statusPill = (status) => {
+    const value = status === "ok" ? ["success", "已验证"] : status === "review" ? ["warning", "待核对"] : status === "failed" ? ["danger", "失败"] : ["neutral", "未验证"];
+    return `<span class="status-pill ${value[0]}">${value[1]}</span>`;
+  };
+
+  const memberReady = (member, agent) => member.enabled !== false && member.enabled !== 0 && (agent ? member.verified_at && (!member.blocked_reason || member.blocked_reason === "usage_review") : member.probeStatus === "ok");
+
+  function routeEntries() {
+    const standard = state.routes.filter(route=>route.channel!=='web_chat').map((route) => ({ key: `${route.channel}:${route.modelId}`, routeType: route.channel, modelId: route.modelId, name: route.modelId, protocol: "Responses", enabled: true, members: route.members || [], agent: false }));
+    const agent = state.agentRoutes.map((route) => ({ key: `desktop_opencode:${route.model_id}`, routeType: "desktop_opencode", modelId: route.model_id, name: route.name || route.model_id, protocol: route.protocol === "chat" ? "Chat Completions" : "Responses", enabled: Boolean(route.enabled), members: route.members || [], agent: true }));
+    return [...standard, ...agent].map((route) => {
+      const readyMembers = route.members.filter((member) => memberReady(member, route.agent));
+      const active = route.members.reduce((sum, member) => sum + Number(member.activeRequests ?? member.active_requests ?? 0), 0);
+      const capacity = route.members.reduce((sum, member) => sum + Number(member.maxConcurrency ?? member.max_concurrency ?? 5), 0);
+      const blocked = route.members.filter((member) => member.blocked_reason).length;
+      const catalogModel=route.agent?state.models.find(model=>model.id===route.modelId):state.models.find(model=>model.upstream_id===route.modelId);
+      const stateName = !route.enabled||!catalogModel?.enabled ? "disabled" : readyMembers.length ? "ready" : blocked ? "blocked" : "unavailable";
+      return { ...route, readyMembers, active, capacity, blocked, stateName };
+    });
+  }
+
+  function routeState(entry) {
+    if (entry.stateName === "ready") return '<span class="status-pill success">正常</span>';
+    if (entry.stateName === "disabled") return '<span class="status-pill neutral">未启用</span>';
+    if (entry.stateName === "blocked") return '<span class="status-pill danger">用量待核对</span>';
+    return '<span class="status-pill warning">未就绪</span>';
+  }
+
+  function registryRows(entries) {
+    if (!entries.length) return '<p class="empty-state">尚未配置路由。</p>';
+    return `<div class="route-registry-head" aria-hidden="true"><span>渠道与模型</span><span>协议</span><span>成员</span><span>负载</span><span>状态</span><span></span></div>${entries.map((entry) => `<button class="route-registry-row" type="button" data-route-key="${escapeHtml(entry.key)}"><span class="route-identity"><strong>${escapeHtml(labels[entry.routeType])}</strong><small>${escapeHtml(entry.name)}</small></span><span>${escapeHtml(entry.protocol)}</span><span><strong>${entry.readyMembers.length} / ${entry.members.length}</strong><small>可用 / 全部</small></span><span><strong>${entry.active} / ${entry.capacity}</strong><small>请求 / 容量</small></span><span>${routeState(entry)}</span><span class="route-chevron" aria-hidden="true">›</span></button>`).join("")}`;
+  }
+
+  function renderRouteDetail(entry) {
+    const members = entry.members.map((member, index) => {
+      const profileId = member.profileId || member.profile_id;
+      const profile = state.upstreams.find((item) => item.id === profileId) || {};
+      const ready = memberReady(member, entry.agent);
+      const active = Number(member.activeRequests ?? member.active_requests ?? profile.activeRequests ?? 0);
+      const capacity = Number(member.maxConcurrency ?? member.max_concurrency ?? profile.maxConcurrency ?? 5);
+      const reason = member.blocked_reason === "usage_review" ? "用量缺失，等待核对" : member.blocked_reason === "abandoned" ? "请求异常中断" : member.blocked_reason || (ready ? "探测已通过" : "尚未通过探测");
+      return `<li class="route-chain-member"><span class="chain-index">${index + 1}</span><div><strong>${escapeHtml(profile.name || member.profileName || member.profile_name || profileId)}</strong><small>${escapeHtml(profile.baseUrl || member.baseUrl || member.base_url || "端点未知")} · ${escapeHtml(profile.keyHint || "Key 未知")}</small><small>${active}/${capacity} 并发 · ${escapeHtml(reason)}</small></div>${ready ? '<span class="status-pill success">可用</span>' : '<span class="status-pill danger">阻断</span>'}</li>`;
+    }).join("") || '<li class="empty-state">此路由还没有上游成员。</li>';
+    $("#route-detail-eyebrow").textContent = `${labels[entry.routeType]} · ${entry.protocol}`;
+    $("#route-detail-title").textContent = entry.name;
+    $("#route-detail-content").innerHTML = `<div class="route-chain-summary"><div><span>渠道</span><strong>${escapeHtml(labels[entry.routeType])}</strong></div><b aria-hidden="true">→</b><div><span>模型</span><strong>${escapeHtml(entry.modelId)}</strong></div><b aria-hidden="true">→</b><div><span>路由池</span><strong>${entry.readyMembers.length}/${entry.members.length} 可用</strong></div></div><div class="route-detail-meta"><span>${routeState(entry)}</span><span>${entry.active}/${entry.capacity} 并发占用</span></div><ol class="route-chain-list">${members}</ol>`;
+  }
+
+  function openRouteDetail(key) {
+    const entry = routeEntries().find((item) => item.key === key);
+    if (!entry) return;
+    state.selectedRoute = entry;
+    renderRouteDetail(entry);
+    $("#route-detail-dialog").showModal();
+  }
+
+  function bindRouteRows() {
+    $$('[data-route-key]').forEach((button) => button.addEventListener("click", () => openRouteDetail(button.dataset.routeKey)));
+  }
 
   function renderRoutes() {
-    const channels = ["web_chat", "desktop_codex"];
-    const cards = channels.map((channel) => { const route = state.routes.find((item) => item.channel === channel); return `<article class="route-card"><div class="route-card-head"><div><p>${channel === "web_chat" ? "CHAT COMPLETIONS" : "RESPONSES"}</p><h2>${labels[channel]}</h2></div><span class="status-pill neutral">${route ? "已绑定" : "未绑定"}</span></div><dl><dt>当前上游</dt><dd>${escapeHtml(route?.profileName || "尚未绑定")}</dd><dt>内部模型</dt><dd>${escapeHtml(route?.modelId || "—")}</dd><dt>最近切换</dt><dd>${formatTime(route?.updatedAt)}</dd></dl><div class="route-card-actions"><button class="button primary compact" type="button" data-switch-route="${channel}">测试并切换</button>${route?.previous?.profileId ? `<button class="button secondary compact" type="button" data-rollback-route="${channel}">回滚</button>` : ""}</div></article>`; });
-    $("#route-grid").innerHTML = cards.join(""); $("#route-overview").innerHTML = cards.join("");
-    $("#metric-routes").textContent = `${state.routes.length}/2`;
-    $$('[data-switch-route]').forEach((button) => button.addEventListener("click", () => openRouteDialog(button.dataset.switchRoute)));
-    $$('[data-rollback-route]').forEach((button) => button.addEventListener("click", () => rollbackRoute(button.dataset.rollbackRoute)));
+    const entries = routeEntries();
+    const ready = entries.filter((entry) => entry.stateName === "ready").length;
+    const capacity = state.upstreams.reduce((sum, profile) => sum + Number(profile.maxConcurrency || 5), 0);
+    $("#route-grid").innerHTML = registryRows(entries);
+    $("#route-overview").innerHTML = `<div class="overview-route-list">${entries.slice(0, 5).map((entry) => `<button type="button" data-route-key="${escapeHtml(entry.key)}"><span><strong>${escapeHtml(labels[entry.routeType])}</strong><small>${escapeHtml(entry.name)}</small></span>${routeState(entry)}</button>`).join("") || '<p class="empty-state">尚未配置路由。</p>'}</div>`;
+    $("#route-total").textContent = String(entries.length);
+    $("#route-ready").textContent = String(ready);
+    $("#route-attention").textContent = String(entries.length - ready);
+    $("#route-capacity").textContent = String(capacity);
+    $("#metric-routes").textContent = `${ready}/${entries.length}`;
+    bindRouteRows();
   }
 
   function renderUpstreams() {
-    const rows = state.upstreams.map((profile) => { const latest = profile.probes?.[0]; const channels = profile.assignedChannels?.map((channel) => labels[channel]).join("、") || "未使用"; return `<tr>${cell("上游", `<strong>${escapeHtml(profile.name)}</strong><span class="table-sub">${escapeHtml(profile.baseUrl)}</span>`)}${cell("密钥", escapeHtml(profile.keyHint))}${cell("使用渠道", escapeHtml(channels))}${cell("能力", pill(latest?.status))}${cell("最近测试", formatTime(latest?.tested_at))}${cell("操作", `<div class="table-actions"><button class="table-button" type="button" data-edit-upstream="${escapeHtml(profile.id)}">编辑</button><button class="table-button danger" type="button" data-delete-upstream="${escapeHtml(profile.id)}">删除</button></div>`)}</tr>`; });
-    $("#upstream-list").innerHTML = table(["上游", "密钥", "使用渠道", "能力", "最近测试", "操作"], rows, "尚未配置上游");
+    const rows = state.upstreams.map((profile) => `<tr>${cell("端点", `<strong>${escapeHtml(profile.name)}</strong><span class="table-sub">${escapeHtml(profile.baseUrl)}</span>`)}${cell("API Key", escapeHtml(profile.keyHint))}${cell("容量", `<strong>${Number(profile.activeRequests || 0)} / ${Number(profile.maxConcurrency || 5)}</strong><span class="table-sub">当前请求 / 最大并发</span>`)}${cell("路由", escapeHtml([...new Set(profile.assignedChannels || [])].map((channel) => labels[channel] || channel).join("、") || "未使用"))}${cell("最近测试", `${statusPill(profile.lastTestStatus)}<span class="table-sub">${formatTime(profile.lastTestedAt)}</span>`)}${cell("操作", `<div class="table-actions"><button class="table-button" type="button" data-edit-upstream="${escapeHtml(profile.id)}">编辑</button><button class="table-button danger" type="button" data-delete-upstream="${escapeHtml(profile.id)}">删除</button></div>`)}</tr>`);
+    $("#upstream-list").innerHTML = table(["端点", "API Key", "容量", "路由", "最近测试", "操作"], rows, "尚未添加上游端点");
     $$('[data-edit-upstream]').forEach((button) => button.addEventListener("click", () => openUpstreamDialog(button.dataset.editUpstream)));
     $$('[data-delete-upstream]').forEach((button) => button.addEventListener("click", () => deleteUpstream(button.dataset.deleteUpstream)));
   }
 
-  async function loadUpstreams() {
-    const [profiles, routes] = await Promise.all([api("/admin/upstreams"), api("/admin/routes")]); state.upstreams = profiles.upstreams || []; state.routes = routes.routes || [];
-    $("#import-fallback").hidden = !profiles.fallbackConfigured || state.upstreams.some((profile) => profile.name === "当前 Worker 上游"); renderRoutes(); renderUpstreams();
-    const failures = state.upstreams.filter((profile) => profile.probes?.some((probe) => probe.status === "failed")); $("#overview-alerts").innerHTML = failures.length ? failures.map((profile) => `<div class="alert-item"><span>${escapeHtml(profile.name)} 最近能力测试失败</span><a class="text-link" href="#upstreams">检查</a></div>`).join("") : '<p class="empty-state">暂无需要处理的上游异常。</p>';
+  async function loadRouting() {
+    const [profiles, routes, agents, metering] = await Promise.all([api("/admin/upstreams"), api("/admin/routes"), api("/admin/opencode"), api("/admin/metering")]);
+    state.upstreams = profiles.upstreams || [];
+    state.routes = routes.routes || [];
+    state.agentRoutes = agents.routes || [];
+    state.models = (metering.models || []).filter((model) => !model.archived);
+    renderRoutes(); renderUpstreams();
+    const failures = state.upstreams.filter((profile) => profile.lastTestStatus === "failed");
+    $("#overview-alerts").innerHTML = failures.length ? failures.map((profile) => `<div class="alert-item"><span>${escapeHtml(profile.name)} 最近探测失败</span><a class="text-link" href="#upstreams">检查</a></div>`).join("") : '<p class="empty-state">暂无需要处理的上游异常。</p>';
   }
 
   function openUpstreamDialog(id = "") {
-    const form = $("#upstream-form"); const profile = state.upstreams.find((item) => item.id === id); form.reset(); form.elements.id.value = profile?.id || ""; form.elements.name.value = profile?.name || ""; form.elements.baseUrl.value = profile?.baseUrl || ""; form.elements.apiKey.required = !profile; $("#upstream-dialog-title").textContent = profile ? "编辑上游" : "添加上游"; $("#upstream-dialog").showModal();
+    const form = $("#upstream-form"), profile = state.upstreams.find((item) => item.id === id);
+    form.reset(); form.elements.id.value = profile?.id || ""; form.elements.name.value = profile?.name || ""; form.elements.baseUrl.value = profile?.baseUrl || ""; form.elements.maxConcurrency.value = profile?.maxConcurrency || 5; form.elements.apiKey.required = !profile;
+    $("#upstream-dialog-title").textContent = profile ? "编辑上游" : "添加上游"; $("#upstream-dialog").showModal();
   }
 
-  function openRouteDialog(channel) {
-    if (!state.upstreams.length) return setStatus("upstream-status", "请先添加或导入一个上游。", true);
-    const form = $("#route-form"); const current = state.routes.find((route) => route.channel === channel); form.elements.channel.value = channel; form.elements.profileId.innerHTML = state.upstreams.map((profile) => `<option value="${escapeHtml(profile.id)}" ${profile.id === current?.profileId ? "selected" : ""}>${escapeHtml(profile.name)}</option>`).join(""); form.elements.modelId.value = current?.modelId || "gpt-5.6"; $("#route-test-summary").textContent = `将真实调用 ${labels[channel]} 对应接口；测试可能产生少量上游用量。通过后立即切换。`; $("#route-dialog").showModal();
+  function currentRouteFormState() {
+    const form = $("#route-form"), routeType = form.elements.routeType.value, agent = routeType === "desktop_opencode";
+    const modelId = agent ? form.elements.agentModel.value : form.elements.modelId.value.trim();
+    const route = agent ? state.agentRoutes.find((item) => item.model_id === modelId) : state.routes.find((item) => item.channel === routeType && item.modelId === modelId);
+    return { form, routeType, agent, modelId, route };
   }
 
-  async function rollbackRoute(channel) { if (!confirm(`将${labels[channel]}恢复到上一次路由？原路由必须有 10 分钟内的有效测试。`)) return; try { setStatus("upstream-status", "正在回滚路由…"); await api(`/admin/routes/${channel}/rollback`, { method: "POST" }); setStatus("upstream-status", "路由已回滚。"); await loadUpstreams(); } catch (error) { setStatus("upstream-status", error.message, true); } }
-  async function deleteUpstream(id) { const profile = state.upstreams.find((item) => item.id === id); if (!profile || !confirm(`永久删除上游“${profile.name}”？正在使用的上游不能删除。`)) return; try { await api(`/admin/upstreams/${id}`, { method: "DELETE" }); await loadUpstreams(); } catch (error) { setStatus("upstream-status", error.message, true); } }
+  function renderRouteMembers() {
+    const { agent, route } = currentRouteFormState();
+    const selected = new Set((route?.members || []).filter((member) => member.enabled !== false && member.enabled !== 0).map((member) => member.profileId || member.profile_id));
+    $("#route-member-list").innerHTML = state.upstreams.map((profile) => {
+      const member = (route?.members || []).find((item) => (item.profileId || item.profile_id) === profile.id);
+      const probe = agent ? (member?.blocked_reason === "usage_review" ? "review" : member?.blocked_reason ? "failed" : member?.verified_at ? "ok" : null) : member?.probeStatus;
+      return `<div class="route-member-option"><label><input type="checkbox" name="members" value="${escapeHtml(profile.id)}" ${selected.has(profile.id) ? "checked" : ""}><span><strong>${escapeHtml(profile.name)} · ${escapeHtml(profile.keyHint)}</strong><small>${escapeHtml(profile.baseUrl)} · ${profile.activeRequests}/${profile.maxConcurrency} 并发</small></span></label><label>上游模型 ID<input data-member-model="${escapeHtml(profile.id)}" value="${escapeHtml(member?.upstreamModelId||member?.upstream_model_id||currentRouteFormState().modelId)}" maxlength="128"></label>${statusPill(probe)}<button class="table-button" type="button" data-probe-member="${escapeHtml(profile.id)}">探测</button></div>`;
+    }).join("") || '<p class="empty-state">请先添加上游端点。</p>';
+    $$('[data-probe-member]').forEach((button) => button.addEventListener("click", () => probeRouteMember(button.dataset.probeMember)));
+  }
+
+  function syncRouteForm() {
+    const { form, agent, route } = currentRouteFormState();
+    form.querySelector("[data-standard-model]").hidden = agent; form.querySelector("[data-agent-model]").hidden = !agent; form.querySelector("[data-agent-options]").hidden = !agent;
+    if (agent && route) { form.elements.protocol.value = route.protocol || "responses"; form.elements.enabled.checked = Boolean(route.enabled); } else if (agent) form.elements.enabled.checked = false;
+    renderRouteMembers();
+  }
+
+  function openRouteDialog(routeType = "desktop_opencode", modelId = "") {
+    if (!state.upstreams.length) return setStatus("upstream-status", "请先添加一个上游端点。", true);
+    const form = $("#route-form"); form.reset(); form.elements.routeType.value = routeType;
+    form.elements.agentModel.innerHTML = state.models.map((model) => `<option value="${escapeHtml(model.id)}">${escapeHtml(model.name)}</option>`).join("");
+    if (routeType === "desktop_opencode" && !state.models.length) return setStatus("upstream-status", "请先在模型目录中添加模型。", true);
+    if (routeType === "desktop_opencode") form.elements.agentModel.value = modelId || state.agentRoutes[0]?.model_id || state.models[0]?.id || "";
+    else form.elements.modelId.value = modelId || state.routes.find((route) => route.channel === routeType)?.modelId || "gpt-5.6-sol";
+    $("#route-test-summary").textContent = "选择成员后可逐个探测；保存会一次性更新整个路由池。"; syncRouteForm(); $("#route-dialog").showModal();
+  }
+
+  async function probeRouteMember(profileId) {
+    if (state.routingBusy) return;
+    const { agent, routeType, modelId, route } = currentRouteFormState();
+    if (!modelId) return $("#route-test-summary").textContent = "请先填写模型 ID。";
+    if (agent && !route?.members?.some((member) => member.profile_id === profileId)) return $("#route-test-summary").textContent = "Agent 成员需先以未启用状态保存，再执行探测。";
+    state.routingBusy = true; const button = $(`[data-probe-member="${CSS.escape(profileId)}"]`); if (button) button.disabled = true; $("#route-test-summary").textContent = "正在执行真实流式能力探测…";
+    try {
+      if (agent) await api(`/admin/opencode/models/${encodeURIComponent(modelId)}/probe`, jsonOptions("POST", { profileId,protocol:currentRouteFormState().form.elements.protocol.value }));
+      else await api(`/admin/upstreams/${profileId}/test`, jsonOptions("POST", { channel: routeType, modelId:$(`[data-member-model="${CSS.escape(profileId)}"]`)?.value||modelId,protocol:routeType==='web_chat'?'chat':'responses' }));
+      $("#route-test-summary").textContent = "探测通过，可以应用或启用该成员。"; await loadRouting();
+    } catch (error) { $("#route-test-summary").textContent = error.message; }
+    finally { state.routingBusy = false; if (button) button.disabled = false; }
+  }
+
+  async function saveRoute(event) {
+    event.preventDefault(); if (state.routingBusy) return;
+    const { form, agent, routeType, modelId, route } = currentRouteFormState();
+    const members = [...form.querySelectorAll('input[name="members"]:checked')].map((input, index) => ({ profileId: input.value,upstreamModelId:form.querySelector(`[data-member-model="${CSS.escape(input.value)}"]`)?.value||modelId,protocol:agent?form.elements.protocol.value:routeType==='web_chat'?'chat':'responses', enabled: true, priority: (index + 1) * 10 }));
+    if (!modelId || !members.length) return $("#route-test-summary").textContent = "请填写模型并至少选择一个上游成员。";
+    state.routingBusy = true; const submit = form.querySelector('[type="submit"]'); submit.disabled = true; $("#route-test-summary").textContent = "正在原子应用路由池…";
+    try {
+      if (agent) { let costPrice = null; try { costPrice = route?.cost_price_json ? JSON.parse(route.cost_price_json) : null; } catch {} await api(`/admin/opencode/models/${encodeURIComponent(modelId)}`, jsonOptions("PUT", { members, protocol: form.elements.protocol.value, enabled: form.elements.enabled.checked, costPrice })); }
+      else await api(`/admin/routes/${routeType}`, jsonOptions("PUT", { modelId, members }));
+      await loadRouting(); $("#route-dialog").close(); setStatus("upstream-status", `${labels[routeType]} 路由池已更新。`);
+    } catch (error) { $("#route-test-summary").textContent = error.message; }
+    finally { state.routingBusy = false; submit.disabled = false; }
+  }
+
+  async function deleteUpstream(id) {
+    const profile = state.upstreams.find((item) => item.id === id);
+    if (!profile || !confirm(`永久删除上游“${profile.name}”？正在使用或存在审计历史的上游不能删除。`)) return;
+    try { await api(`/admin/upstreams/${id}`, { method: "DELETE" }); await loadRouting(); } catch (error) { setStatus("upstream-status", error.message, true); }
+  }
 
   async function loadPlan() {
-    const [data,orders]=await Promise.all([api("/admin/billing/plan"),api("/admin/billing/orders")]);
-    $("#payment-state").textContent=data.paymentAvailable?"可用":"未开放";
-    $("#payment-state").className="status-pill "+(data.paymentAvailable?"success":"warning");
-    const states={pending:"待支付",paid:"已入账",closed:"已关闭",failed:"失败"};
-    $("#order-list").innerHTML=table(["订单","账户","金额（元）","状态","时间"],orders.orders.map(o=>`<tr>${cell("订单",escapeHtml(o.outTradeNo||o.out_trade_no||o.id))}${cell("账户",escapeHtml(o.email))}${cell("金额（元）",(Number(o.amountCents??o.amount_cents)/100).toFixed(2))}${cell("状态",states[o.status]||escapeHtml(o.status))}${cell("时间",formatTime(o.createdAt||o.created_at))}</tr>`),"暂无充值订单");
+    const [data, orders] = await Promise.all([api("/admin/billing/plan"), api("/admin/billing/orders")]);
+    $("#payment-state").textContent = data.paymentAvailable ? "可用" : "未开放"; $("#payment-state").className = `status-pill ${data.paymentAvailable ? "success" : "warning"}`;
+    const states = { pending: "待支付", paid: "已入账", closed: "已关闭", failed: "失败" };
+    const rows = (orders.orders || []).map((order) => `<tr>${cell("订单", escapeHtml(order.outTradeNo || order.out_trade_no || order.id))}${cell("账户", escapeHtml(order.email))}${cell("金额（元）", (Number(order.amountCents ?? order.amount_cents) / 100).toFixed(2))}${cell("状态", states[order.status] || escapeHtml(order.status))}${cell("时间", formatTime(order.createdAt || order.created_at))}</tr>`);
+    $("#order-list").innerHTML = table(["订单", "账户", "金额（元）", "状态", "时间"], rows, "暂无充值订单");
   }
-  async function loadReleases() { const data = await api("/admin/desktop/releases"); state.releases = data.releases || []; const rows = state.releases.map((release) => `<tr>${cell("版本", `<strong>${escapeHtml(release.version)}</strong><span class="table-sub">${escapeHtml(release.platform)}</span>`)}${cell("状态", `<span class="status-pill ${release.status === "published" ? "success" : release.status === "draft" ? "warning" : "neutral"}">${release.status === "published" ? "当前版本" : release.status === "draft" ? "草稿" : "已退役"}</span>`)}${cell("文件", escapeHtml(release.file_name))}${cell("大小", `${(release.size_bytes / 1048576).toFixed(1)} MB`)}${cell("创建时间", formatTime(release.created_at))}${cell("操作", release.status === "draft" ? `<div class="table-actions"><button class="table-button" type="button" data-publish-release="${release.id}">发布</button><button class="table-button danger" data-delete-release="${release.id}">删除</button></div>` : "—")}</tr>`); $("#release-list").innerHTML = table(["版本", "状态", "文件", "大小", "创建时间", "操作"], rows, "暂无发布记录"); $$('[data-delete-release]').forEach(button=>button.addEventListener("click",()=>deleteRelease(button.dataset.deleteRelease))); $$('[data-publish-release]').forEach((button) => button.addEventListener("click", () => publishRelease(button.dataset.publishRelease))); }
-  async function deleteRelease(id){if(!confirm("删除此版本草稿？"))return;try{await api(`/admin/desktop/releases/${id}`,{method:"DELETE"});await loadReleases();}catch(error){setStatus("release-status",error.message,true);}}
-  async function publishRelease(id) { const release = state.releases.find((item) => item.id === id); if (!release || !confirm(`发布 ${release.version}？当前已发布版本将被标记为已退役。`)) return; try { setStatus("release-status", "正在验证 R2 对象并发布…"); await api(`/admin/desktop/releases/${id}/publish`, { method: "POST" }); setStatus("release-status", "版本已发布。"); await loadReleases(); } catch (error) { setStatus("release-status", error.message, true); } }
 
-  $("#open-upstream-dialog").addEventListener("click", () => openUpstreamDialog()); $("#open-release-dialog").addEventListener("click", () => $("#release-dialog").showModal());
-  $("#import-fallback").addEventListener("click", async () => { if (!confirm("将当前 Worker 中的上游地址和密钥加密导入管理后台？")) return; try { await api("/admin/upstreams/import-fallback", { method: "POST" }); setStatus("upstream-status", "当前配置已导入，请完成两项能力测试。"); await loadUpstreams(); } catch (error) { setStatus("upstream-status", error.message, true); } });
-  $("#upstream-form").addEventListener("submit", async (event) => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget)); const id = data.id; delete data.id; if (!data.apiKey) delete data.apiKey; try { await api(id ? `/admin/upstreams/${id}` : "/admin/upstreams", jsonOptions(id ? "PUT" : "POST", data)); $("#upstream-dialog").close(); setStatus("upstream-status", "上游已保存，切换前必须重新测试。"); await loadUpstreams(); } catch (error) { setStatus("upstream-status", error.message, true); } });
-  $("#route-form").addEventListener("submit", async (event) => { event.preventDefault(); const data = Object.fromEntries(new FormData(event.currentTarget)); const submit = event.currentTarget.querySelector('[type="submit"]'); submit.disabled = true; $("#route-test-summary").textContent = "正在测试模型列表和对应能力接口…"; try { const result = await api(`/admin/upstreams/${data.profileId}/test`, jsonOptions("POST", { channel: data.channel, modelId: data.modelId })); $("#route-test-summary").textContent = `测试通过：HTTP ${result.capability.status}，${result.capability.latencyMs} ms。正在切换…`; await api(`/admin/routes/${data.channel}`, jsonOptions("PUT", { profileId: data.profileId, modelId: data.modelId })); $("#route-dialog").close(); setStatus("upstream-status", `${labels[data.channel]}已切换。`); await loadUpstreams(); } catch (error) { $("#route-test-summary").textContent = error.message; } finally { submit.disabled = false; } });
+  async function loadReleases() {
+    const data = await api("/admin/desktop/releases"); state.releases = data.releases || [];
+    const rows = state.releases.map((release) => `<tr>${cell("版本", `<strong>${escapeHtml(release.version)}</strong><span class="table-sub">${escapeHtml(release.platform)}</span>`)}${cell("状态", `<span class="status-pill ${release.status === "published" ? "success" : release.status === "draft" ? "warning" : "neutral"}">${release.status === "published" ? "当前版本" : release.status === "draft" ? "草稿" : "已退役"}</span>`)}${cell("文件", escapeHtml(release.file_name))}${cell("大小", `${(release.size_bytes / 1048576).toFixed(1)} MB`)}${cell("创建时间", formatTime(release.created_at))}${cell("操作", release.status === "draft" ? `<div class="table-actions"><button class="table-button" type="button" data-publish-release="${release.id}">发布</button><button class="table-button danger" data-delete-release="${release.id}">删除</button></div>` : "—")}</tr>`);
+    $("#release-list").innerHTML = table(["版本", "状态", "文件", "大小", "创建时间", "操作"], rows, "暂无发布记录");
+    $$('[data-delete-release]').forEach((button) => button.addEventListener("click", () => deleteRelease(button.dataset.deleteRelease))); $$('[data-publish-release]').forEach((button) => button.addEventListener("click", () => publishRelease(button.dataset.publishRelease)));
+  }
+
+  async function deleteRelease(id) { if (!confirm("删除此版本草稿？")) return; try { await api(`/admin/desktop/releases/${id}`, { method: "DELETE" }); await loadReleases(); } catch (error) { setStatus("release-status", error.message, true); } }
+  async function publishRelease(id) { const release = state.releases.find((item) => item.id === id); if (!release || !confirm(`发布 ${release.version}？当前已发布版本将标记为已退役。`)) return; try { setStatus("release-status", "正在验证 R2 对象并发布…"); await api(`/admin/desktop/releases/${id}/publish`, { method: "POST" }); setStatus("release-status", "版本已发布。"); await loadReleases(); } catch (error) { setStatus("release-status", error.message, true); } }
+
+  $("#open-upstream-dialog").addEventListener("click", () => openUpstreamDialog()); $("#open-route-dialog").addEventListener("click", () => openRouteDialog()); $("#open-release-dialog").addEventListener("click", () => $("#release-dialog").showModal());
+  $$('[data-close-route-detail]').forEach((button) => button.addEventListener("click", () => $("#route-detail-dialog").close()));
+  $("#configure-selected-route").addEventListener("click", () => {
+    const selected = state.selectedRoute;
+    $("#route-detail-dialog").close();
+    if (selected) openRouteDialog(selected.routeType, selected.modelId);
+  });
+  $("#upstream-form").addEventListener("submit", async (event) => {
+    event.preventDefault(); const form = event.currentTarget, submit = form.querySelector('[type="submit"]'); if (submit.disabled) return;
+    const data = Object.fromEntries(new FormData(form)); const id = data.id; delete data.id; data.maxConcurrency = Number(data.maxConcurrency); if (!data.apiKey) delete data.apiKey; submit.disabled = true;
+    try { await api(id ? `/admin/upstreams/${id}` : "/admin/upstreams", jsonOptions(id ? "PUT" : "POST", data)); $("#upstream-dialog").close(); setStatus("upstream-status", "上游已保存；端点或 Key 变化会自动要求重新探测。"); await loadRouting(); } catch (error) { setStatus("upstream-status", error.message, true); } finally { submit.disabled = false; }
+  });
+  $("#route-form").addEventListener("submit", saveRoute); $("#route-form").elements.routeType.addEventListener("change", syncRouteForm); $("#route-form").elements.agentModel.addEventListener("change", syncRouteForm); $("#route-form").elements.modelId.addEventListener("change", syncRouteForm);
   $("#release-form").addEventListener("submit", async (event) => { event.preventDefault(); try { await api("/admin/desktop/releases", jsonOptions("POST", Object.fromEntries(new FormData(event.currentTarget)))); $("#release-dialog").close(); setStatus("release-status", "版本草稿已登记。"); await loadReleases(); } catch (error) { setStatus("release-status", error.message, true); } });
-  $("#refresh-orders").addEventListener("click",()=>loadPlan().catch(error=>setStatus("billing-status",error.message,true)));
-  function reportLoadError(target,error){const node=$(target);if(!node)return;node.replaceChildren();const p=document.createElement('p');p.className='action-status';p.setAttribute('role','status');p.textContent=error.message||'加载失败，请刷新重试。';node.append(p);}
+  $("#refresh-orders").addEventListener("click", () => loadPlan().catch((error) => setStatus("billing-status", error.message, true)));
+
+  function reportLoadError(target, error) { const node = $(target); if (node) node.innerHTML = `<p class="action-status" role="status">${escapeHtml(error.message || "加载失败，请刷新重试。")}</p>`; }
   window.addEventListener("botgo:admin-ready", () => Promise.allSettled([
-    loadUpstreams().catch(error=>{reportLoadError('#route-grid',error);reportLoadError('#route-overview',error);reportLoadError('#overview-alerts',error);$('#metric-routes').textContent='—';}),
-    loadPlan().catch(error=>setStatus('billing-status',error.message,true)),
-    loadReleases().catch(error=>reportLoadError('#release-list',error))
+    loadRouting().catch((error) => { reportLoadError("#route-grid", error); reportLoadError("#route-overview", error); reportLoadError("#overview-alerts", error); $("#metric-routes").textContent = "—"; }),
+    loadPlan().catch((error) => setStatus("billing-status", error.message, true)), loadReleases().catch((error) => reportLoadError("#release-list", error))
   ]));
 })();
