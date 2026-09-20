@@ -3,6 +3,7 @@ import { handleAlipayRoute } from "./alipay-routes.js";
 import { desktopCredentialFor } from './desktop-auth.js';
 import { handleMeteringAdmin, usageObserver } from "./metering.js";
 import { handleAgentAdmin } from './opencode-gateway.js';
+import { handleModelServicesAdmin } from './model-services-admin.js';
 
 const encoder = new TextEncoder();
 const CHANNELS = new Set(["web_chat", "desktop_codex"]);
@@ -63,7 +64,7 @@ async function decryptSecret(ciphertext, iv, env) {
 }
 
 export async function resolveProfileConfig(env, profileId) {
-  const row=await env.DB.prepare('SELECT id,base_url,api_key_ciphertext,api_key_iv FROM upstream_profiles WHERE id=?').bind(profileId).first();
+  const row=await env.DB.prepare('SELECT id,base_url,api_key_ciphertext,api_key_iv FROM upstream_profiles WHERE id=? AND retired_at IS NULL').bind(profileId).first();
   return row?{baseUrl:row.base_url,apiKey:await decryptSecret(row.api_key_ciphertext,row.api_key_iv,env),profileId:row.id}:null;
 }
 
@@ -222,16 +223,17 @@ async function upstreamRoutes(request, env, path, admin, audit) {
     await env.DB.batch(statements);await audit(env,admin.id,'upstream_route_pool_rolled_back',{channel,modelId});return json({ok:true});
   }
   if (path === "/admin/upstreams" && request.method === "GET") {
-    const [profiles, routes, probes] = await Promise.all([
-      env.DB.prepare(`SELECT p.id,p.name,p.base_url,p.key_hint,p.max_concurrency,p.last_tested_at,p.last_test_status,p.updated_at,COUNT(l.id) AS active_requests
+    const [profiles, routes, probes, drafts] = await Promise.all([
+      env.DB.prepare(`SELECT p.id,p.name,p.base_url,p.key_hint,p.max_concurrency,p.last_tested_at,p.last_test_status,p.updated_at,p.retired_at,COUNT(l.id) AS active_requests
         FROM upstream_profiles p LEFT JOIN upstream_leases l ON l.profile_id=p.id AND l.state='active' AND l.expires_at>CURRENT_TIMESTAMP
-        GROUP BY p.id,p.name,p.base_url,p.key_hint,p.max_concurrency,p.last_tested_at,p.last_test_status,p.updated_at ORDER BY p.updated_at DESC`).all(),
-      env.DB.prepare("SELECT channel,profile_id FROM upstream_route_members UNION ALL SELECT 'desktop_opencode',profile_id FROM agent_route_members").all(),
-      env.DB.prepare("SELECT profile_id, channel, model_id, status, http_status, latency_ms, error_code, tested_at FROM upstream_route_probes ORDER BY tested_at DESC").all()
+        GROUP BY p.id,p.name,p.base_url,p.key_hint,p.max_concurrency,p.last_tested_at,p.last_test_status,p.updated_at,p.retired_at ORDER BY p.updated_at DESC`).all(),
+      env.DB.prepare("SELECT channel,profile_id,model_id FROM upstream_route_members UNION ALL SELECT 'desktop_opencode',profile_id,model_id FROM agent_route_members UNION SELECT 'desktop_opencode',profile_id,model_id FROM agent_model_routes").all(),
+      env.DB.prepare("SELECT profile_id, channel, model_id, status, http_status, latency_ms, error_code, tested_at FROM upstream_route_probes ORDER BY tested_at DESC").all(),
+      env.DB.prepare('SELECT model_id,config_json FROM model_service_drafts').all()
     ]);
     const routeMap = new Map();
     for (const route of routes.results || []) routeMap.set(route.profile_id, [...(routeMap.get(route.profile_id) || []), route.channel]);
-    return json({ upstreams: (profiles.results || []).map((row) => ({ ...publicProfile(row, routeMap), probes: (probes.results || []).filter((probe) => probe.profile_id === row.id) })) });
+    return json({ upstreams: (profiles.results || []).map((row) => ({ ...publicProfile(row, routeMap), retired:!!row.retired_at, dependencies:[...(routes.results||[]).filter(route=>route.profile_id===row.id).map(route=>({channel:route.channel,modelId:route.model_id})),...(drafts.results||[]).filter(draft=>{try{return JSON.parse(draft.config_json).members.some(member=>member.profileId===row.id);}catch{return false;}}).map(draft=>({channel:'draft',modelId:draft.model_id}))], probes: (probes.results || []).filter((probe) => probe.profile_id === row.id) })) });
   }
   if (path === "/admin/upstreams" && request.method === "POST") {
     const body = await bodyOf(request); const baseUrl = validUpstreamUrl(body?.baseUrl, new URL(request.url).hostname); const apiKey = typeof body?.apiKey === "string" ? body.apiKey.trim() : ""; const capacity=Number(body?.maxConcurrency??5);
@@ -241,26 +243,51 @@ async function upstreamRoutes(request, env, path, admin, audit) {
     await env.DB.prepare("INSERT INTO upstream_profiles (id, name, base_url, api_key_ciphertext, api_key_iv, key_hint,max_concurrency) VALUES (?, ?, ?, ?, ?, ?,?)").bind(id, name, baseUrl, encrypted.ciphertext, encrypted.iv, `••••${apiKey.slice(-4)}`,capacity).run();
     await audit(env, admin.id, "upstream_created", { profileId: id, name,capacity }); return json({ upstream: { id, name, baseUrl, keyHint: `••••${apiKey.slice(-4)}`,maxConcurrency:capacity } }, 201);
   }
-  const match = path.match(/^\/admin\/upstreams\/([0-9a-f-]+)(?:\/(test))?$/i);
+  const match = path.match(/^\/admin\/upstreams\/([0-9a-f-]+)(?:\/(test|retire))?$/i);
   if (!match) return null;
   const row = await env.DB.prepare("SELECT * FROM upstream_profiles WHERE id = ?").bind(match[1]).first();
   if (!row) return json({ error: "上游配置不存在。" }, 404);
   if (request.method === "POST" && match[2] === "test") {
+    if(row.retired_at)return json({error:'上游已退役。'},409);
     const body = await bodyOf(request); const channel = String(body?.channel || ""); const modelId = String(body?.modelId || "").trim().slice(0, 128);const protocol=body?.protocol|| (channel==='web_chat'?'chat':'responses');
     if (!CHANNELS.has(channel) || !/^[A-Za-z0-9._:/-]{1,128}$/.test(modelId)||!['chat','responses'].includes(protocol)) return json({ error: "请选择测试渠道、协议并填写模型。" }, 400);
     const result = await probeProfile(env, row, channel, modelId,protocol); await audit(env, admin.id, "upstream_tested", { profileId: row.id, channel, modelId,protocol, ok: result.ok, status: result.capability.status });
     return json(result.ok?result:{...result,error:`探测失败：${result.capability.errorCode||'unknown'}（HTTP ${result.capability.status||0}）`,code:result.capability.errorCode,stage:'stream_or_usage',upstreamStatus:result.capability.status}, result.ok ? 200 : 502);
   }
   if (request.method === "DELETE" && !match[2]) {
-    const agentUsed=await env.DB.prepare('SELECT model_id FROM agent_route_members WHERE profile_id=? LIMIT 1').bind(row.id).first();
-    if(agentUsed)return json({error:'该上游仍被 OpenCode 路由引用，请先更换路由。'},409);
-    const used = await env.DB.prepare("SELECT channel FROM upstream_route_members WHERE profile_id = ? LIMIT 1").bind(row.id).first();
-    if (used) return json({ error: "该上游正在被路由使用，不能删除。" }, 409);
+    const agentUsed=await env.DB.prepare('SELECT model_id FROM agent_route_members WHERE profile_id=? UNION SELECT model_id FROM agent_model_routes WHERE profile_id=? LIMIT 1').bind(row.id,row.id).first();
+    const used = await env.DB.prepare("SELECT channel,model_id FROM upstream_route_members WHERE profile_id = ? LIMIT 1").bind(row.id).first();
+    const legacyRoute=await env.DB.prepare('SELECT channel,model_id FROM upstream_routes WHERE profile_id=? LIMIT 1').bind(row.id).first();
+    const draftUsed=await env.DB.prepare('SELECT model_id FROM model_service_drafts WHERE config_json LIKE ? LIMIT 1').bind(`%${row.id}%`).first();
+    if (agentUsed||used||legacyRoute||draftUsed) return json({ error: "上游仍有模型绑定，请先替换上游或执行停用并解除绑定。", dependencies:[...(agentUsed?[{channel:'desktop_opencode',modelId:agentUsed.model_id}]:[]),...(used?[{channel:used.channel,modelId:used.model_id}]:[]),...(legacyRoute?[{channel:legacyRoute.channel,modelId:legacyRoute.model_id}]:[]),...(draftUsed?[{channel:'draft',modelId:draftUsed.model_id}]:[])] }, 409);
     const historical = await env.DB.prepare("SELECT id FROM upstream_route_history WHERE from_profile_id = ? OR to_profile_id = ? LIMIT 1").bind(row.id, row.id).first();
-    if (historical) return json({ error: "该上游存在路由历史，为保留审计记录不能删除。" }, 409);
+    const lease=await env.DB.prepare('SELECT id FROM upstream_leases WHERE profile_id=? LIMIT 1').bind(row.id).first();
+    const poolHistory=await env.DB.prepare('SELECT id FROM upstream_route_pool_history WHERE members_json LIKE ? LIMIT 1').bind(`%${row.id}%`).first();
+    if (historical||lease||poolHistory) return json({ error: "上游有历史记录，请执行退役归档。" }, 409);
     await env.DB.batch([env.DB.prepare("DELETE FROM upstream_route_probes WHERE profile_id = ?").bind(row.id), env.DB.prepare("DELETE FROM upstream_profiles WHERE id = ?").bind(row.id)]); await audit(env, admin.id, "upstream_deleted", { profileId: row.id }); return json({ ok: true });
   }
+  if(request.method==='POST'&&match[2]==='retire'){
+    if(row.retired_at)return json({ok:true,retired:true});
+    const agent=(await env.DB.prepare('SELECT model_id FROM agent_route_members WHERE profile_id=? UNION SELECT model_id FROM agent_model_routes WHERE profile_id=?').bind(row.id,row.id).all()).results||[];
+    const legacy=(await env.DB.prepare('SELECT channel,model_id FROM upstream_route_members WHERE profile_id=?').bind(row.id).all()).results||[];
+    const drafts=(await env.DB.prepare('SELECT model_id,config_json FROM model_service_drafts WHERE config_json LIKE ?').bind(`%${row.id}%`).all()).results||[];
+    const statements=[env.DB.prepare("UPDATE upstream_profiles SET retired_at=CURRENT_TIMESTAMP,status='inactive',api_key_ciphertext='',api_key_iv='',key_hint='已清除',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(row.id),
+      env.DB.prepare('DELETE FROM agent_route_members WHERE profile_id=?').bind(row.id),
+      env.DB.prepare('DELETE FROM upstream_route_members WHERE profile_id=?').bind(row.id),
+      env.DB.prepare('DELETE FROM upstream_routes WHERE profile_id=?').bind(row.id)];
+    for(const draft of drafts){let config;try{config=JSON.parse(draft.config_json);}catch{continue;}if(!Array.isArray(config.members)||!config.members.some(member=>member.profileId===row.id))continue;config.members=config.members.filter(member=>member.profileId!==row.id);statements.push(env.DB.prepare("UPDATE model_service_drafts SET config_json=?,tested_json='{}',updated_at=CURRENT_TIMESTAMP WHERE model_id=?").bind(JSON.stringify(config),draft.model_id));}
+    for(const {model_id:modelId} of agent){
+      const remaining=await env.DB.prepare('SELECT profile_id FROM agent_route_members WHERE model_id=? AND profile_id<>? ORDER BY priority LIMIT 1').bind(modelId,row.id).first();
+      if(remaining)statements.push(env.DB.prepare('UPDATE agent_model_routes SET profile_id=?,verified_at=(SELECT MAX(verified_at) FROM agent_route_members WHERE model_id=? AND profile_id<>?),revision=revision+1 WHERE model_id=?').bind(remaining.profile_id,modelId,row.id,modelId));
+      else statements.push(env.DB.prepare('DELETE FROM agent_model_routes WHERE model_id=?').bind(modelId),env.DB.prepare('UPDATE model_catalog SET enabled=0,agent_enabled=0 WHERE id=?').bind(modelId));
+    }
+    await env.DB.batch(statements);
+    const affectedModels=[...new Set([...agent.map(item=>item.model_id),...legacy.map(item=>item.model_id),...drafts.map(item=>item.model_id)])];
+    await audit(env,admin.id,'upstream_retired',{profileId:row.id,affectedModels});
+    return json({ok:true,retired:true,affectedModels});
+  }
   if (request.method === "PUT" && !match[2]) {
+    if(row.retired_at)return json({error:'上游已退役，不能修改。'},409);
     const body = await bodyOf(request); const name = typeof body?.name === "string" ? body.name.trim().slice(0, 64) : row.name; const baseUrl = body?.baseUrl ? validUpstreamUrl(body.baseUrl, new URL(request.url).hostname) : row.base_url; const apiKey = typeof body?.apiKey === "string" ? body.apiKey.trim() : ""; const capacity=Number(body?.maxConcurrency??row.max_concurrency??5);
     if (!name || !baseUrl || (apiKey && (apiKey.length < 8 || apiKey.length > 4096)) || !Number.isInteger(capacity) || capacity<1 || capacity>1000) return json({ error: "上游配置不正确。" }, 400);
     let ciphertext = row.api_key_ciphertext; let iv = row.api_key_iv; let hint = row.key_hint;
@@ -288,7 +315,23 @@ async function billingAdminRoutes(request, env, path, admin, audit) {
   return null;
 }
 
-async function operationsRoutes(request, env, path) {
+async function operationsRoutes(request, env, path, admin, audit) {
+  const devices=path.match(/^\/admin\/accounts\/([^/]+)\/devices(?:\/([A-Za-z0-9_-]+))?$/);
+  if(devices){
+    const accountId=decodeURIComponent(devices[1]);
+    if(request.method==='GET'&&!devices[2]){
+      const rows=await env.DB.prepare('SELECT token_hash,label,created_at,last_used_at,expires_at,revoked_at FROM device_tokens WHERE account_id=? ORDER BY created_at DESC LIMIT 100').bind(accountId).all();
+      return json({devices:(rows.results||[]).map(row=>({id:row.token_hash,label:row.label,createdAt:row.created_at,lastUsedAt:row.last_used_at,expiresAt:row.expires_at,revokedAt:row.revoked_at}))});
+    }
+    if(request.method==='POST'&&devices[2]){
+      const result=await env.DB.batch([
+        env.DB.prepare('UPDATE device_tokens SET revoked_at=CURRENT_TIMESTAMP WHERE account_id=? AND token_hash=? AND revoked_at IS NULL').bind(accountId,devices[2]),
+        env.DB.prepare('UPDATE api_keys SET revoked_at=CURRENT_TIMESTAMP WHERE account_id=? AND device_token_hash=? AND revoked_at IS NULL').bind(accountId,devices[2])
+      ]);
+      if(!result[0].meta?.changes)return json({error:'设备不存在或已撤销。'},404);
+      await audit(env,admin.id,'admin_device_revoked',{accountId,device:devices[2].slice(0,8)});return json({ok:true});
+    }
+  }
   if (path === "/admin/accounts" && request.method === "GET") {
     const url = new URL(request.url); const query = `%${(url.searchParams.get("query") || "").trim().slice(0, 100)}%`; const status = url.searchParams.get("status") || "all"; const page = Math.max(1, Number(url.searchParams.get("page")) || 1); const limit = 25; const offset = (page - 1) * limit;
     const where = status === "active" || status === "suspended" ? "WHERE a.email LIKE ? AND a.status = ?" : "WHERE a.email LIKE ?"; const bindings = status === "active" || status === "suspended" ? [query, status] : [query];
@@ -318,6 +361,12 @@ async function releaseAdminRoutes(request, env, path, admin, audit) {
   }
   const publish = path.match(/^\/admin\/desktop\/releases\/([0-9a-f-]+)\/publish$/i);
   if (publish && request.method === "POST") { const row = await env.DB.prepare("SELECT * FROM desktop_releases WHERE id = ?").bind(publish[1]).first(); if (!row) return json({ error: "发布记录不存在。" }, 404); if (!env.DESKTOP_RELEASES || !await env.DESKTOP_RELEASES.head(row.object_key)) return json({ error: "R2 中未找到对应安装包。" }, 409); await env.DB.batch([env.DB.prepare("UPDATE desktop_releases SET status = 'retired', updated_at = CURRENT_TIMESTAMP WHERE platform = ? AND status = 'published'").bind(row.platform), env.DB.prepare("UPDATE desktop_releases SET status = 'published', published_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?").bind(row.id)]); await audit(env, admin.id, "desktop_release_published", { releaseId: row.id, version: row.version }); return json({ ok: true }); }
+  const stop=path.match(/^\/admin\/desktop\/releases\/([0-9a-f-]+)\/stop$/i);
+  if(stop&&request.method==='POST'){
+    const result=await env.DB.prepare("UPDATE desktop_releases SET status='retired',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='published'").bind(stop[1]).run();
+    if(!result.meta?.changes)return json({error:'只能停止当前正在分发的版本。'},409);
+    await audit(env,admin.id,'desktop_release_stopped',{releaseId:stop[1]});return json({ok:true});
+  }
   return null;
 }
 
@@ -327,13 +376,14 @@ export async function handlePlatformRoute(request, env, path, helpers) {
   if (path.startsWith("/admin/")) {
     const admin = await helpers.activeAdminFor(request, env);
     if (!admin) return json({ error: "需要管理员权限。" }, 403);
-    return await handleAgentAdmin(request, env, path, admin, helpers.audit)
+    return await handleModelServicesAdmin(request, env, path, admin, helpers.audit)
+      || await handleAgentAdmin(request, env, path, admin, helpers.audit)
       || await handleMeteringAdmin(request, env, path, admin, helpers.audit)
       || await upstreamRoutes(request, env, path, admin, helpers.audit)
       || await handleAlipayRoute(request, env, path, { ...helpers, admin })
       || await billingAdminRoutes(request, env, path, admin, helpers.audit)
       || await releaseAdminRoutes(request, env, path, admin, helpers.audit)
-      || await operationsRoutes(request, env, path);
+      || await operationsRoutes(request, env, path, admin, helpers.audit);
   }
   const alipayResponse = await handleAlipayRoute(request, env, path, helpers);
   if (alipayResponse) return alipayResponse;

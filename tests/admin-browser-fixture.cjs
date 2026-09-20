@@ -10,7 +10,7 @@ const fixtures={
   '/admin/overview':{admin:{email:'fixture@example.invalid'},overview:{accounts:0,active:0,pendingVerifications:0}},
   '/admin/accounts':{accounts:[],page:1,pages:1,total:0},
   '/admin/metering':{models:[model],settings:{multiplier_ppm:300000,usd_cny_ppm:7000000,default_model:model.id},ledger:[]},
-  '/admin/upstreams':{upstreams:[profile]},'/admin/routes':{routes:[]},'/admin/opencode':{routes:[]},
+  '/admin/upstreams':{upstreams:[profile]},'/admin/routes':{routes:[]},'/admin/opencode':{routes:[]},'/admin/model-services':{drafts:[]},
   '/admin/desktop/releases':{releases:[]},'/admin/billing/orders':{orders:[]},'/admin/billing/plan':{paymentAvailable:false}
 };
 const allowed=new Set(['admin.html','admin.css','admin-layout.css','admin.js','admin-platform.js','admin-metering.js','ui-kit.js']);
@@ -20,4 +20,4 @@ http.createServer((req,res)=>{
   const file=url.pathname==='/'?'admin.html':url.pathname.slice(1);
   if(!allowed.has(file)){res.statusCode=404;res.end();return;}
   res.setHeader('content-type',file.endsWith('.js')?'application/javascript':file.endsWith('.css')?'text/css':'text/html');res.end(fs.readFileSync(path.join(root,file)));
-}).listen(4174,'127.0.0.1',()=>console.log('Admin fixture: http://127.0.0.1:4174/admin.html#metering'));
+}).listen(Number(process.env.BOTGO_ADMIN_FIXTURE_PORT)||4174,'127.0.0.1',()=>console.log('Admin fixture ready'));

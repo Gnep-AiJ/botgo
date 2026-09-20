@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const titles = { overview: "概览", upstreams: "上游与路由", metering: "模型与计费", accounts: "用户", billing: "充值", releases: "版本" };
+  const titles = { overview: "概览", upstreams: "上游连接", metering: "模型服务", accounts: "用户与设备", billing: "调用与账务", releases: "版本发布" };
   const state = { admin: null, overview: null,  accountPage: 1 };
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -19,7 +19,7 @@
 
   function activeView() {
     const view = location.hash.slice(1);
-    return titles[view] ? view : "overview";
+    return titles[view] ? view : "metering";
   }
 
   function renderNavigation() {
@@ -40,12 +40,22 @@
   async function loadAccounts(page = 1) {
     const form = $("#account-filter"); const params = new URLSearchParams({ page: String(page), query: form.elements.query.value, status: form.elements.status.value });
     const data = await api(`/admin/accounts?${params}`); state.accountPage = data.page;
-    const rows = data.accounts.map(account=>`<tr>${cell("账户",escapeHtml(account.email))}${cell("状态",account.status==="active"?"正常":"已停用")}${cell("余额（元）",Number(account.credit_balance).toFixed(2))}${cell("注册时间",formatTime(account.created_at))}${cell("操作",`<div class="table-actions"><button class="table-button" data-grant-balance="${escapeHtml(account.id)}">赠送余额</button>${account.role==="admin"?"":`<button class="table-button" data-account-status="${escapeHtml(account.id)}" data-next-status="${account.status==="active"?"suspended":"active"}">${account.status==="active"?"停用":"恢复"}</button>`}</div>`)}</tr>`);
+    const rows = data.accounts.map(account=>`<tr>${cell("账户",escapeHtml(account.email))}${cell("状态",account.status==="active"?"正常":"已停用")}${cell("余额（元）",Number(account.credit_balance).toFixed(2))}${cell("注册时间",formatTime(account.created_at))}${cell("操作",`<div class="table-actions"><button class="table-button" data-grant-balance="${escapeHtml(account.id)}">赠送余额</button><button class="table-button" data-devices="${escapeHtml(account.id)}">设备</button>${account.role==="admin"?"":`<button class="table-button" data-account-status="${escapeHtml(account.id)}" data-next-status="${account.status==="active"?"suspended":"active"}">${account.status==="active"?"停用":"恢复"}</button>`}</div>`)}</tr>`);
     $("#account-list").innerHTML=table(["账户","状态","余额（元）","注册时间","操作"],rows,"暂无用户");
     $("#account-pagination").innerHTML = `<button class="button secondary compact" type="button" data-account-page="${data.page - 1}" ${data.page <= 1 ? "disabled" : ""}>上一页</button><span class="button ghost compact">${data.page} / ${data.pages}</span><button class="button secondary compact" type="button" data-account-page="${data.page + 1}" ${data.page >= data.pages ? "disabled" : ""}>下一页</button>`;
     $$('[data-account-page]').forEach((button) => button.addEventListener("click", () => loadAccounts(Number(button.dataset.accountPage))));
     $$('[data-account-status]').forEach((button) => button.addEventListener("click", () => updateAccountStatus(button.dataset.accountStatus, button.dataset.nextStatus)));
     $$('[data-grant-balance]').forEach(button=>button.addEventListener("click",()=>openGrant(data.accounts.find(a=>a.id===button.dataset.grantBalance))));
+    $$('[data-devices]').forEach(button=>button.addEventListener('click',()=>openDevices(data.accounts.find(a=>a.id===button.dataset.devices))));
+  }
+
+  async function openDevices(account){
+    if(!account)return;const dialog=$('#devices-dialog');$('#devices-account').textContent=account.email;$('#devices-list').textContent='正在加载…';dialog.showModal();
+    try{const data=await api(`/admin/accounts/${encodeURIComponent(account.id)}/devices`);
+      const rows=(data.devices||[]).map(device=>`<tr>${cell('设备',escapeHtml(device.label))}${cell('最近使用',formatTime(device.lastUsedAt))}${cell('状态',device.revokedAt?'已撤销':new Date(device.expiresAt)<new Date()?'已过期':'有效')}${cell('操作',device.revokedAt?'—':`<button type="button" class="table-button danger" data-revoke="${escapeHtml(device.id)}">撤销</button>`)}</tr>`);
+      $('#devices-list').innerHTML=table(['设备','最近使用','状态','操作'],rows,'暂无授权设备');
+      $$('[data-revoke]').forEach(button=>button.onclick=async()=>{if(!confirm('撤销这台设备的授权？'))return;try{await api(`/admin/accounts/${encodeURIComponent(account.id)}/devices/${encodeURIComponent(button.dataset.revoke)}`,{method:'POST'});dialog.close();openDevices(account);}catch(error){setStatus('devices-status',error.message,true);}});
+    }catch(error){setStatus('devices-status',error.message,true);}
   }
 
   async function updateAccountStatus(accountId, status) {
@@ -74,7 +84,8 @@
 
   window.BotGoAdmin = { api, jsonOptions, setStatus, formatTime, cell, table, escapeHtml };
   $$('dialog [value="cancel"]').forEach((button) => { button.type = "button"; button.addEventListener("click", () => button.closest("dialog").close()); });
-  applyTheme(localStorage.getItem("botgo-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+  $('#devices-dialog [data-close-devices]').addEventListener('click',()=>$('#devices-dialog').close());
+  applyTheme("light");
   $("#admin-theme-toggle").addEventListener("click", () => applyTheme(document.documentElement.dataset.theme === "dark" ? "light" : "dark"));
   $("#admin-menu-toggle").addEventListener("click", () => { const open = document.body.classList.toggle("nav-open"); $("#admin-menu-toggle").setAttribute("aria-expanded", String(open)); });
   document.addEventListener('keydown',event=>{if(event.key==='Escape'&&document.body.classList.contains('nav-open')){document.body.classList.remove('nav-open');$('#admin-menu-toggle').setAttribute('aria-expanded','false');$('#admin-menu-toggle').focus();}});

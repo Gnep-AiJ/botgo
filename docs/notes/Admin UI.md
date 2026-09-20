@@ -7,10 +7,11 @@ tags: [botgo, admin, ui]
 
 上级：[[../PROJECT_MAP]] · [[Models and Metering]] · [[Release 2026-09-12]]
 
-- admin.html 定义导航与视图；admin.js 管理授权、导航和移动端关闭交互。
-- admin-layout.css 保留 BotGo 蓝色主题，集中覆盖布局、表格、模型卡片与响应式样式。
-- admin-metering.js 管理模型目录、计费设置和用量记录三个标签页，模型通过侧栏编辑，支持删除保护、加载重试和失败时保留输入。
-- admin-platform.js 处理运行管理页面，加载错误必须可见。
+- admin.html 定义模型服务、上游连接、调用与账务、用户与设备、版本发布五个导航入口。
+- admin-layout.css 用浅灰页面、白色表格和蓝色主按钮；模型表格通过侧栏编辑。
+- admin-metering.js 只将模型保存到 `model_service_drafts`。测试使用草稿和现有加密上游配置；发布前核对测试指纹并原子切换客户端模型。调用记录放在“调用与账务”。
+- admin-platform.js 管理上游、订单和版本。上游删除前显示关联模型；有绑定可停用并解除，有历史则退役归档。
+- worker/src/model-services-admin.js 是草稿、测试、发布入口；迁移 `0021_retired_upstreams.sql` 保存草稿并为上游添加退役时间。
 - tests/admin-ui-preview.cjs 使用隔离 API 夹具验证明暗主题、三种宽度、导航、保存失败、加载重试和无权限状态；不能替代生产管理员操作验收。
 
 本轮已移除邀请码、Pro 操作及前端审计日志；用户赠送余额和开放注册见 [[Open Registration and Retention]]。所有 Admin 资源均由构建脚本添加内容版本号。

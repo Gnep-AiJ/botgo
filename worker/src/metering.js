@@ -281,7 +281,7 @@ export async function handleMeteringAdmin(request,env,path,admin,audit) {
     await env.DB.prepare('UPDATE metering_settings SET multiplier_ppm=?,usd_cny_ppm=?,default_model=?,revision=revision+1 WHERE id=1').bind(body.multiplierPpm,body.usdCnyPpm,body.defaultModel).run();
     await audit(env,admin.id,'metering_settings_changed',{defaultModel:body.defaultModel,multiplierPpm:body.multiplierPpm,usdCnyPpm:body.usdCnyPpm});return reply({ok:true});
   }
-  const match=path.match(/^\/admin\/metering\/models\/([a-z0-9.-]+)$/);
+  const match=path.match(/^\/admin\/metering\/models\/([a-z0-9._-]+)$/);
   if(match?.[1]===AUTO_REVIEW_MODEL_ID)return reply({error:'codex-auto-review 是保留的原生内部路由，不属于模型目录或价格配置。'},400);
   if(match&&request.method==='DELETE') {
     if(await env.DB.prepare('SELECT model_id FROM agent_model_routes WHERE model_id=?').bind(match[1]).first())return reply({error:'该模型仍有 OpenCode 路由配置，请先禁用模型并保留历史。'},409);

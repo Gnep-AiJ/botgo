@@ -14,15 +14,15 @@ export async function agentRoutes(env) {
     LEFT JOIN agent_route_health h ON h.model_id=r.model_id AND h.profile_id=r.profile_id AND h.protocol=r.protocol
     WHERE m.archived=0`).all()).results || [];
   const members=(await env.DB.prepare(`SELECT a.model_id,a.profile_id,a.upstream_model_id,a.enabled,a.verified_at,a.priority,a.revision,
-    p.name AS profile_name,p.base_url,p.max_concurrency,COUNT(l.id) AS active_requests,h.reason AS blocked_reason
+    p.name AS profile_name,p.base_url,p.max_concurrency,p.retired_at,COUNT(l.id) AS active_requests,h.reason AS blocked_reason
     FROM agent_route_members a JOIN upstream_profiles p ON p.id=a.profile_id
     JOIN agent_model_routes r ON r.model_id=a.model_id
     LEFT JOIN upstream_leases l ON l.profile_id=a.profile_id AND l.state='active' AND l.expires_at>CURRENT_TIMESTAMP
     LEFT JOIN agent_route_health h ON h.model_id=a.model_id AND h.profile_id=a.profile_id AND h.protocol=r.protocol
-    GROUP BY a.model_id,a.profile_id,a.upstream_model_id,a.enabled,a.verified_at,a.priority,a.revision,p.name,p.base_url,p.max_concurrency,h.reason
+    GROUP BY a.model_id,a.profile_id,a.upstream_model_id,a.enabled,a.verified_at,a.priority,a.revision,p.name,p.base_url,p.max_concurrency,p.retired_at,h.reason
     ORDER BY a.model_id,(COUNT(l.id)*1.0/p.max_concurrency),a.priority,a.profile_id`).all()).results||[];
   return routes.map(route=>{
-    let routeMembers=members.filter(member=>member.model_id===route.model_id).map(member=>({...member,max_concurrency:Number(member.max_concurrency)||5,active_requests:Number(member.active_requests)||0}));
+    let routeMembers=members.filter(member=>member.model_id===route.model_id).map(member=>({...member,enabled:Boolean(member.enabled&&!member.retired_at),max_concurrency:Number(member.max_concurrency)||5,active_requests:Number(member.active_requests)||0}));
     if(!routeMembers.some(member=>member.profile_id===route.profile_id))routeMembers.unshift({model_id:route.model_id,profile_id:route.profile_id,enabled:1,verified_at:route.verified_at,priority:100,revision:route.revision,max_concurrency:5,active_requests:0,blocked_reason:route.blocked_reason||null});
     const primary=routeMembers.find(member=>member.profile_id===route.profile_id)||routeMembers[0];
     return {...route,...primary,enabled:route.enabled,profile_id:primary?.profile_id||route.profile_id,members:routeMembers};
@@ -161,7 +161,7 @@ export async function handleAgentAdmin(request,env,path,admin,audit) {
   const model=await env.DB.prepare('SELECT id FROM model_catalog WHERE id=? AND archived=0').bind(match[1]).first();
   const members=Array.isArray(body.members)?body.members.map(item=>({profileId:String(item?.profileId||''),upstreamModelId:String(item?.upstreamModelId||''),enabled:item?.enabled!==false,priority:Number.isInteger(item?.priority)?item.priority:100})):body.profileId?[{profileId:String(body.profileId),upstreamModelId:'',enabled:true,priority:100}]:[];
   if(!model||!members.length||members.length>50||new Set(members.map(item=>item.profileId)).size!==members.length||members.some(item=>item.upstreamModelId&&!/^[A-Za-z0-9._:/-]{1,128}$/.test(item.upstreamModelId)))return reply({error:'模型或上游成员无效。'},400);
-  for(const member of members)if(!await env.DB.prepare('SELECT id FROM upstream_profiles WHERE id=?').bind(member.profileId).first())return reply({error:'模型或上游不存在。'},400);
+  for(const member of members)if(!await env.DB.prepare('SELECT id FROM upstream_profiles WHERE id=? AND retired_at IS NULL').bind(member.profileId).first())return reply({error:'模型或上游不存在或已退役。'},400);
   const old=(await agentRoutes(env)).find(r=>r.model_id===match[1]);
   const unchangedProtocol=old?.protocol===body.protocol;
   const verifiedMember=unchangedProtocol&&members.some(member=>member.enabled&&old?.members?.some(existing=>existing.profile_id===member.profileId&&(!member.upstreamModelId||member.upstreamModelId===(existing.upstream_model_id||old.upstream_id))&&usableMember(existing)));

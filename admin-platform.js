@@ -3,7 +3,7 @@
   const { api, jsonOptions, setStatus, formatTime, cell, table, escapeHtml } = window.BotGoAdmin;
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => [...document.querySelectorAll(selector)];
-  const labels = { desktop_codex: "兼容客户端", desktop_opencode: "BotGo 客户端" };
+  const labels = { desktop_codex: "客户端", desktop_opencode: "客户端" };
   const state = { upstreams: [], routes: [], agentRoutes: [], models: [], releases: [], routingBusy: false, selectedRoute: null };
 
   const statusPill = (status) => {
@@ -81,10 +81,11 @@
   }
 
   function renderUpstreams() {
-    const rows = state.upstreams.map((profile) => `<tr>${cell("端点", `<strong>${escapeHtml(profile.name)}</strong><span class="table-sub">${escapeHtml(profile.baseUrl)}</span>`)}${cell("API Key", escapeHtml(profile.keyHint))}${cell("容量", `<strong>${Number(profile.activeRequests || 0)} / ${Number(profile.maxConcurrency || 5)}</strong><span class="table-sub">当前请求 / 最大并发</span>`)}${cell("路由", escapeHtml([...new Set(profile.assignedChannels || [])].map((channel) => labels[channel] || channel).join("、") || "未使用"))}${cell("最近测试", `${statusPill(profile.lastTestStatus)}<span class="table-sub">${formatTime(profile.lastTestedAt)}</span>`)}${cell("操作", `<div class="table-actions"><button class="table-button" type="button" data-edit-upstream="${escapeHtml(profile.id)}">编辑</button><button class="table-button danger" type="button" data-delete-upstream="${escapeHtml(profile.id)}">删除</button></div>`)}</tr>`);
-    $("#upstream-list").innerHTML = table(["端点", "API Key", "容量", "路由", "最近测试", "操作"], rows, "尚未添加上游端点");
+    const rows = state.upstreams.filter(profile=>!profile.retired).map((profile) => `<tr>${cell("上游", `<strong>${escapeHtml(profile.name)}</strong><span class="table-sub">${escapeHtml(profile.baseUrl)}</span>`)}${cell("API Key", escapeHtml(profile.keyHint))}${cell("总并发", `${Number(profile.activeRequests || 0)} / ${Number(profile.maxConcurrency || 5)}`)}${cell("关联模型", (profile.dependencies||[]).length?[...new Set(profile.dependencies.map(item=>item.modelId))].map(modelId=>`<button type="button" class="table-button" data-open-model="${escapeHtml(modelId)}">${escapeHtml(modelId)}</button>`).join(" "):"未使用")}${cell("操作", `<div class="table-actions"><button class="table-button" type="button" data-edit-upstream="${escapeHtml(profile.id)}">编辑</button><button class="table-button danger" type="button" data-delete-upstream="${escapeHtml(profile.id)}">${(profile.dependencies||[]).length?'停用并清空':'删除'}</button></div>`)}</tr>`);
+    $("#upstream-list").innerHTML = table(["上游", "API Key", "总并发", "关联模型", "操作"], rows, "尚未添加上游连接");
     $$('[data-edit-upstream]').forEach((button) => button.addEventListener("click", () => openUpstreamDialog(button.dataset.editUpstream)));
     $$('[data-delete-upstream]').forEach((button) => button.addEventListener("click", () => deleteUpstream(button.dataset.deleteUpstream)));
+    $$('[data-open-model]').forEach(button=>button.addEventListener('click',()=>{window.BotGoAdminPendingModel=button.dataset.openModel;location.hash='#metering';}));
   }
 
   async function loadRouting() {
@@ -169,8 +170,15 @@
 
   async function deleteUpstream(id) {
     const profile = state.upstreams.find((item) => item.id === id);
-    if (!profile || !confirm(`永久删除上游“${profile.name}”？正在使用或存在审计历史的上游不能删除。`)) return;
-    try { await api(`/admin/upstreams/${id}`, { method: "DELETE" }); await loadRouting(); } catch (error) { setStatus("upstream-status", error.message, true); }
+    if (!profile) return;
+    const dependencies=[...new Set((profile.dependencies||[]).map(item=>item.modelId))];
+    if(dependencies.length){
+      if(!confirm(`停用并解除上游“${profile.name}”的全部绑定？\n影响模型：${dependencies.join('、')}\n没有其他上游的模型将下架。历史记录保留。`))return;
+      try{await api(`/admin/upstreams/${id}/retire`,{method:'POST'});await loadRouting();setStatus('upstream-status','上游已停用并从模型绑定中移除。');}catch(error){setStatus('upstream-status',error.message,true);}return;
+    }
+    if(!confirm(`删除上游“${profile.name}”？如有历史记录则会退役归档。`))return;
+    try{await api(`/admin/upstreams/${id}`,{method:'DELETE'});await loadRouting();setStatus('upstream-status','上游已删除。');}
+    catch(error){if(error.status===409){try{await api(`/admin/upstreams/${id}/retire`,{method:'POST'});await loadRouting();setStatus('upstream-status','有历史记录，上游已退役归档。');}catch(retireError){setStatus('upstream-status',retireError.message,true);}}else setStatus('upstream-status',error.message,true);}
   }
 
   async function loadPlan() {
@@ -183,13 +191,15 @@
 
   async function loadReleases() {
     const data = await api("/admin/desktop/releases"); state.releases = data.releases || [];
-    const rows = state.releases.map((release) => `<tr>${cell("版本", `<strong>${escapeHtml(release.version)}</strong><span class="table-sub">${escapeHtml(release.platform)}</span>`)}${cell("状态", `<span class="status-pill ${release.status === "published" ? "success" : release.status === "draft" ? "warning" : "neutral"}">${release.status === "published" ? "当前版本" : release.status === "draft" ? "草稿" : "已退役"}</span>`)}${cell("文件", escapeHtml(release.file_name))}${cell("大小", `${(release.size_bytes / 1048576).toFixed(1)} MB`)}${cell("创建时间", formatTime(release.created_at))}${cell("操作", release.status === "draft" ? `<div class="table-actions"><button class="table-button" type="button" data-publish-release="${release.id}">发布</button><button class="table-button danger" data-delete-release="${release.id}">删除</button></div>` : "—")}</tr>`);
-    $("#release-list").innerHTML = table(["版本", "状态", "文件", "大小", "创建时间", "操作"], rows, "暂无发布记录");
+    const rows = state.releases.map((release) => `<tr>${cell("版本", `<strong>${escapeHtml(release.version)}</strong><span class="table-sub">${escapeHtml(release.platform)}</span>`)}${cell("状态", `<span class="status-pill ${release.status === "published" ? "success" : release.status === "draft" ? "warning" : "neutral"}">${release.status === "published" ? "当前版本" : release.status === "draft" ? "草稿" : "已退役"}</span>`)}${cell("文件", escapeHtml(release.file_name))}${cell("发布时间", formatTime(release.published_at))}${cell("操作", release.status === "draft" ? `<div class="table-actions"><button class="table-button" type="button" data-publish-release="${release.id}">发布</button><button class="table-button danger" data-delete-release="${release.id}">删除</button></div>` : release.status==='published'?`<button class="table-button danger" type="button" data-stop-release="${release.id}">停止分发</button>`:"—")}</tr>`);
+    $("#release-list").innerHTML = table(["版本", "状态", "文件", "发布时间", "操作"], rows, "暂无发布记录");
     $$('[data-delete-release]').forEach((button) => button.addEventListener("click", () => deleteRelease(button.dataset.deleteRelease))); $$('[data-publish-release]').forEach((button) => button.addEventListener("click", () => publishRelease(button.dataset.publishRelease)));
+    $$('[data-stop-release]').forEach(button=>button.addEventListener('click',()=>stopRelease(button.dataset.stopRelease)));
   }
 
   async function deleteRelease(id) { if (!confirm("删除此版本草稿？")) return; try { await api(`/admin/desktop/releases/${id}`, { method: "DELETE" }); await loadReleases(); } catch (error) { setStatus("release-status", error.message, true); } }
   async function publishRelease(id) { const release = state.releases.find((item) => item.id === id); if (!release || !confirm(`发布 ${release.version}？当前已发布版本将标记为已退役。`)) return; try { setStatus("release-status", "正在验证 R2 对象并发布…"); await api(`/admin/desktop/releases/${id}/publish`, { method: "POST" }); setStatus("release-status", "版本已发布。"); await loadReleases(); } catch (error) { setStatus("release-status", error.message, true); } }
+  async function stopRelease(id){const release=state.releases.find(item=>item.id===id);if(!release||!confirm(`停止分发 ${release.version}？客户端下载入口将暂无版本。`))return;try{await api(`/admin/desktop/releases/${id}/stop`,{method:'POST'});await loadReleases();setStatus('release-status','已停止分发。');}catch(error){setStatus('release-status',error.message,true);}}
 
   $("#open-upstream-dialog").addEventListener("click", () => openUpstreamDialog()); $("#open-route-dialog").addEventListener("click", () => openRouteDialog()); $("#open-release-dialog").addEventListener("click", () => $("#release-dialog").showModal());
   $$('[data-close-route-detail]').forEach((button) => button.addEventListener("click", () => $("#route-detail-dialog").close()));
