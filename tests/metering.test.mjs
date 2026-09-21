@@ -75,10 +75,10 @@ try{
   const attempted=[];globalThis.fetch=async(url)=>{attempted.push(url);if(url.includes('upstream.invalid'))return new Response('',{status:429});return new Response('data: {"usage":{"prompt_tokens":0,"completion_tokens":0}}\n\ndata: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}});};
   const failedOver=await meteredProxy(new Request('https://botgo.test/chat/stream',{headers:{'idempotency-key':'failover-route-123456'}}),env,{waitUntil:p=>jobs.push(p)},{...options,candidates:pool,upstream:null});
   assert.equal(failedOver.status,200);await failedOver.text();await Promise.all(jobs);assert.equal(attempted.length,2);
-  // A network failure after HTTP 200 but before the first response byte is still eligible for failover.
+  // HTTP 200 followed by a broken body cannot prove the upstream did no work.
   let bodyAttempts=0;globalThis.fetch=async()=>{bodyAttempts++;if(bodyAttempts===1)return new Response(new ReadableStream({start(controller){controller.error(new Error('connection reset'));}}),{headers:{'content-type':'text/event-stream'}});return new Response('data: {"usage":{"prompt_tokens":0,"completion_tokens":0}}\n\ndata: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}});};
   const firstByteFailover=await meteredProxy(new Request('https://botgo.test/chat/stream',{headers:{'idempotency-key':'first-byte-route-123456'}}),env,{waitUntil:p=>jobs.push(p)},{...options,candidates:pool,upstream:null});
-  assert.equal(firstByteFailover.status,200);await firstByteFailover.text();await Promise.all(jobs);assert.equal(bodyAttempts,2);
+  assert.equal(firstByteFailover.status,502);assert.equal((await firstByteFailover.json()).retryable,false);await Promise.all(jobs);assert.equal(bodyAttempts,1);
   // The lease trigger enforces the approved per-account limit independently from the legacy Agent limit of eight.
   reserve('held-account-1',1);reserve('held-account-2',1);
   sql.prepare("INSERT INTO upstream_leases(id,request_id,account_id,profile_id,expires_at) VALUES('account-lease-1','held-account-1','test','test-profile',datetime('now','+5 minutes'))").run();
@@ -99,5 +99,17 @@ try{
   assert.equal(sql.prepare('SELECT answer FROM web_chat_turns WHERE request_id=?').get('interrupted-request-123456').answer,'partial');
   assert.equal(sql.prepare('SELECT state FROM web_chat_turns WHERE request_id=?').get('interrupted-request-123456').state,'stopped');
   assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM metered_requests WHERE account_id='test' AND review_reason='client_cancelled' AND review_required=0").get().n,1,'a cancelled stream remains an audit record without entering manual review');
+  // Even valid partial usage is audit-only on cancellation or explicit failure.
+  const beforeFailure=balance();
+  for(const reason of ['client_cancelled','stream_failed']){
+    reserve(reason,10000);await settle(env,reason,{input_tokens:1000,output_tokens:100},snapshot,'refunded',false,reason);
+    const row=sql.prepare('SELECT * FROM metered_requests WHERE id=?').get(reason);
+    assert.equal(row.charged_micros,0);assert.equal(row.cost_micros,0);assert.ok(row.usage_json);assert.equal(row.review_required,0);
+  }
+  assert.equal(balance(),beforeFailure);assert.equal(account().billing_reserved_micros,0);
+  globalThis.fetch=async()=>new Response('data: {"choices":[{"delta":{"content":"partial"}}]}\n\ndata: {"usage":{"prompt_tokens":100,"completion_tokens":10}}\n\n',{headers:{'content-type':'text/event-stream'}});
+  const truncated=await meteredProxy(new Request('https://botgo.test/chat/stream'),env,{waitUntil:p=>jobs.push(p)},options);
+  await assert.rejects(truncated.text());await Promise.all(jobs);assert.equal(balance(),beforeFailure,'EOF without a terminal event cannot charge');
+  assert.equal(account().billing_reserved_micros,0);
 }finally{globalThis.fetch=originalFetch;sql.close();}
 console.log('Metering: migrations, precision, cache, reasoning, long context, atomic reserves, overrun, idempotency and SSE passed');

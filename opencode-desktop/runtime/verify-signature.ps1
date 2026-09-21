@@ -1,5 +1,8 @@
 param([Parameter(Mandatory=$true)][string]$FilePath)
 $ErrorActionPreference='Stop'
+# A desktop launched by PowerShell 7 can inherit its module search path.
+# Load the signing module belonging to the Windows PowerShell running this file.
+Import-Module (Join-Path $PSHOME 'Modules/Microsoft.PowerShell.Security/Microsoft.PowerShell.Security.psd1') -ErrorAction Stop
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;

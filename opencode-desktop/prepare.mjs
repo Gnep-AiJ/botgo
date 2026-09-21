@@ -64,7 +64,7 @@ main=replace(main,'  yield* Fiber.await(loadingTask)','  // The login window mus
 main=replace(main,'  if (windows.length) createMenu(menuDeps)','  if (windows.length) createMenu(menuDeps)\n  yield* Fiber.await(loadingTask) // Keep the initialization fiber alive while the user signs in.');
 staged.set('packages/desktop/src/main/index.ts',main);
 staged.set('packages/desktop/src/main/botgo-main.ts',fs.readFileSync(path.join(here,'overlay/botgo-main.ts')));
-for(const file of ['bridge.cjs','authorize.cjs','diagnostic.cjs','credential-store.cjs','updater.cjs','verify-signature.ps1'])staged.set(`packages/desktop/src/main/botgo/${file}`,fs.readFileSync(path.join(here,'runtime',file)));
+for(const file of ['bridge.cjs','network.cjs','authorize.cjs','diagnostic.cjs','credential-store.cjs','updater.cjs','verify-signature.ps1'])staged.set(`packages/desktop/src/main/botgo/${file}`,fs.readFileSync(path.join(here,'runtime',file)));
 staged.set('packages/desktop/src/main/updater.ts',fs.readFileSync(path.join(here,'overlay/botgo-updater.ts')));
 let ipc=base('packages/desktop/src/main/ipc.ts');
 ipc='import type { createBotGo } from "./botgo-main"\n'+ipc;
@@ -160,7 +160,7 @@ staged.set('packages/desktop/src/renderer/index.tsx',renderer);
 staged.set('packages/ui/src/components/favicon.tsx',base('packages/ui/src/components/favicon.tsx').replace('content="OpenCode"','content="BotGo"'));
 staged.set('packages/app/src/components/windows-app-menu.tsx',base('packages/app/src/components/windows-app-menu.tsx').replace('>OpenCode</DropdownMenu.GroupLabel>','>BotGo</DropdownMenu.GroupLabel>'));
 for(const file of ['packages/app/src/desktop-menu.ts','packages/app/src/pages/layout.tsx','packages/app/src/components/settings-general.tsx','packages/app/src/components/settings-v2/general.tsx']){
-  staged.set(file,base(file).replace(/https:\/\/opencode\.ai\/[^"\s]*/g,'https://botgo.win/')
+  staged.set(file,base(file).replaceAll('https://opencode.ai/desktop-feedback','mailto:gnepaij@qq.com').replace(/https:\/\/opencode\.ai\/[^"\s]*/g,'https://botgo.win/#product')
     .replace(/https:\/\/github\.com\/anomalyco\/opencode\/issues\/new[^"\s]*/g,'mailto:gnepaij@qq.com')
     .replaceAll('https://discord.com/invite/opencode','mailto:gnepaij@qq.com'));
 }
@@ -259,7 +259,7 @@ unpaidModelsV2=removeSection(unpaidModelsV2,'  const openProviders = (provider?:
 unpaidModelsV2=removeSection(unpaidModelsV2,'\n\n          <div class="flex w-full flex-col">\n            <div class="flex w-full flex-col items-start rounded-lg','\n        </div>\n      </DialogBody>');
 staged.set('packages/app/src/components/dialog-select-model-unpaid-v2.tsx',unpaidModelsV2);
 
-let layout=base('packages/app/src/pages/layout.tsx');
+let layout=String(staged.get('packages/app/src/pages/layout.tsx')??base('packages/app/src/pages/layout.tsx'));
 layout=removeSection(layout,'      {\n        id: "provider.connect",','      {\n        id: "server.switch",');
 layout=removeSection(layout,'  function connectProvider() {','  function openServer() {');
 layout=removeSection(layout,'                <Button size="large" icon="plus-small" onClick={connectProvider}>','                <Button size="large" variant="ghost" onClick={() => setStore("gettingStartedDismissed", true)}>');
@@ -273,8 +273,8 @@ const translations={
   en:{'botgo.login.description':'Use your BotGo account to work with local projects.','botgo.login.action':'Sign in with BotGo','botgo.login.connecting':'Connecting…','botgo.login.waiting':'Waiting for browser authorization…','botgo.login.reopen':'Open the authorization page again','botgo.login.cancel':'Cancel','botgo.error.models':'BotGo is temporarily unavailable. Please try again later.','botgo.error.session':'Your sign-in has expired. Please sign in again.','botgo.error.connection':'Sign-in could not be completed. Please try again.'},
   zh:{'botgo.login.description':'登录 BotGo 账户，开始处理本地项目。','botgo.login.action':'登录 BotGo','botgo.login.connecting':'正在连接…','botgo.login.waiting':'等待浏览器授权…','botgo.login.reopen':'重新打开授权页面','botgo.login.cancel':'取消','botgo.error.models':'BotGo 服务暂不可用，请稍后重试。','botgo.error.session':'登录已失效，请重新登录。','botgo.error.connection':'暂时无法完成登录，请重试。'}
 };
-Object.assign(translations.en,{'botgo.account.title':'BotGo account and task charges','botgo.account.balance':'Account balance','botgo.account.cost':'Current task settled charges','botgo.account.unsettled':'Some requests are awaiting settlement. Refresh after the task ends.','botgo.account.refresh':'Refresh','botgo.account.recharge':'Open billing','botgo.account.logout':'Sign out and restart','botgo.account.close':'Close'});
-Object.assign(translations.zh,{'botgo.account.title':'BotGo 账户与任务费用','botgo.account.balance':'账户余额','botgo.account.cost':'当前任务已结算费用','botgo.account.unsettled':'部分请求尚未结算，请在任务结束后刷新。','botgo.account.refresh':'刷新','botgo.account.recharge':'打开充值页面','botgo.account.logout':'退出并重启','botgo.account.close':'关闭'});
+Object.assign(translations.en,{'botgo.account.title':'BotGo account','botgo.account.balance':'Available balance','botgo.account.refresh':'Refresh balance','botgo.account.refreshing':'Refreshing…','botgo.account.recharge':'Add funds','botgo.account.logout':'Sign out','botgo.account.close':'Close','botgo.account.error':'Could not refresh. Please try again.'});
+Object.assign(translations.zh,{'botgo.account.title':'BotGo 账户','botgo.account.balance':'可用余额','botgo.account.refresh':'刷新余额','botgo.account.refreshing':'刷新中…','botgo.account.recharge':'充值','botgo.account.logout':'退出登录','botgo.account.close':'关闭','botgo.account.error':'暂时无法刷新，请稍后重试'});
 for(const [locale,strings] of Object.entries(translations)){
   const file=`packages/desktop/src/renderer/i18n/${locale}.ts`;
   staged.set(file,replace(String(staged.get(file)??base(file)),'export const dict = {','export const dict = {\n'+Object.entries(strings).map(([k,v])=>`  ${JSON.stringify(k)}: ${JSON.stringify(v)},`).join('\n')));
@@ -287,12 +287,15 @@ config=replace(config,'          config: result,',`          config: process.env
 staged.set('packages/opencode/src/config/config.ts',config);
 staged.set('packages/opencode/src/session/retry.ts',replace(base('packages/opencode/src/session/retry.ts'),
   'export function retryable(error: Err, provider: string) {',
-  'export function retryable(error: Err, provider: string) {\n  if (provider.startsWith("botgo-")) return undefined // Never replay metered requests automatically.'));
+  'export function retryable(error: Err, provider: string) {\n  // Only the authenticated local bridge can mark a metered attempt safe to retry.\n  if (provider.startsWith("botgo-") && (!SessionV1.APIError.isInstance(error) || error.data.responseHeaders?.["x-botgo-retryable"] !== "1")) return undefined'));
 staged.set('packages/opencode/test/session/retry.test.ts',base('packages/opencode/test/session/retry.test.ts')+`
-test("BotGo metered requests are never automatically replayed", () => {
+test("BotGo retries only explicitly safe failures through native backoff", () => {
   expect(SessionRetry.retryable(apiError(), "botgo-chat")).toBeUndefined()
   expect(SessionRetry.retryable(apiError(), "botgo-responses")).toBeUndefined()
   expect(SessionRetry.retryable(apiError(), "test")).toBeDefined()
+  expect(SessionRetry.retryable(apiError({"x-botgo-retryable": "1"}), "botgo-chat")).toBeDefined()
+  expect(SessionRetry.retryable(apiError({"x-botgo-retryable": "1"}), "botgo-responses")).toBeDefined()
+  expect(SessionRetry.retryable(apiError({"x-botgo-retryable": "0"}), "botgo-chat")).toBeUndefined()
 })
 `);
 staged.set('packages/desktop/src/main/windows.ts',brand(base('packages/desktop/src/main/windows.ts')));
@@ -307,7 +310,7 @@ staged.set('packages/ui/src/v2/components/wordmark-v2.tsx',fs.readFileSync(path.
 staged.set('packages/desktop/resources/icons/icon.ico',fs.readFileSync(path.join(here,'overlay/botgo-desktop.ico')));
 const pkg=JSON.parse(base('packages/desktop/package.json'));
 pkg.name='@botgo/desktop';
-pkg.version='1.3.1';
+pkg.version='1.3.2';
 pkg.homepage='https://botgo.win';
 // Keep upstream MIT authorship. Packaging is never publishing.
 staged.set('packages/desktop/package.json',JSON.stringify(pkg,null,2)+'\n');

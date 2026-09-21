@@ -6,6 +6,7 @@ import bridgeModule from "./botgo/bridge.cjs"
 import authModule from "./botgo/authorize.cjs"
 import credentialModule from "./botgo/credential-store.cjs"
 import diagnosticModule from "./botgo/diagnostic.cjs"
+import networkModule from "./botgo/network.cjs"
 import { write } from "./logging"
 
 export type BotGoState = { status: "signed-out" | "connecting" | "waiting" | "ready" | "error"; email?: string; balanceMicros?: number; url?: string; error?: string }
@@ -38,7 +39,8 @@ export function createBotGo() {
     if (!credential?.deviceToken) return
     state = { status: "connecting" }
     stage = "session"
-    bridge = await bridgeModule.createBridge({ origin, deviceToken: credential.deviceToken, taskStore })
+    bridge = await bridgeModule.createBridge({ origin, deviceToken: credential.deviceToken, taskStore,
+      onDiagnostic: (data: Record<string, unknown>) => write("botgo-request", "timing", data) })
     const account = bridge.account()
     const accountID = createHash("sha256").update(account.email.toLowerCase()).digest("hex").slice(0,24)
     for (const name of ["DATA", "CONFIG", "CACHE", "STATE"]) {
@@ -110,8 +112,8 @@ export function createBotGo() {
       if (nativeSmoke) return { email: "native-smoke@invalid", balanceMicros: 12000000 }
       const credential = storage.load()
       if (!credential?.deviceToken) throw Error("No device credential")
-      const response = await fetch(`${origin}/api/desktop/account`, { redirect: "error",
-        headers: { authorization: `Bearer ${credential.deviceToken}` }, signal: AbortSignal.timeout(20000) })
+      const response = await networkModule.fetchRead(fetch, `${origin}/api/desktop/account`, { redirect: "error",
+        headers: { authorization: `Bearer ${credential.deviceToken}` } })
       if (!response.ok) throw Error(`Account HTTP ${response.status}`)
       const result = await response.json()
       if (typeof result.account?.email !== "string" || !Number.isSafeInteger(result.account?.balanceMicros)) throw Error("Invalid account response")

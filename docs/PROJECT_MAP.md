@@ -19,7 +19,7 @@ Inspect the working tree before edits. Generated content under `dist/` and `arti
 
 ## Native client
 
-`opencode-desktop/prepare.mjs` reproduces BotGo overlays in the ignored upstream build copy at `artifacts/opencode/`. Do not edit that copy by hand. The client is BotGo Desktop 1.3.1: its visible brand is BotGo, its model list comes only from verified server routes, and its updater uses the signed BotGo release endpoint.
+`opencode-desktop/prepare.mjs` reproduces BotGo overlays in the ignored upstream build copy at `artifacts/opencode/`. Do not edit that copy by hand. The client is BotGo Desktop 1.3.2: its visible brand is BotGo, its model list comes only from verified server routes, and its updater uses the signed BotGo release endpoint. Version 1.3.1 omitted its signature verifier from the package and requires one manual upgrade; 1.3.2 packages the verifier outside ASAR and uses the existing pinned signing identity.
 
 The native client keeps project/session navigation, models, permissions, MCP, Skills, subagents, terminal and settings from the pinned upstream engine. Product copy, title bar, account controls, help targets and errors must not show OpenCode branding. MIT/legal attribution remains in license material only. The website is a product, download, account and recharge surface; web chat and CLI distribution have been removed from the candidate build.
 

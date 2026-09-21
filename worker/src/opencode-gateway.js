@@ -2,10 +2,10 @@ import { desktopCredentialFor, desktopRelayCredentialFor, issueDesktopKey } from
 import { catalog, meteredProxy, normalizedUsage, usageObserver } from './metering.js';
 import { resolveProfileConfig } from './platform-admin.js';
 
-const reply = (data, status=200) => Response.json(data, {status, headers:{'cache-control':'no-store'}});
+const reply = (data, status=200) => Response.json(data.error?{code:'REQUEST_REJECTED',retryable:false,requestId:crypto.randomUUID(),...data}:data, {status, headers:{'cache-control':'no-store'}});
 const bearer = request => request.headers.get('authorization')?.replace(/^Bearer\s+/i,'') || '';
 const protocols = new Set(['chat','responses']);
-const usableMember = member => Boolean(member.enabled&&member.verified_at&&!member.blocked_reason);
+const usableMember = member => Boolean(member.enabled&&member.verified_at&&(!member.blocked_reason||['abandoned','usage_review'].includes(member.blocked_reason)));
 
 export async function agentRoutes(env) {
   const routes=(await env.DB.prepare(`SELECT r.*, m.name, m.upstream_id, m.price_json, m.multiplier_ppm,
@@ -71,7 +71,7 @@ export async function handleOpenCode(request, env, ctx, path) {
     if(!body||typeof body.model!=='string'||(protocol==='chat'?!Array.isArray(body.messages):body.input===undefined))return reply({error:'请求不完整。'},400);
     if(identity.model && identity.model!==body.model)return reply({error:'凭据不允许访问该模型。'},403);
     const route=availableAgentRoutes(await agentRoutes(env)).find(r=>r.model_id===body.model && r.protocol===protocol);
-    if(!route)return reply({error:'模型或协议未启用，或上游用量需要核对。'},503);
+    if(!route)return reply({error:'模型或协议未启用，请检查模型配置。',code:'ROUTE_UNAVAILABLE'},503);
     const members=route.members.filter(usableMember)
       .sort((a,b)=>(a.active_requests/a.max_concurrency)-(b.active_requests/b.max_concurrency)||a.priority-b.priority);
     const candidates=(await Promise.all(members.map(async member=>{

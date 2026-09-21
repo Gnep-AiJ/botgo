@@ -1,7 +1,6 @@
 import { Show, createSignal, onCleanup, onMount } from "solid-js"
 import { Portal } from "solid-js/web"
 import { createStore } from "solid-js/store"
-import { useLocation } from "@solidjs/router"
 import { useCommand } from "@opencode-ai/app"
 import { Mark } from "@opencode-ai/ui/logo"
 import { t } from "./i18n"
@@ -15,8 +14,7 @@ const currency = new Intl.NumberFormat("zh-CN", {
 
 export function BotGoAccount() {
   const command = useCommand()
-  const location = useLocation()
-  const [state, setState] = createStore({ email: "", balance: "--", cost: "--", loading: false, error: false, unsettled: false })
+  const [state, setState] = createStore({ email: "", balance: "—", loading: false, error: false })
   const [mount, setMount] = createSignal<HTMLElement>()
   const [expanded, setExpanded] = createSignal(false)
   let dialog!: HTMLDialogElement
@@ -30,16 +28,11 @@ export function BotGoAccount() {
   }
 
   async function refresh() {
-    setState({ loading: true, error: false, cost: "--", unsettled: false })
+    if (state.loading) return
+    setState({ loading: true, error: false })
     try {
       const account = await window.api.botgo.account()
       setState({ email: account.email, balance: money(account.balanceMicros) })
-      const task = location.pathname.match(/\/session\/([A-Za-z0-9_-]+)(?:\/|$)/)?.[1]
-      if (!task) return
-      const usage = await window.api.botgo.usage(task) as { chargedMicros?: number; requests?: { state: string }[] }
-      const chargedMicros = usage?.chargedMicros
-      if (typeof chargedMicros !== "number" || !Number.isSafeInteger(chargedMicros) || !Array.isArray(usage?.requests)) throw Error("Invalid usage")
-      setState({ cost: money(chargedMicros), unsettled: usage.requests.some((row) => row.state !== "completed") })
     } catch {
       setState({ error: true })
     } finally {
@@ -53,6 +46,8 @@ export function BotGoAccount() {
     const observer = new MutationObserver(sync)
     observer.observe(document.body, { childList: true, subtree: true })
     onCleanup(() => observer.disconnect())
+    const timer = setInterval(() => { if (expanded()) void refresh() }, 15000)
+    onCleanup(() => clearInterval(timer))
     void refresh()
   })
 
@@ -81,19 +76,22 @@ export function BotGoAccount() {
       </button>
     </Portal>}</Show>
     <dialog ref={dialog} class="botgo-account-dialog" aria-labelledby="botgo-account-title" onClose={() => setExpanded(false)}>
-      <h2 id="botgo-account-title">{t("botgo.account.title")}</h2>
+      <header class="botgo-account-heading">
+        <span class="botgo-account-mark" aria-hidden="true"><Mark /></span>
+        <h2 id="botgo-account-title">{t("botgo.account.title")}</h2>
+        <button class="botgo-account-close" aria-label={t("botgo.account.close")} onClick={close}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
+        </button>
+      </header>
       <p class="botgo-account-full-email">{state.email}</p>
-      <dl>
+      <dl class="botgo-account-funds" aria-busy={state.loading}>
         <dt>{t("botgo.account.balance")}</dt><dd>{state.balance}</dd>
-        <dt>{t("botgo.account.cost")}</dt><dd>{state.cost}</dd>
       </dl>
-      <Show when={state.unsettled}><p>{t("botgo.account.unsettled")}</p></Show>
-      <Show when={state.error}><p role="alert">{t("botgo.error.connection")}</p></Show>
+      <Show when={state.error}><p class="botgo-account-error" role="alert">{t("botgo.account.error")}</p></Show>
       <div class="botgo-account-actions">
-        <button disabled={state.loading} onClick={() => void refresh()}>{t("botgo.account.refresh")}</button>
-        <button onClick={() => window.api.openExternal("https://botgo.win/index.html?panel=recharge")}>{t("botgo.account.recharge")}</button>
+        <button class="botgo-account-primary" onClick={() => window.api.openExternal("https://botgo.win/?panel=recharge")}>{t("botgo.account.recharge")}<span aria-hidden="true">↗</span></button>
+        <button disabled={state.loading} onClick={() => void refresh()}>{state.loading ? t("botgo.account.refreshing") : t("botgo.account.refresh")}</button>
         <button class="botgo-account-danger" disabled={state.loading} onClick={() => { setState({ loading: true }); void window.api.botgo.logout().catch(() => setState({ error: true, loading: false })) }}>{t("botgo.account.logout")}</button>
-        <button onClick={close}>{t("botgo.account.close")}</button>
       </div>
     </dialog>
   </>

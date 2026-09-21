@@ -18,7 +18,9 @@ export function setupAutoUpdater(stop: () => Promise<void>, botgo: ReturnType<ty
     directory: updates,
     deviceToken: () => botgo.deviceToken(),
     verifySignature: async (file: string) => {
-      const verifier = join(__dirname, "botgo", "verify-signature.ps1")
+      const verifier = app.isPackaged
+        ? join(process.resourcesPath, "botgo", "verify-signature.ps1")
+        : join(app.getAppPath(), "src", "main", "botgo", "verify-signature.ps1")
       try {
         await execFileAsync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", verifier, "-FilePath", file], { windowsHide: true, timeout: 30000 })
       } catch {

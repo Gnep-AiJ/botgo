@@ -76,7 +76,7 @@ app.on('browser-window-created',(_e,win)=>{
           clearTimeout(timer);
           const internalCopy=/设备凭据由 Windows|上游 API 密钥|Device credentials are protected|Upstream API keys stay/.test(state.text);
           const providerAction=/(?:连接提供商|Connect provider|Add provider|Custom provider)/i.test(modelMenu.text);
-          finish(state.logo&&state.account&&state.title==='BotGo'&&selector.opened&&account.opened&&account.actions===4&&account.text.includes('¥12.00')&&!internalCopy&&!providerAction&&errors.length===0,{...state,text:state.text.slice(0,1500),modelMenu:{...modelMenu,text:modelMenu.text.slice(0,1500),account}});
+          finish(state.logo&&state.account&&state.title==='BotGo'&&selector.opened&&account.opened&&account.actions===3&&account.text.includes('¥12.00')&&!internalCopy&&!providerAction&&errors.length===0,{...state,text:state.text.slice(0,1500),modelMenu:{...modelMenu,text:modelMenu.text.slice(0,1500),account}});
           return;
         }
         await new Promise(resolve=>setTimeout(resolve,500));

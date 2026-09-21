@@ -1,6 +1,9 @@
 const http=require('node:http');
 const crypto=require('node:crypto');
 const {once}=require('node:events');
+const {beforeSend,abortable,fetchRead}=require('./network.cjs');
+
+const retryCodes=new Set(['AGENT_CONCURRENCY_LIMIT','ACCOUNT_CONCURRENCY_LIMIT','UPSTREAM_CAPACITY_LIMIT','UPSTREAM_TIMEOUT','UPSTREAM_UNAVAILABLE']);
 
 const taskPattern=/^[A-Za-z0-9_-]{1,128}$/;
 const modelPattern=/^[A-Za-z0-9._-]{1,128}$/;
@@ -49,29 +52,36 @@ function configuration(session,baseURL,localKey){
     small_model:`botgo-${selected.protocol}/${selected.id}`,share:'disabled',autoupdate:false};
 }
 
-async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=undefined,now=Date.now,taskStore={load:(_email)=>({}),save:(_email,_value)=>{}}}){
+async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=undefined,now=Date.now,onDiagnostic=(_data)=>{},retryDelays=[500,1500],taskStore={load:(_email)=>({}),save:(_email,_value)=>{}}}){
   origin=originFor(origin);
   if(!/^bgdt_[A-Za-z0-9_-]+$/.test(deviceToken))throw Error('Invalid device credential');
   let session=initialSession?validateSession(initialSession):undefined;
   let expiresAt=session?now()+23*60*60*1000:0;
   let pending;
   let closed=false;
+  const lifetime=new AbortController();
   const aborts=new Set();
   const roots=new Map();
   const localKey=crypto.randomBytes(32).toString('hex');
-  async function refresh(){
+  async function refresh(signal=lifetime.signal){
+    signal.throwIfAborted();
     if(closed)throw Error('Bridge is closed');
     if(session&&now()<expiresAt)return session;
-    if(pending)return pending;
-    pending=(async()=>{
-      const response=await fetchImpl(`${origin}/api/desktop/opencode/session`,{method:'POST',redirect:'error',
-        headers:{authorization:`Bearer ${deviceToken}`},signal:AbortSignal.timeout(20000)});
+    if(!pending){
+    const flight={controller:new AbortController(),users:0,promise:null};
+    pending=flight;
+    flight.promise=(async()=>{
+      const response=await fetchRead(fetchImpl,`${origin}/api/desktop/opencode/session`,{method:'POST',redirect:'error',
+        headers:{authorization:`Bearer ${deviceToken}`}},{session:true,signal:AbortSignal.any([lifetime.signal,flight.controller.signal]),delays:retryDelays});
       if(!response.ok)throw Object.assign(Error(`BotGo session HTTP ${response.status}`),{status:response.status});
       session=validateSession(await response.json());
       expiresAt=now()+23*60*60*1000;
       return session;
-    })().finally(()=>{pending=undefined;});
-    return pending;
+    })().finally(()=>{if(pending===flight)pending=undefined;});
+    }
+    const flight=pending;flight.users++;
+    try{return await abortable(flight.promise,signal);}
+    finally{if(--flight.users===0){if(pending===flight)pending=undefined;flight.controller.abort();}}
   }
   await refresh();
   const saved=taskStore.load(session.account.email);
@@ -91,10 +101,15 @@ async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=u
     return root;
   }
   const server=http.createServer(async(request,response)=>{
-    const fail=(status,message)=>{
-      if(response.headersSent){response.destroy();return;}
-      response.writeHead(status,{'content-type':'application/json','cache-control':'no-store'});
-      response.end(JSON.stringify({error:{message,type:'botgo_error'}}));
+    const requestId=crypto.randomUUID(),startedAt=now();let stage='prepare';
+    const fail=(status,message,code='REQUEST_FAILED',retryable=false,remoteId=requestId,retryAfter)=>{
+      if(response.headersSent){
+        if(!response.destroyed&&String(response.getHeader('content-type')||'').includes('text/event-stream'))response.end(`data: ${JSON.stringify({type:'error',code:'STREAM_INTERRUPTED',message:`响应中断，请手动继续。\n请求编号：${remoteId}`,error:{message:`响应中断，请手动继续。\n请求编号：${remoteId}`,type:'botgo_error',code:'STREAM_INTERRUPTED'}})}\n\n`);
+        else response.destroy();
+        return;
+      }
+      response.writeHead(status,{'content-type':'application/json','cache-control':'no-store','x-botgo-retryable':retryable?'1':'0','x-botgo-request-id':remoteId,...(retryAfter?{'retry-after':retryAfter}:{})});
+      response.end(JSON.stringify({error:{message:`${message}\n请求编号：${remoteId}`,type:'botgo_error',code},code,retryable,requestId:remoteId}));
     };
     const auth=Buffer.from(request.headers.authorization||'');
     const expected=Buffer.from(`Bearer ${localKey}`);
@@ -109,23 +124,51 @@ async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=u
       for await(const chunk of request){length+=chunk.length;if(length>1000000)return fail(413,'Request exceeds 1 MB');chunks.push(chunk);}
       let body;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{return fail(400,'Invalid JSON');}
       if(!body||typeof body.model!=='string')return fail(400,'Model required');
-      const current=await refresh();
+      stage='session';const current=await refresh(controller.signal);
+      onDiagnostic({stage:'session',requestId,elapsedMs:now()-startedAt});
+      controller.signal.throwIfAborted();
       const protocol=request.url.endsWith('/responses')?'responses':'chat';
       if(!current.models.some(m=>m.id===body.model&&m.protocol===protocol))return fail(403,'Model or protocol not available');
       const taskId=taskFor(request);
-      const idempotency=crypto.randomUUID();
+      const idempotency=requestId;
+      stage='request';
       const result=await fetchImpl(`${origin}/api/opencode${request.url}`,{method:'POST',redirect:'error',
         headers:{authorization:`Bearer ${current.key}`,'content-type':'application/json','x-botgo-task-id':taskId,'idempotency-key':idempotency},
         body:JSON.stringify(body),signal:AbortSignal.any([controller.signal,AbortSignal.timeout(300000)])});
-      // Never replay a request after a credential or connection failure.
+      const workerTimings={};
+      for(const [key,label] of [['prepare','workerPrepareMs'],['upstream_headers','upstreamHeadersMs'],['first_byte','workerFirstByteMs']]){
+        const match=(result.headers.get('server-timing')||'').match(new RegExp(`(?:^|,)${key};dur=(\\d+(?:\\.\\d+)?)`));
+        if(match)workerTimings[label]=Number(match[1]);
+      }
+      onDiagnostic({stage:'headers',requestId,elapsedMs:now()-startedAt,status:result.status,...workerTimings});
+      // Native retry is the sole owner of model retries; this bridge never replays.
       if(result.status===401)expiresAt=0;
-      response.writeHead(result.status,{'content-type':result.headers.get('content-type')||'application/json','cache-control':'no-store'});
+      const remoteId=result.headers.get('x-botgo-request-id');
+      const safeId=remoteId&&/^[A-Za-z0-9:_-]{1,256}$/.test(remoteId)?remoteId:requestId;
+      if(!result.ok){
+        let data={};
+        if(result.body){const reader=result.body.getReader();let size=0,text='';try{for(;;){const chunk=await reader.read();if(chunk.done)break;size+=chunk.value.length;if(size>16384)break;text+=new TextDecoder().decode(chunk.value);}data=JSON.parse(text);}catch{}finally{await reader.cancel().catch(()=>{});}}
+        const code=typeof data.code==='string'&&/^[A-Z_]{1,64}$/.test(data.code)?data.code:'HTTP_ERROR';
+        const retryable=data.retryable===true&&retryCodes.has(code)&&[429,502,503,504].includes(result.status);
+        const message=retryable?'服务暂时繁忙，正在重试。':result.status===401?'登录已失效，请重新连接。':result.status===402?'余额不足，请充值后继续。':code==='REQUEST_EXISTS'?'请求已受理，请勿重复提交。':code==='UPSTREAM_REJECTED'?'上游拒绝了请求，请检查模型配置。':result.status===403?'当前账户或模型没有访问权限。':'请求未完成，请稍后手动继续。';
+        const seconds=Number(result.headers.get('retry-after'));
+        return fail(result.status,message,code,retryable,safeId,retryable?String(Number.isFinite(seconds)&&seconds>0?Math.min(seconds,30):2):undefined);
+      }
+      stage='stream';
+      response.setHeader('content-type',result.headers.get('content-type')||'application/json');
+      response.writeHead(result.status,{'content-type':result.headers.get('content-type')||'application/json','cache-control':'no-store','x-botgo-retryable':'0','x-botgo-request-id':safeId});
+      let first=true;
       if(result.body)for await(const chunk of result.body){
+        if(first){first=false;onDiagnostic({stage:'first-byte',requestId,elapsedMs:now()-startedAt});}
         if(!response.write(Buffer.from(chunk)))await once(response,'drain',{signal:controller.signal});
       }
       response.end();
-    }catch(error){fail(error.status||502,'BotGo request failed; the task was not automatically replayed.');}
-    finally{aborts.delete(controller);response.off('close',disconnect);}
+    }catch(error){
+      const stopped=controller.signal.aborted,unsent=stage==='request'&&beforeSend(error);
+      onDiagnostic({stage,requestId,elapsedMs:now()-startedAt,...require('./diagnostic.cjs').diagnostic(error,stage)});
+      fail(error.status||502,stopped?'请求已停止。':unsent?'连接暂时失败，正在重试。':error.status===401?'登录已失效，请重新连接。':error.name==='TimeoutError'?'请求超时，执行状态未知，请稍后手动继续。':'连接中断，执行状态未知，请稍后手动继续。',stopped?'CANCELLED':unsent?'CONNECT_FAILED':'REQUEST_UNCERTAIN',!stopped&&unsent);
+    }
+    finally{onDiagnostic({stage:'finished',requestId,elapsedMs:now()-startedAt});aborts.delete(controller);response.off('close',disconnect);}
   });
   server.requestTimeout=300000;
   server.headersTimeout=15000;
@@ -137,12 +180,12 @@ async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=u
     async usage(taskId){
       if(typeof taskId!=='string'||!taskPattern.test(taskId))throw Error('Invalid task ID');
       const current=await refresh();
-      const response=await fetchImpl(`${origin}/api/opencode/usage?taskId=${encodeURIComponent(roots.get(taskId)||taskId)}`,{
-        headers:{authorization:`Bearer ${current.key}`},redirect:'error',signal:AbortSignal.timeout(20000)});
+      const response=await fetchRead(fetchImpl,`${origin}/api/opencode/usage?taskId=${encodeURIComponent(roots.get(taskId)||taskId)}`,{
+        headers:{authorization:`Bearer ${current.key}`},redirect:'error'},{signal:lifetime.signal,delays:retryDelays});
       if(!response.ok)throw Error(`Usage HTTP ${response.status}`);
       return response.json();
     },
-    async close(){closed=true;for(const controller of aborts)controller.abort();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+    async close(){closed=true;lifetime.abort();for(const controller of aborts)controller.abort();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
   };
 }
 

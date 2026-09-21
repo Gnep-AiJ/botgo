@@ -10,7 +10,10 @@ export const MODEL_SEEDS = [
 export const AUTO_REVIEW_MODEL_ID = 'codex-auto-review';
 export const AUTO_REVIEW_BILLING_MODEL_ID = 'gpt-5.6-luna';
 
-export const reply = (body,status=200) => Response.json(body,{status,headers:{'cache-control':'no-store'}});
+export const reply = (body,status=200) => body?.error?requestError(body.error,status,body.code||'REQUEST_REJECTED'):Response.json(body,{status,headers:{'cache-control':'no-store'}});
+export function requestError(error,status,code,retryable=false,requestId=crypto.randomUUID()) {
+  return Response.json({error,code,retryable,requestId},{status,headers:{'cache-control':'no-store','x-botgo-request-id':requestId,...(retryable?{'retry-after':'2'}:{})}});
+}
 export async function catalog(env) {
   const [rows,settings] = await Promise.all([
     env.DB.prepare("SELECT * FROM model_catalog WHERE id NOT IN ('gpt-5.4','codex-auto-review') AND archived=0 ORDER BY rowid").all(),
@@ -54,18 +57,24 @@ export function costMicros(usage,snapshot) {
   return Number(result);
 }
 export function usageObserver() {
-  let buffer='',usage=null,invalid=false;
+  let buffer='',usage=null,invalid=false,failed=false,terminalSeen=false,firstEventAt=null;
   const decoder=new TextDecoder();
   function line(value) {
     if(!value.startsWith('data:'))return;
-    const data=value.slice(5).trim();if(!data||data==='[DONE]')return;
-    try {const item=JSON.parse(data);const terminal=!item.type||['response.completed','response.incomplete','response.failed'].includes(item.type);const candidate=terminal?(item.usage??item.response?.usage):null;if(candidate){normalizedUsage(candidate);usage=candidate;}}
+    const data=value.slice(5).trim();if(!data)return;if(data==='[DONE]'){terminalSeen=true;return;}
+    try {const item=JSON.parse(data);if(item.error||['error','response.failed','response.incomplete'].includes(item.type))failed=true;
+      if(item.type==='response.completed')terminalSeen=true;
+      if(firstEventAt===null&&(item.choices?.some(c=>c.delta?.content||c.delta?.reasoning_content||c.delta?.tool_calls?.length)||/^response\.(output_text|reasoning.*|function_call_arguments)\.delta$/.test(item.type||'')||item.type==='response.output_item.added'&&item.item?.type==='function_call'))firstEventAt=Date.now();
+      const terminal=!item.type||['response.completed','response.incomplete','response.failed'].includes(item.type);const candidate=terminal?(item.usage??item.response?.usage):null;if(candidate){normalizedUsage(candidate);usage=candidate;}}
     catch {invalid=true;}
   }
   return {
     push(bytes){buffer+=decoder.decode(bytes,{stream:true});let pos;while((pos=buffer.indexOf('\n'))>=0){line(buffer.slice(0,pos).replace(/\r$/,''));buffer=buffer.slice(pos+1);}if(buffer.length>2*1024*1024)throw new Error('SSE_FRAME_TOO_LARGE');},
     finish(){buffer+=decoder.decode();if(buffer)line(buffer);return invalid?null:usage;},
-    latest(){return invalid?null:usage;}
+    latest(){return invalid?null:usage;},
+    failed(){return failed||invalid;},
+    complete(){return terminalSeen;},
+    firstEventAt(){return firstEventAt;}
   };
 }
 export async function settle(env,id,usage,snapshot,state='completed',blockRoute=true,reviewReason=null) {
@@ -73,6 +82,7 @@ export async function settle(env,id,usage,snapshot,state='completed',blockRoute=
   try {if(usage)cost=costMicros(usage,snapshot);else if(state==='completed'){state='refunded';reviewReason='missing_usage';}}
   catch {state='refunded';usage=null;reviewReason='invalid_usage';}
   if(state==='review')state='refunded';
+  if(state==='refunded')cost=0;
   if(state==='refunded'&&!reviewReason)reviewReason=blockRoute?'request_failed':'client_cancelled';
   const settled=await env.DB.prepare("UPDATE metered_requests SET state=?,cost_micros=?,usage_json=?,review_reason=?,review_required=0 WHERE id=? AND state='reserved'").bind(state,cost,usage?JSON.stringify(usage):null,reviewReason,id).run();
   // Late cancellation/duplicate completion must not change route health or costs.
@@ -104,20 +114,24 @@ async function acquireUpstreamLease(env,requestId,accountId,profileId) {
 function retryableUpstreamStatus(status) {
   return status===408 || status===429 || status===504 || status>=500;
 }
+export async function releaseExpiredRequests(env,accountId=null) {
+  const expired=env.DB.prepare(`UPDATE metered_requests SET state='refunded',cost_micros=0,review_reason='abandoned',review_required=0 WHERE state='reserved' AND created_at<datetime('now','-10 minutes')${accountId?' AND account_id=?':''}`);
+  await env.DB.batch([
+    env.DB.prepare("UPDATE upstream_leases SET state='released',released_at=CURRENT_TIMESTAMP WHERE state='active' AND expires_at<=CURRENT_TIMESTAMP"),
+    accountId?expired.bind(accountId):expired
+  ]);
+}
 export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstream,candidates,history,billingModel=null,agentRoute=null,taskId=null}) {
+  const startedAt=Date.now();
   let pool=(Array.isArray(candidates)&&candidates.length?candidates:upstream?[upstream]:[]).filter(candidate=>candidate?.profileId&&candidate.baseUrl&&candidate.apiKey);
   if(channel==='desktop_opencode' && (!agentRoute || !agentRoute.enabled || agentRoute.model_id!==body.model || !pool.length))return reply({error:'Agent 路由未经验证。'},503);
   // Recover abandoned reservations only after the upstream timeout has elapsed.
-  await env.DB.batch([
-    env.DB.prepare("UPDATE upstream_leases SET state='released',released_at=CURRENT_TIMESTAMP WHERE state='active' AND expires_at<=CURRENT_TIMESTAMP"),
-    env.DB.prepare("INSERT INTO agent_route_health(model_id,profile_id,protocol,reason) SELECT model,json_extract(snapshot,'$.profileId'),json_extract(snapshot,'$.agentProtocol'),'abandoned' FROM metered_requests WHERE account_id=? AND channel='desktop_opencode' AND state='reserved' AND created_at<datetime('now','-10 minutes') ON CONFLICT(model_id,profile_id,protocol) DO UPDATE SET reason='abandoned',blocked_at=CURRENT_TIMESTAMP").bind(accountId),
-    env.DB.prepare("UPDATE metered_requests SET state='refunded',review_reason='abandoned',review_required=0 WHERE account_id=? AND state='reserved' AND created_at<datetime('now','-10 minutes')").bind(accountId)
-  ]);
+  await releaseExpiredRequests(env,accountId);
   if(agentRoute){
     const healthy=[];
-    for(const candidate of pool){const health=await env.DB.prepare('SELECT reason FROM agent_route_health WHERE model_id=? AND profile_id=? AND protocol=?').bind(agentRoute.model_id,candidate.profileId,agentRoute.protocol).first();if(!health||health.reason==='usage_review')healthy.push(candidate);}
+    for(const candidate of pool){const health=await env.DB.prepare('SELECT reason FROM agent_route_health WHERE model_id=? AND profile_id=? AND protocol=?').bind(agentRoute.model_id,candidate.profileId,agentRoute.protocol).first();if(!health||['usage_review','abandoned'].includes(health.reason))healthy.push(candidate);}
     pool=healthy;
-    if(!pool.length)return reply({error:'上游用量需要核对，请联系管理员。'},503);
+    if(!pool.length)return requestError('当前上游不可用，请检查模型配置。',503,'ROUTE_UNAVAILABLE');
   }
   const data=await catalog(env);
   const requestedModel=body.model==='gpt-5.6'?data.settings.default_model:body.model;
@@ -158,9 +172,9 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
   try {await env.DB.prepare('INSERT INTO metered_requests(id,account_id,channel,model,snapshot,reserved_micros) VALUES(?,?,?,?,?,?)').bind(id,accountId,channel,requestedModel,JSON.stringify(snapshot),reserved).run();}
   catch(error){
     const message=String(error);
-    if(message.includes('UNIQUE'))return reply({error:'该请求已受理，请勿重复提交。',code:'REQUEST_EXISTS',requestId:id},409);
-    if(message.includes('BILLING_INSUFFICIENT'))return reply({error:'余额不足或账户受限，请查看账户。',code:'BILLING_UNAVAILABLE'},402);
-    if(message.includes('AGENT_CONCURRENCY_LIMIT'))return reply({error:'运行中的请求较多，请稍后再试。',code:'AGENT_CONCURRENCY_LIMIT'},429);
+    if(message.includes('UNIQUE'))return requestError('该请求已受理，请勿重复提交。',409,'REQUEST_EXISTS',false,id);
+    if(message.includes('BILLING_INSUFFICIENT'))return requestError('余额不足或账户受限，请查看账户。',402,'BILLING_UNAVAILABLE',false,id);
+    if(message.includes('AGENT_CONCURRENCY_LIMIT'))return requestError('运行中的请求较多，正在等待空闲。',429,'AGENT_CONCURRENCY_LIMIT',true,id);
     throw error;
   }
   const requestPayload=(candidate)=>{
@@ -172,44 +186,67 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
     else {delete payload.max_completion_tokens;if(channel==='web_chat'){payload.input=payload.messages;delete payload.messages;}}
     return {chat,payload};
   };
-  let response,abort,timeout,selected,selectedReader,firstChunk,firstDone=false,hadRetryableFailure=false,capacityBlocked=0;
-  for(const candidate of pool) {
+  const abort=new AbortController();
+  const timeout=setTimeout(()=>abort.abort(new DOMException('Upstream timeout','TimeoutError')),Math.max(1,180000-(Date.now()-startedAt)));
+  const cancel=()=>abort.abort(request.signal.reason);
+  request.signal.addEventListener('abort',cancel,{once:true});
+  if(request.signal.aborted)cancel();
+  const timing={prepareMs:Date.now()-startedAt};
+  let finished=false;
+  function finish(reason){
+    if(finished)return;finished=true;clearTimeout(timeout);request.signal.removeEventListener('abort',cancel);
+    console.log(JSON.stringify({event:'botgo_request',requestId:id,model:requestedModel,...timing,totalMs:Date.now()-startedAt,reason}));
+  }
+  let response,selected,selectedReader,firstChunk,firstDone=false,uncertain=false,capacityBlocked=0;
+  try { for(const candidate of [...new Map(pool.map(p=>[p.profileId,p])).values()]) {
+    if(abort.signal.aborted)break;
     const lease=await acquireUpstreamLease(env,id,accountId,candidate.profileId);
     if(!lease.ok) {
-      if(lease.reason==='account') {await settle(env,id,null,snapshot,'refunded');return reply({error:'每个账户最多同时运行 2 个请求。',code:'ACCOUNT_CONCURRENCY_LIMIT'},429);}
+      if(lease.reason==='account') {await settle(env,id,null,snapshot,'refunded');finish('account_capacity');return requestError('运行中的请求较多，正在等待空闲。',429,'ACCOUNT_CONCURRENCY_LIMIT',true,id);}
       capacityBlocked++;continue;
     }
     snapshot.profileId=candidate.profileId;snapshot.upstreamModel=candidate.upstreamModelId||upstreamModel;snapshot.protocol=agentRoute?.protocol||candidate.protocol;
     snapshot.attempts.push({profileId:candidate.profileId,startedAt:new Date().toISOString()});
     await env.DB.prepare('UPDATE metered_requests SET snapshot=? WHERE id=? AND state=\'reserved\'').bind(JSON.stringify(snapshot),id).run();
-    abort=new AbortController();timeout=setTimeout(()=>abort.abort(),180000);
     try {
+      abort.signal.throwIfAborted();
       const {chat,payload}=requestPayload(candidate);
+      const upstreamStartedAt=Date.now();
       response=await fetch(`${candidate.baseUrl}/${chat?'chat/completions':'responses'}`,{method:'POST',headers:{authorization:`Bearer ${candidate.apiKey}`,'content-type':'application/json'},body:JSON.stringify(payload),signal:abort.signal,redirect:'manual'});
+      timing.upstreamHeadersMs=Date.now()-upstreamStartedAt;
       if(response.ok&&response.body){
         const reader=response.body.getReader();
         try {
           const first=await reader.read();
+          abort.signal.throwIfAborted();
           if(first.done&&!first.value?.length)throw new Error('EMPTY_UPSTREAM_RESPONSE');
+          timing.firstByteMs=Date.now()-startedAt;
           selected=candidate;selectedReader=reader;firstChunk=first.value;firstDone=first.done;break;
         } catch {
-          clearTimeout(timeout);await reader.cancel().catch(()=>{});await releaseUpstreamLease(env,id,candidate.profileId);hadRetryableFailure=true;continue;
+          await reader.cancel().catch(()=>{});await releaseUpstreamLease(env,id,candidate.profileId);uncertain=true;break;
         }
       }
       const retryable=retryableUpstreamStatus(response.status);
-      clearTimeout(timeout);await response.body?.cancel();await releaseUpstreamLease(env,id,candidate.profileId);
-      if(!retryable){await settle(env,id,null,snapshot,'refunded');return reply({error:'模型请求被上游拒绝，本次未扣费。'},response.status>=400&&response.status<500?response.status:502);}
-      hadRetryableFailure=true;
+      await response.body?.cancel();await releaseUpstreamLease(env,id,candidate.profileId);
+      if(!retryable){await settle(env,id,null,snapshot,'refunded',true,'upstream_rejected');finish('upstream_rejected');return requestError('模型请求被上游拒绝，本次未扣费。',response.status>=400&&response.status<500?response.status:502,'UPSTREAM_REJECTED',false,id);}
     } catch {
-      clearTimeout(timeout);await releaseUpstreamLease(env,id,candidate.profileId);hadRetryableFailure=true;
+      // A fetch exception cannot establish whether the upstream accepted the POST.
+      await releaseUpstreamLease(env,id,candidate.profileId);uncertain=true;break;
     }
+  }}catch(error){
+    abort.abort();await releaseUpstreamLease(env,id);finish('gateway_error');
+    await settle(env,id,null,snapshot,'refunded',true,'gateway_error');
+    return requestError('服务暂不可用，本次未扣费。',503,'GATEWAY_ERROR',false,id);
   }
   if(!selected) {
-    await settle(env,id,null,snapshot,'refunded');
-    if(capacityBlocked===pool.length)return reply({error:'所有上游并发槽位均已占用，请稍后重试。',code:'UPSTREAM_CAPACITY_LIMIT'},429);
-    return reply({error:hadRetryableFailure?'所有可用上游均连接失败，本次未扣费。':'暂时没有可用上游，本次未扣费。'},502);
+    const stopped=request.signal.aborted,reason=stopped?'client_cancelled':abort.signal.aborted?'upstream_timeout':uncertain?'request_uncertain':'upstream_unavailable';
+    await settle(env,id,null,snapshot,'refunded',!stopped,reason);finish(reason);
+    if(stopped)return requestError('请求已停止。',499,'CANCELLED',false,id);
+    if(uncertain)return requestError('上游连接中断，执行状态未知，本次未扣费。请手动继续。',502,'REQUEST_UNCERTAIN',false,id);
+    if(capacityBlocked===pool.length)return requestError('上游繁忙，正在等待空闲。',429,'UPSTREAM_CAPACITY_LIMIT',true,id);
+    return requestError(abort.signal.aborted?'上游响应超时，本次未扣费。':'上游暂不可用，本次未扣费。',502,abort.signal.aborted?'UPSTREAM_TIMEOUT':'UPSTREAM_UNAVAILABLE',true,id);
   }
-  const headers={'content-type':response.headers.get('content-type')||'application/json','cache-control':'no-store','x-botgo-request-id':id};
+  const headers={'content-type':response.headers.get('content-type')||'application/json','cache-control':'no-store','x-botgo-request-id':id,'server-timing':`prepare;dur=${timing.prepareMs},upstream_headers;dur=${timing.upstreamHeadersMs},first_byte;dur=${timing.firstByteMs}`};
   if(!headers['content-type'].includes('text/event-stream')) {
     try {
       const reader=selectedReader;let size=firstChunk?.length||0;const chunks=firstChunk?[firstChunk]:[];
@@ -217,20 +254,32 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
       if(!firstDone)for(;;){const {done,value}=await reader.read();if(done)break;size+=value.length;if(size>8*1024*1024){await reader.cancel();throw new Error('RESPONSE_TOO_LARGE');}chunks.push(value);}
       const bytes=new Uint8Array(size);let at=0;for(const c of chunks){bytes.set(c,at);at+=c.length;}
       const result=JSON.parse(new TextDecoder().decode(bytes));
+      abort.signal.throwIfAborted();
+      if(result.error||['failed','incomplete'].includes(result.status))throw Error('UPSTREAM_RESPONSE_FAILED');
       await settle(env,id,result.usage,snapshot);
       if(history)await history.result(result);
       return new Response(bytes,{headers});
-    } catch {await settle(env,id,null,snapshot,'refunded',true,'invalid_response');return reply({error:'上游响应异常，本次未扣费。'},502);}
-    finally {clearTimeout(timeout);await releaseUpstreamLease(env,id,selected.profileId);}
+    } catch {await settle(env,id,null,snapshot,'refunded',true,'invalid_response');return requestError('上游响应异常，本次未扣费。',502,'INVALID_RESPONSE',false,id);}
+    finally {finish('json_finished');await releaseUpstreamLease(env,id,selected.profileId);}
   }
   const observer=usageObserver();const transform=new TransformStream();const writer=transform.writable.getWriter();const reader=selectedReader;const outputReader=transform.readable.getReader();let downstreamCancelled=false;
-  // Track downstream cancellation explicitly. An upstream timeout also aborts
-  // the fetch signal and must remain a real review, not a user cancellation.
+  const stopStream=()=>{void reader.cancel().catch(()=>{});void writer.abort(abort.signal.reason).catch(()=>{});};
+  abort.signal.addEventListener('abort',stopStream,{once:true});
+  // Cancellation and failure preserve usage for audit, never charge partial work.
   const readable=new ReadableStream({async pull(controller){try{const {done,value}=await outputReader.read();if(done)controller.close();else controller.enqueue(value);}catch(error){controller.error(error);}},async cancel(reason){downstreamCancelled=true;abort.abort();await Promise.allSettled([outputReader.cancel(reason),reader.cancel(reason)]);}});
   const pipeline=(async()=>{
-    try {if(firstChunk){observer.push(firstChunk);if(history)await history.push(firstChunk);await writer.write(firstChunk);}if(!firstDone)for(;;){const {done,value}=await reader.read();if(done)break;observer.push(value);if(history)await history.push(value);await writer.write(value);}if(downstreamCancelled){const usage=observer.latest();await settle(env,id,usage,snapshot,usage?'completed':'refunded',false,'client_cancelled');if(history)await history.finish('stopped');await writer.close().catch(()=>{});return;}await settle(env,id,observer.finish(),snapshot);if(history)await history.finish('completed');await writer.close();}
-    catch(error){const stopped=downstreamCancelled;abort.abort();await reader.cancel().catch(()=>{});try{await settle(env,id,observer.latest(),snapshot,observer.latest()?'completed':'refunded',!stopped,stopped?'client_cancelled':'stream_failed');if(history)await history.finish(stopped?'stopped':'failed');}finally{await writer.abort(error).catch(()=>{});}}
-    finally {clearTimeout(timeout);await releaseUpstreamLease(env,id,selected.profileId);}
+    try {
+      if(firstChunk){observer.push(firstChunk);if(history)await history.push(firstChunk);await writer.write(firstChunk);}
+      if(!firstDone)for(;;){abort.signal.throwIfAborted();const {done,value}=await reader.read();if(done)break;observer.push(value);if(history)await history.push(value);await writer.write(value);}
+      if(downstreamCancelled||request.signal.aborted)throw Error('CANCELLED');
+      abort.signal.throwIfAborted();
+      const usage=observer.finish(),failed=observer.failed();
+      if(!observer.complete())throw Error('INCOMPLETE_STREAM');
+      await settle(env,id,usage,snapshot,failed?'refunded':'completed',true,failed?'stream_failed':null);
+      if(history)await history.finish(failed?'failed':'completed');await writer.close();
+    }
+    catch(error){const stopped=downstreamCancelled||request.signal.aborted;abort.abort();await reader.cancel().catch(()=>{});try{await settle(env,id,observer.latest(),snapshot,'refunded',!stopped,stopped?'client_cancelled':'stream_failed');if(history)await history.finish(stopped?'stopped':'failed');}finally{await writer.abort(error).catch(()=>{});}}
+    finally {abort.signal.removeEventListener('abort',stopStream);const first=observer.firstEventAt();if(first!==null)timing.firstModelEventMs=first-startedAt;finish(downstreamCancelled?'cancelled':'stream_finished');await releaseUpstreamLease(env,id,selected.profileId);}
   })();
   ctx.waitUntil(pipeline);
   return new Response(readable,{headers});

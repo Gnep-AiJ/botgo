@@ -4,7 +4,7 @@ $identity = Get-Content -Raw -LiteralPath (Join-Path $clientRoot '.secrets/deskt
 $certificate = Get-Item -LiteralPath ('Cert:\CurrentUser\My\' + $identity.thumbprint)
 if (-not $certificate.HasPrivateKey -or $certificate.NotAfter -le (Get-Date)) { throw 'Pinned signing identity unavailable' }
 $env:BOTGO_PREVIEW_CERT_SHA1 = $certificate.Thumbprint
-$env:ELECTRON_BUILDER_CACHE = Join-Path $clientRoot '.tmp-electron-builder-cache'
+$env:ELECTRON_BUILDER_CACHE = Join-Path $clientRoot 'artifacts/cache/electron-builder'
 try {
     & node (Join-Path $clientRoot 'artifacts/opencode/node_modules/electron-builder/cli.js') --projectDir (Join-Path $clientRoot 'artifacts/opencode/packages/desktop') --config (Join-Path $PSScriptRoot 'installer.cjs') --win --x64 --publish never
     if ($LASTEXITCODE -ne 0) { throw 'Client packaging failed' }
