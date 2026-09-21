@@ -11,6 +11,11 @@ const fixtures={
   '/admin/accounts':{accounts:[],page:1,pages:1,total:0},
   '/admin/metering':{models:[model],settings:{multiplier_ppm:300000,usd_cny_ppm:7000000,default_model:model.id},ledger:[]},
   '/admin/upstreams':{upstreams:[profile]},'/admin/routes':{routes:[]},'/admin/opencode':{routes:[]},'/admin/model-services':{drafts:[{modelId:'legacy-only',config:{name:'遗留模型'}}]},
+  '/admin/model-services/available':{models:[
+    {id:'claude-sonnet-5',official:{provider:'Anthropic',price:{input:2,output:10}}},
+    {id:'grok-4.6',official:{provider:'xAI',price:{input:2,output:6}}},
+    {id:'grok-unknown',official:null}
+  ]},
   '/admin/desktop/releases':{releases:[]},'/admin/billing/orders':{orders:[]},'/admin/billing/plan':{paymentAvailable:false}
 };
 const allowed=new Set(['admin.html','admin.css','admin-layout.css','admin.js','admin-platform.js','admin-metering.js','ui-kit.js']);

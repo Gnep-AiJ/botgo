@@ -47,21 +47,21 @@ export async function handleModelServicesAdmin(request,env,path,admin,audit){
     const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
     let data;try{data=JSON.parse(new TextDecoder().decode(bytes));}catch{return reply({error:'上游模型列表格式无效。'},502);}
     const ids=[...new Set((Array.isArray(data?.data)?data.data:[]).map(item=>item?.id).filter(id=>typeof id==='string'&&id.length<=128))];
-    return reply({models:ids.filter(id=>/^gpt-/i.test(id)).map(id=>({id,official:officialModel(id)})),supported:officialModelIds});
+    return reply({models:ids.filter(id=>/^(gpt-|claude-|grok-)/i.test(id)).map(id=>({id,official:officialModel(id)})),supported:officialModelIds});
   }
   if(path==='/admin/model-services/import'&&request.method==='POST'){
     const input=await request.json().catch(()=>null),profileId=String(input?.profileId||''),id=String(input?.modelId||''),protocol=input?.protocol;
     const official=officialModel(id);
-    if(!/^[0-9a-f-]{36}$/i.test(profileId)||!official||!['chat','responses'].includes(protocol))return reply({error:'仅支持已核实官方价格的 GPT 模型及有效上游。'},400);
+    if(!/^[0-9a-f-]{36}$/i.test(profileId)||!official||!['chat','responses'].includes(protocol))return reply({error:'仅支持已核实官方价格的 GPT、Claude、Grok 模型及有效上游。'},400);
     const profile=await env.DB.prepare('SELECT id,retired_at FROM upstream_profiles WHERE id=?').bind(profileId).first();if(!profile||profile.retired_at)return reply({error:'上游不存在或已退役。'},404);
     try{await probeAgentRoute(env,{profile_id:profileId,protocol},id);}catch(error){return reply({ok:false,...probeFailure(error)});}
-    const current=await env.DB.prepare('SELECT id FROM model_catalog WHERE id=? AND archived=0').bind(id).first();
+    const current=await env.DB.prepare('SELECT id,name,archived FROM model_catalog WHERE id=?').bind(id).first();
     const route=await env.DB.prepare('SELECT protocol FROM agent_model_routes WHERE model_id=?').bind(id).first();
     if(route&&route.protocol!==protocol)return reply({error:'现有模型使用另一协议，请选择相同协议。'},409);
     const member=await env.DB.prepare('SELECT profile_id FROM agent_route_members WHERE model_id=? AND profile_id=?').bind(id,profileId).first();
     const statements=[];
-    if(!current)statements.push(env.DB.prepare('INSERT INTO model_catalog(id,name,upstream_id,price_json,enabled,web_enabled,agent_enabled) VALUES(?,?,?,?,1,0,1)').bind(id,official.name,id,JSON.stringify(official.price)));
-    else statements.push(env.DB.prepare('UPDATE model_catalog SET price_json=?,enabled=1,web_enabled=0,agent_enabled=1,revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(JSON.stringify(official.price),id));
+    if(!current)statements.push(env.DB.prepare('INSERT INTO model_catalog(id,name,upstream_id,price_json,enabled,web_enabled,agent_enabled,multiplier_ppm) VALUES(?,?,?,?,1,0,1,NULL)').bind(id,official.name,id,JSON.stringify(official.price)));
+    else statements.push(env.DB.prepare('UPDATE model_catalog SET name=?,upstream_id=?,price_json=?,enabled=1,web_enabled=0,agent_enabled=1,multiplier_ppm=NULL,archived=0,revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(official.name,id,JSON.stringify(official.price),id));
     if(!route)statements.push(env.DB.prepare('INSERT INTO agent_model_routes(model_id,profile_id,protocol,enabled,verified_at) VALUES(?,?,?,1,CURRENT_TIMESTAMP)').bind(id,profileId,protocol));
     else statements.push(env.DB.prepare('UPDATE agent_model_routes SET enabled=1,verified_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE model_id=?').bind(id));
     if(member)statements.push(env.DB.prepare('UPDATE agent_route_members SET upstream_model_id=?,enabled=1,verified_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE model_id=? AND profile_id=?').bind(id,id,profileId));
@@ -69,6 +69,23 @@ export async function handleModelServicesAdmin(request,env,path,admin,audit){
     statements.push(env.DB.prepare('DELETE FROM model_service_drafts WHERE model_id=?').bind(id));
     await env.DB.batch(statements);
     await audit(env,admin.id,'official_model_imported',{model:id,profileId,protocol});return reply({ok:true,model:id,backup:!!route});
+  }
+  const removeMatch=path.match(/^\/admin\/model-services\/([a-z0-9._-]+)$/);
+  if(removeMatch&&request.method==='DELETE'){
+    const id=removeMatch[1];
+    const current=await env.DB.prepare('SELECT id FROM model_catalog WHERE id=? AND archived=0').bind(id).first();
+    if(!current)return reply({error:'模型不存在。'},404);
+    const fallback=await env.DB.prepare('SELECT id FROM model_catalog WHERE id<>? AND archived=0 AND enabled=1 AND agent_enabled=1 ORDER BY updated_at DESC LIMIT 1').bind(id).first();
+    await env.DB.batch([
+      env.DB.prepare('DELETE FROM agent_route_health WHERE model_id=?').bind(id),
+      env.DB.prepare('DELETE FROM agent_route_members WHERE model_id=?').bind(id),
+      env.DB.prepare('DELETE FROM agent_model_routes WHERE model_id=?').bind(id),
+      env.DB.prepare('DELETE FROM model_service_drafts WHERE model_id=?').bind(id),
+      env.DB.prepare('UPDATE model_catalog SET archived=1,enabled=0,web_enabled=0,agent_enabled=0,multiplier_ppm=NULL,revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE id=?').bind(id),
+      env.DB.prepare('UPDATE metering_settings SET default_model=?,revision=revision+1 WHERE id=1 AND default_model=?').bind(fallback?.id||'',id)
+    ]);
+    await audit(env,admin.id,'model_removed',{model:id,replacementDefault:fallback?.id||null});
+    return reply({ok:true,archived:true,replacementDefault:fallback?.id||null});
   }
   if(path==='/admin/model-services/probe-binding'&&request.method==='POST'){
     const input=await request.json().catch(()=>null),id=String(input?.modelId||''),profileId=String(input?.profileId||'');

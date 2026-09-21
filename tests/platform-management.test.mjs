@@ -36,6 +36,7 @@ assert.match(platform, /套餐已停用/, "legacy subscription grants must rejec
 assert.match(platform, /DESKTOP_RELEASES\.get/, "desktop downloads must stream from private R2");
 assert.match(admin, /id="upstream-form"/, "admin must expose upstream management");
 assert.match(admin, /name="maxConcurrency"/, "admin must configure per-upstream concurrency");
+assert.match(admin, /上游别名（可选）/, "admin must expose an optional upstream alias");
 assert.match(admin, /id="open-route-dialog"/, "admin must expose route-pool management");
 assert.doesNotMatch(admin, /import-fallback|导入当前配置/, "admin must not expose fallback configuration import");
 assert.match(admin, /id="order-list"/, "admin must expose recharge orders");
