@@ -70,11 +70,13 @@ export function usageObserver() {
     latest(){return invalid?null:usage;}
   };
 }
-export async function settle(env,id,usage,snapshot,state='completed',blockRoute=true) {
+export async function settle(env,id,usage,snapshot,state='completed',blockRoute=true,reviewReason=null) {
   let cost=0;
-  try {if(usage)cost=costMicros(usage,snapshot);else if(state==='completed')state='review';}
-  catch {state='review';usage=null;}
-  const settled=await env.DB.prepare("UPDATE metered_requests SET state=?,cost_micros=?,usage_json=? WHERE id=? AND state='reserved'").bind(state,cost,usage?JSON.stringify(usage):null,id).run();
+  try {if(usage)cost=costMicros(usage,snapshot);else if(state==='completed'){state='review';reviewReason='missing_usage';}}
+  catch {state='review';usage=null;reviewReason='invalid_usage';}
+  if(state==='review'&&!reviewReason)reviewReason=blockRoute?'missing_usage':'client_cancelled';
+  const reviewRequired=state==='review'&&reviewReason!=='client_cancelled';
+  const settled=await env.DB.prepare("UPDATE metered_requests SET state=?,cost_micros=?,usage_json=?,review_reason=?,review_required=? WHERE id=? AND state='reserved'").bind(state,cost,usage?JSON.stringify(usage):null,reviewReason,reviewRequired?1:0,id).run();
   // Late cancellation/duplicate completion must not change route health or costs.
   if(settled.meta?.changes===0)return;
   if(usage && snapshot.costPrice) {
@@ -83,9 +85,13 @@ export async function settle(env,id,usage,snapshot,state='completed',blockRoute=
   }
   // A missing upstream usage record is a billing risk for this account, not an
   // outage for every account sharing the same upstream route.
-  if(state==='review' && snapshot.agentProtocol && blockRoute) {
-    const record=await env.DB.prepare('SELECT account_id FROM metered_requests WHERE id=?').bind(id).first();
-    if(record?.account_id) await env.DB.prepare('UPDATE accounts SET billing_blocked=1 WHERE id=?').bind(record.account_id).run();
+  const final=await env.DB.prepare('SELECT account_id,state,review_required FROM metered_requests WHERE id=?').bind(id).first();
+  if(final?.state==='review'&&!final.review_required){
+    await env.DB.prepare("UPDATE metered_requests SET review_reason='insufficient_balance',review_required=1 WHERE id=? AND review_reason IS NULL").bind(id).run();
+    final.review_required=1;
+  }
+  if(final?.state==='review' && final.review_required && snapshot.agentProtocol && blockRoute) {
+    if(final.account_id) await env.DB.prepare('UPDATE accounts SET billing_blocked=1 WHERE id=?').bind(final.account_id).run();
   }
   // A single incomplete usage report must not change the global model switch.
 }
@@ -117,7 +123,7 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
   await env.DB.batch([
     env.DB.prepare("UPDATE upstream_leases SET state='released',released_at=CURRENT_TIMESTAMP WHERE state='active' AND expires_at<=CURRENT_TIMESTAMP"),
     env.DB.prepare("INSERT INTO agent_route_health(model_id,profile_id,protocol,reason) SELECT model,json_extract(snapshot,'$.profileId'),json_extract(snapshot,'$.agentProtocol'),'abandoned' FROM metered_requests WHERE account_id=? AND channel='desktop_opencode' AND state='reserved' AND created_at<datetime('now','-10 minutes') ON CONFLICT(model_id,profile_id,protocol) DO UPDATE SET reason='abandoned',blocked_at=CURRENT_TIMESTAMP").bind(accountId),
-    env.DB.prepare("UPDATE metered_requests SET state='review' WHERE account_id=? AND state='reserved' AND created_at<datetime('now','-10 minutes')").bind(accountId)
+    env.DB.prepare("UPDATE metered_requests SET state='review',review_reason='abandoned',review_required=1 WHERE account_id=? AND state='reserved' AND created_at<datetime('now','-10 minutes')").bind(accountId)
   ]);
   if(agentRoute){
     const healthy=[];
@@ -227,25 +233,30 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
       await settle(env,id,result.usage,snapshot);
       if(history)await history.result(result);
       return new Response(bytes,{headers});
-    } catch {await settle(env,id,null,snapshot,'review');return reply({error:'用量待核对，本次尚未扣费。'},502);}
+    } catch {await settle(env,id,null,snapshot,'review',true,'invalid_response');return reply({error:'用量待核对，本次尚未扣费。'},502);}
     finally {clearTimeout(timeout);await releaseUpstreamLease(env,id,selected.profileId);}
   }
-  const observer=usageObserver();const transform=new TransformStream();const writer=transform.writable.getWriter();const reader=selectedReader;
-  // A downstream cancel must interrupt an idle upstream read as well as a write.
-  writer.closed.catch(()=>{abort.abort();return reader.cancel().catch(()=>{});});
+  const observer=usageObserver();const transform=new TransformStream();const writer=transform.writable.getWriter();const reader=selectedReader;const outputReader=transform.readable.getReader();let downstreamCancelled=false;
+  // Track downstream cancellation explicitly. An upstream timeout also aborts
+  // the fetch signal and must remain a real review, not a user cancellation.
+  const readable=new ReadableStream({async pull(controller){try{const {done,value}=await outputReader.read();if(done)controller.close();else controller.enqueue(value);}catch(error){controller.error(error);}},async cancel(reason){downstreamCancelled=true;abort.abort();await Promise.allSettled([outputReader.cancel(reason),reader.cancel(reason)]);}});
   const pipeline=(async()=>{
-    try {if(firstChunk){observer.push(firstChunk);if(history)await history.push(firstChunk);await writer.write(firstChunk);}if(!firstDone)for(;;){const {done,value}=await reader.read();if(done)break;observer.push(value);if(history)await history.push(value);await writer.write(value);}await settle(env,id,observer.finish(),snapshot);if(history)await history.finish('completed');await writer.close();}
-    catch(error){const stopped=abort.signal.aborted;abort.abort();await reader.cancel().catch(()=>{});try{await settle(env,id,observer.latest(),snapshot,observer.latest()?'completed':'review',!stopped);if(history)await history.finish(stopped?'stopped':'failed');}finally{await writer.abort(error).catch(()=>{});}}
+    try {if(firstChunk){observer.push(firstChunk);if(history)await history.push(firstChunk);await writer.write(firstChunk);}if(!firstDone)for(;;){const {done,value}=await reader.read();if(done)break;observer.push(value);if(history)await history.push(value);await writer.write(value);}if(downstreamCancelled){const usage=observer.latest();await settle(env,id,usage,snapshot,usage?'completed':'review',false,'client_cancelled');if(history)await history.finish('stopped');await writer.close().catch(()=>{});return;}await settle(env,id,observer.finish(),snapshot);if(history)await history.finish('completed');await writer.close();}
+    catch(error){const stopped=downstreamCancelled;abort.abort();await reader.cancel().catch(()=>{});try{await settle(env,id,observer.latest(),snapshot,observer.latest()?'completed':'review',!stopped,stopped?'client_cancelled':'stream_failed');if(history)await history.finish(stopped?'stopped':'failed');}finally{await writer.abort(error).catch(()=>{});}}
     finally {clearTimeout(timeout);await releaseUpstreamLease(env,id,selected.profileId);}
   })();
   ctx.waitUntil(pipeline);
-  return new Response(transform.readable,{headers});
+  return new Response(readable,{headers});
 }
 
 export async function handleMeteringAdmin(request,env,path,admin,audit) {
   if(!path.startsWith('/admin/metering'))return null;
+  if(request.method==='GET' && path==='/admin/metering/reviews') {
+    const rows=await env.DB.prepare("SELECT id,account_id,channel,model,state,cost_micros,charged_micros,usage_json,snapshot,review_reason,review_required,created_at FROM metered_requests WHERE state='review' AND reviewed_at IS NULL AND review_required=1 ORDER BY created_at ASC").all();
+    return reply({reviews:rows.results||[]});
+  }
   if(request.method==='GET' && path==='/admin/metering') {
-    const data=await catalog(env);const ledger=await env.DB.prepare('SELECT id,account_id,channel,model,state,cost_micros,charged_micros,upstream_cost_estimate_micros,usage_json,snapshot,created_at,reviewed_at,review_note FROM metered_requests ORDER BY created_at DESC LIMIT 100').all();
+    const data=await catalog(env);const ledger=await env.DB.prepare('SELECT id,account_id,channel,model,state,cost_micros,charged_micros,upstream_cost_estimate_micros,usage_json,snapshot,review_reason,review_required,created_at,reviewed_at,review_note FROM metered_requests ORDER BY created_at DESC LIMIT 100').all();
     return reply({...data,ledger:ledger.results||[]});
   }
   const body=await request.json().catch(()=>null);
@@ -255,12 +266,12 @@ export async function handleMeteringAdmin(request,env,path,admin,audit) {
     if(!record)return reply({error:'记录不存在或已核对。'},409);
     let snapshot={};try{snapshot=JSON.parse(record.snapshot);}catch{}
     const statements=[
-      env.DB.prepare("UPDATE metered_requests SET reviewed_at=CURRENT_TIMESTAMP,review_note=? WHERE id=? AND state='review' AND reviewed_at IS NULL").bind(body.note.trim(),body.id),
-      env.DB.prepare("UPDATE accounts SET billing_blocked=0 WHERE id=? AND NOT EXISTS(SELECT 1 FROM metered_requests WHERE account_id=? AND state='review' AND reviewed_at IS NULL)").bind(record.account_id,record.account_id)
+      env.DB.prepare("UPDATE metered_requests SET reviewed_at=CURRENT_TIMESTAMP,review_note=?,review_required=0 WHERE id=? AND state='review' AND reviewed_at IS NULL").bind(body.note.trim(),body.id),
+      env.DB.prepare("UPDATE accounts SET billing_blocked=0 WHERE id=? AND NOT EXISTS(SELECT 1 FROM metered_requests WHERE account_id=? AND state='review' AND reviewed_at IS NULL AND review_required=1)").bind(record.account_id,record.account_id)
     ];
     if(snapshot.profileId&&snapshot.agentProtocol)statements.push(env.DB.prepare(`DELETE FROM agent_route_health WHERE model_id=? AND profile_id=? AND protocol=? AND reason='usage_review'
       AND NOT EXISTS(SELECT 1 FROM metered_requests WHERE channel='desktop_opencode' AND state='review' AND reviewed_at IS NULL
-      AND model=? AND json_extract(snapshot,'$.profileId')=? AND json_extract(snapshot,'$.agentProtocol')=?)`)
+      AND review_required=1 AND model=? AND json_extract(snapshot,'$.profileId')=? AND json_extract(snapshot,'$.agentProtocol')=?)`)
       .bind(snapshot.billingModel||record.model,snapshot.profileId,snapshot.agentProtocol,snapshot.billingModel||record.model,snapshot.profileId,snapshot.agentProtocol));
     await env.DB.batch(statements);
     await audit(env,admin.id,'metering_reviewed',{requestId:body.id,note:body.note.trim()});return reply({ok:true});

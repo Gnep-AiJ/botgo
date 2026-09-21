@@ -57,6 +57,8 @@ try{
     .run(cancelledId,route.model_id,JSON.stringify({billingModel:route.model_id,profileId:'p',agentProtocol:'chat'}));
   await settle(env,cancelledId,null,{billingModel:route.model_id,profileId:'p',agentProtocol:'chat'},'review',false);
   assert.equal(sql.prepare('SELECT COUNT(*) AS n FROM agent_route_health').get().n,0,'a client-cancelled stream must not block the upstream route');
+  assert.equal(sql.prepare('SELECT review_reason FROM metered_requests WHERE id=?').get(cancelledId).review_reason,'client_cancelled','a client cancellation stays auditable');
+  assert.equal(sql.prepare('SELECT review_required FROM metered_requests WHERE id=?').get(cancelledId).review_required,0,'a client cancellation does not require billing review');
   const denied=await handleAgentAdmin(new Request('https://botgo.test/',{method:'PUT',body:JSON.stringify({profileId:'q',protocol:'chat',enabled:true})}),env,'/admin/opencode/models/gpt-5.6-sol',{id:'a'},async()=>{});
   assert.equal(denied.status,409,'cannot enable a changed unverified route');
   const saved=await handleAgentAdmin(new Request('https://botgo.test/',{method:'PUT',body:JSON.stringify({profileId:'q',protocol:'chat',enabled:false})}),env,'/admin/opencode/models/gpt-5.6-sol',{id:'a'},async()=>{});
@@ -71,7 +73,9 @@ try{
   for(let n=0;n<8;n++)reserve('parallel-'+n);
   assert.throws(()=>reserve('parallel-overflow'),/AGENT_CONCURRENCY_LIMIT/);
   assert.equal(sql.prepare("SELECT billing_reserved_micros FROM accounts WHERE id='b'").get().billing_reserved_micros,8,'failed parallel reservation is atomic');
-  sql.exec("UPDATE metered_requests SET state='review' WHERE account_id='b'");
+  sql.exec("UPDATE metered_requests SET state='review',review_reason='client_cancelled',review_required=0 WHERE account_id='b'");
+  assert.doesNotThrow(()=>reserve('after-cancelled-reviews'),'cancelled requests must not count toward the review limit');
+  sql.exec("UPDATE metered_requests SET state='review',review_reason='missing_usage',review_required=1 WHERE account_id='b'");
   assert.throws(()=>reserve('review-overflow'),/AGENT_REVIEW_LIMIT/);
   // A real SQL device credential traverses session issuance, encryption, proxy and revocation.
   env.UPSTREAM_CONFIG_KEY=Buffer.alloc(32,7).toString('base64url');

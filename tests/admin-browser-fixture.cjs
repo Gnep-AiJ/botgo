@@ -10,6 +10,7 @@ const fixtures={
   '/admin/overview':{admin:{email:'fixture@example.invalid'},overview:{accounts:0,active:0,pendingVerifications:0}},
   '/admin/accounts':{accounts:[],page:1,pages:1,total:0},
   '/admin/metering':{models:[model],settings:{multiplier_ppm:300000,usd_cny_ppm:7000000,default_model:model.id},ledger:[]},
+  '/admin/metering/reviews':{reviews:[{id:'review-fixture',account_id:'account-fixture',channel:'desktop_opencode',model:'demo-model',state:'review',charged_micros:0,review_reason:'missing_usage',review_required:1,created_at:'2026-09-21 10:00:00'}]},
   '/admin/upstreams':{upstreams:[profile]},'/admin/routes':{routes:[]},'/admin/opencode':{routes:[]},'/admin/model-services':{drafts:[{modelId:'legacy-only',config:{name:'遗留模型'}}]},
   '/admin/model-services/available':{models:[
     {id:'claude-sonnet-5',official:{provider:'Anthropic',price:{input:2,output:10}}},

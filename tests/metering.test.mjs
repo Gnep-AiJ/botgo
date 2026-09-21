@@ -98,5 +98,6 @@ try{
   assert.equal(sql.prepare('SELECT enabled FROM model_catalog WHERE id=?').get(snapshot.model).enabled,1,'stopping one request must not disable the model for other users');
   assert.equal(sql.prepare('SELECT answer FROM web_chat_turns WHERE request_id=?').get('interrupted-request-123456').answer,'partial');
   assert.equal(sql.prepare('SELECT state FROM web_chat_turns WHERE request_id=?').get('interrupted-request-123456').state,'stopped');
+  assert.equal(sql.prepare("SELECT COUNT(*) AS n FROM metered_requests WHERE account_id='test' AND review_reason='client_cancelled' AND review_required=0").get().n,1,'a cancelled stream remains an audit record without entering manual review');
 }finally{globalThis.fetch=originalFetch;sql.close();}
 console.log('Metering: migrations, precision, cache, reasoning, long context, atomic reserves, overrun, idempotency and SSE passed');
