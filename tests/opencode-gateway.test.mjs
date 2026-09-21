@@ -49,7 +49,7 @@ try{
   assert.equal(balance(),9998740,'missing usage does not invent a charge');
   assert.equal(sql.prepare("SELECT enabled FROM model_catalog WHERE id=?").get(route.model_id).enabled,1,'upstream issue must not disable the global model');
   assert.equal(availableAgentRoutes(await agentRoutes(env)).length,2,'missing usage does not globally remove an otherwise verified Agent route');
-  const blocked=await meteredProxy(new Request('https://botgo.test/'),env,ctx,options);assert.equal(blocked.status,402,'the account that owns a review remains restricted without globally disabling the route');
+  const retried=await meteredProxy(new Request('https://botgo.test/'),env,ctx,options);assert.equal(retried.status,200,'a failed request never blocks the next request');await retried.text();await Promise.all(jobs);
   sql.exec('DELETE FROM agent_route_health');
   sql.exec("UPDATE metered_requests SET state='refunded' WHERE account_id='a' AND state='review'; UPDATE accounts SET billing_blocked=0 WHERE id='a'");
   const cancelledId='cancelled-stream';
@@ -69,14 +69,13 @@ try{
   for(let n=0;n<3;n++){
     sql.prepare("INSERT INTO metered_requests(id,account_id,channel,model,snapshot,reserved_micros) VALUES(?,'b','web_chat','gpt-5.6-sol','{}',1)").run('old-review-'+n);
   }
-  sql.exec("UPDATE metered_requests SET state='review' WHERE account_id='b' AND channel='web_chat'");
+  sql.exec("UPDATE metered_requests SET state='refunded',review_reason='request_failed',review_required=0 WHERE account_id='b' AND channel='web_chat'");
   for(let n=0;n<8;n++)reserve('parallel-'+n);
   assert.throws(()=>reserve('parallel-overflow'),/AGENT_CONCURRENCY_LIMIT/);
   assert.equal(sql.prepare("SELECT billing_reserved_micros FROM accounts WHERE id='b'").get().billing_reserved_micros,8,'failed parallel reservation is atomic');
-  sql.exec("UPDATE metered_requests SET state='review',review_reason='client_cancelled',review_required=0 WHERE account_id='b'");
-  assert.doesNotThrow(()=>reserve('after-cancelled-reviews'),'cancelled requests must not count toward the review limit');
-  sql.exec("UPDATE metered_requests SET state='review',review_reason='missing_usage',review_required=1 WHERE account_id='b'");
-  assert.throws(()=>reserve('review-overflow'),/AGENT_REVIEW_LIMIT/);
+  sql.exec("UPDATE metered_requests SET state='refunded',review_reason='request_failed',review_required=0 WHERE account_id='b'");
+  assert.doesNotThrow(()=>reserve('after-failed-requests'),'failed requests must never block a later request');
+  sql.exec("UPDATE metered_requests SET state='refunded',review_reason='missing_usage',review_required=0 WHERE id='after-failed-requests'");
   // A real SQL device credential traverses session issuance, encryption, proxy and revocation.
   env.UPSTREAM_CONFIG_KEY=Buffer.alloc(32,7).toString('base64url');
   const encrypted=await encryptSecret('fixture-upstream-secret',env);

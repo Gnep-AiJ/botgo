@@ -50,11 +50,11 @@ try{
   includeUsage=false;
   const missing=await meteredProxy(new Request('https://botgo.test/v1/responses',{method:'POST',headers:{'idempotency-key':'auto-review-missing-usage'}}),env,{waitUntil:promise=>jobs.push(promise)},{...base,body:{model:AUTO_REVIEW_BILLING_MODEL_ID,input:'review'}});
   assert.equal(missing.status,200);await missing.text();await Promise.all(jobs);
-  const pending=sql.prepare("SELECT state,charged_micros FROM metered_requests WHERE id='review-account:desktop_codex:auto-review-missing-usage'").get();
-  assert.equal(pending.state,'review');assert.equal(pending.charged_micros,0,'missing reviewer usage releases the reservation and requires reconciliation');
-  assert.equal(await autoReviewCapability(env,await catalog(env)),false,'runtime usage failure closes the capability');
+  const pending=sql.prepare("SELECT state,charged_micros,review_reason,review_required FROM metered_requests WHERE id='review-account:desktop_codex:auto-review-missing-usage'").get();
+  assert.equal(pending.state,'refunded');assert.equal(pending.charged_micros,0,'missing reviewer usage releases the reservation automatically');
+  assert.equal(pending.review_reason,'missing_usage');assert.equal(pending.review_required,0);
+  assert.equal(await autoReviewCapability(env,await catalog(env)),true,'a settled failure never disables later requests');
 
-  sql.exec("UPDATE metered_requests SET reviewed_at=CURRENT_TIMESTAMP,review_note='verified in test' WHERE id='review-account:desktop_codex:auto-review-missing-usage'");
   sql.exec("UPDATE accounts SET credit_balance=0,credit_remainder_micros=0,billing_blocked=0 WHERE id='review-account'");
   includeUsage=true;
   const insufficient=await meteredProxy(new Request('https://botgo.test/v1/responses',{method:'POST',headers:{'idempotency-key':'auto-review-insufficient-123'}}),env,{waitUntil:promise=>jobs.push(promise)},{...base,body:{model:AUTO_REVIEW_BILLING_MODEL_ID,input:'review'}});
