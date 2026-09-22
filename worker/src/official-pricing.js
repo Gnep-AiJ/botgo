@@ -4,6 +4,35 @@ const OPENAI_SOURCE='https://developers.openai.com/api/docs/pricing';
 const ANTHROPIC_SOURCE='https://platform.claude.com/docs/en/about-claude/pricing';
 const XAI_SOURCE='https://docs.x.ai/developers/pricing';
 const noLongPremium=10000000;
+const visualInput={input:['text','image'],output:['text']};
+const imageOnly={input:['text','image'],output:['image']};
+const capabilities={
+  'gpt-6-astra':{reasoning:true,context:1050000,output:128000,modalities:visualInput},
+  'gpt-5.6-sol':{reasoning:true,context:1050000,output:128000,modalities:visualInput},
+  'gpt-5.6-terra':{reasoning:true,context:1050000,output:128000,modalities:visualInput},
+  'gpt-5.6-luna':{reasoning:true,context:1050000,output:128000,modalities:visualInput},
+  'gpt-5.5':{reasoning:true,context:1050000,output:128000,modalities:visualInput},
+  'claude-fable-5-1':{reasoning:true,context:1000000,output:128000,modalities:visualInput},
+  'claude-fable-5':{reasoning:true,context:1000000,output:128000,modalities:visualInput},
+  'claude-mythos-5-1':{reasoning:true,context:1000000,output:128000,modalities:visualInput},
+  'claude-mythos-5':{reasoning:true,context:1000000,output:128000,modalities:visualInput},
+  'claude-opus-5':{reasoning:true,context:1000000,output:128000,modalities:visualInput},
+  'claude-opus-4-8':{reasoning:true,context:1000000,output:128000,modalities:visualInput},
+  'claude-opus-4-7':{reasoning:true,context:1000000,output:128000,modalities:visualInput},
+  'claude-opus-4-6':{reasoning:true,context:1000000,output:128000,modalities:visualInput},
+  'claude-opus-4-5-20251101':{reasoning:true,context:200000,output:64000,modalities:visualInput},
+  'claude-sonnet-5':{reasoning:true,context:1000000,output:128000,modalities:visualInput},
+  'claude-sonnet-4-6':{reasoning:true,context:1000000,output:128000,modalities:visualInput},
+  'claude-sonnet-4-5-20250929':{reasoning:true,context:200000,output:64000,modalities:visualInput},
+  'claude-haiku-4-5-20251001':{reasoning:true,context:200000,output:64000,modalities:visualInput},
+  'grok-4.6':{reasoning:true,context:500000,output:500000,modalities:visualInput},
+  'grok-build-0.1':{reasoning:true,context:256000,output:256000,modalities:visualInput},
+  'grok-4.5':{reasoning:true,context:500000,output:500000,modalities:visualInput},
+  'grok-4.3':{reasoning:true,context:1000000,output:1000000,modalities:visualInput},
+  'grok-4.20-multi-agent-0309':{reasoning:true,context:1000000,output:1000000,modalities:visualInput},
+  'grok-4.20-0309-reasoning':{reasoning:true,context:1000000,output:1000000,modalities:visualInput},
+  'grok-4.20-0309-non-reasoning':{reasoning:false,context:1000000,output:1000000,modalities:visualInput}
+};
 
 // name, provider, input, cached input, cache write, output, long threshold,
 // long input multiplier, long output multiplier, official source
@@ -38,7 +67,23 @@ const rates={
 export function officialModel(id){
   const rate=rates[id];if(!rate)return null;
   const [name,provider,input,cached,write,output,longThreshold,longInput,longOutput,source]=rate;
-  return {id,name,provider,price:{tier:'default',input,cached,write,output,longThreshold,longInput,longOutput,source,date:'2026-09-21'}};
+  const capability=capabilities[id]||{};
+  return {id,name,provider,agent:true,reasoning:capability.reasoning===true,modalities:capability.modalities,
+    limit:capability.context?{context:capability.context,output:capability.output}:undefined,
+    price:{tier:'default',input,cached,write,output,longThreshold,longInput,longOutput,source,date:'2026-09-21'}};
 }
 
-export const officialModelIds=Object.keys(rates);
+const imageRates={
+  'gpt-image-2':['GPT Image 2',5,1.25,8,2,30],
+  'gpt-image-2.5-flare':['GPT Image 2.5 Flare',5,1.25,8,2,30],
+  'gpt-image-2.5-sunburst':['GPT Image 2.5 Sunburst',5,1.25,8,2,30]
+};
+
+export function officialImageModel(id){
+  const rate=imageRates[id];if(!rate)return null;
+  const [name,textInput,textCached,imageInput,imageCached,imageOutput]=rate;
+  return {id,name,provider:'OpenAI',agent:false,modalities:imageOnly,imagePrice:{textInput,textCached,imageInput,imageCached,imageOutput,source:OPENAI_SOURCE,date:'2026-09-22',tier:'default'}};
+}
+
+export function officialCatalogModel(id){return officialModel(id)||officialImageModel(id);}
+export const officialModelIds=[...Object.keys(rates),...Object.keys(imageRates)];

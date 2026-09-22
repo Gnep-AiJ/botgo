@@ -53,6 +53,6 @@ assert.match(workspaceBilling, /amountCents/, "checkout must send the selected r
 assert.match(home, /data-download/, "home must expose the protected release download");
 assert.match(nativeInstaller, /asar: true/, "native packaging must archive application code");
 assert.match(nativeInstaller, /files: \['out\/\*\*\/\*', '!out\/\*\*\/\*\.map', 'resources\/icons\/icon\.ico'\]/, "native packaging must use an explicit allowlist");
-assert.match(nativePrepare, /pkg\.version='1\.3\.2'/, "native desktop release identity must be 1.3.2");
+assert.match(nativePrepare, /pkg\.version='1\.3\.3'/, "native desktop release identity must be 1.3.3");
 
 console.log("Platform management contract test passed");

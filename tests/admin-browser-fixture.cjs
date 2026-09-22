@@ -15,7 +15,9 @@ const fixtures={
   '/admin/model-services/available':{models:[
     {id:'claude-sonnet-5',official:{provider:'Anthropic',price:{input:2,output:10}}},
     {id:'grok-4.6',official:{provider:'xAI',price:{input:2,output:6}}},
-    {id:'grok-unknown',official:null}
+    {id:'gpt-image-2.5-flare',official:null,reference:{provider:'OpenAI',agent:false,imagePrice:{textInput:5,imageInput:8,imageOutput:30}},reason:'image_generation'},
+    {id:'gpt-image-2-exact',official:null,reference:null,reason:'unverified_alias'},
+    {id:'grok-unknown',official:null,reference:null,reason:'unverified_alias'}
   ]},
   '/admin/desktop/releases':{releases:[]},'/admin/billing/orders':{orders:[]},'/admin/billing/plan':{paymentAvailable:false}
 };

@@ -23,6 +23,9 @@ function validateSession(data){
     seen.add(model.id);
     if(!model.price||!['input','output','cached','write'].every(k=>Number.isFinite(model.price[k])&&model.price[k]>=0))throw Error('Invalid model prices');
     if(!Number.isFinite(model.multiplier)||model.multiplier<0)throw Error('Invalid price multiplier');
+    if(model.modalities!==undefined&&(!Array.isArray(model.modalities.input)||!Array.isArray(model.modalities.output)||model.modalities.input.some(x=>!['text','image'].includes(x))||model.modalities.output.some(x=>!['text','image'].includes(x))))throw Error('Invalid model modalities');
+    if(model.reasoning!==undefined&&typeof model.reasoning!=='boolean')throw Error('Invalid model reasoning capability');
+    if(model.limit!==undefined&&(!Number.isSafeInteger(model.limit.context)||model.limit.context<1||!Number.isSafeInteger(model.limit.output)||model.limit.output<1||model.limit.output>model.limit.context))throw Error('Invalid model limits');
   }
   if(!seen.has(data.defaultModel)||!data.account||typeof data.account.email!=='string'||!Number.isSafeInteger(data.account.balanceMicros))throw Error('Invalid account session');
   return data;
@@ -38,7 +41,8 @@ function configuration(session,baseURL,localKey){
       name:'BotGo',npm:protocol==='chat'?'@ai-sdk/openai-compatible':'@ai-sdk/openai',
       options:{baseURL,apiKey:localKey},
       models:Object.fromEntries(models.map(m=>[m.id,{
-        name:m.name||m.id,tool_call:true,
+        name:m.name||m.id,tool_call:true,reasoning:m.reasoning===true,
+        ...(m.modalities?{modalities:m.modalities,attachment:m.attachment===true}:{}),
         // Application safety caps, not claims about upstream maximum context.
         limit:m.limit||{context:128000,output:8192},
         cost:{input:m.price.input*m.multiplier,output:m.price.output*m.multiplier,

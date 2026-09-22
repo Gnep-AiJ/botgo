@@ -4,7 +4,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {handleModelServicesAdmin} from '../worker/src/model-services-admin.js';
 import {MODEL_SEEDS,handleMeteringAdmin,publicCatalog,catalog} from '../worker/src/metering.js';
 import {encryptSecret,handlePlatformRoute} from '../worker/src/platform-admin.js';
-import {officialModel} from '../worker/src/official-pricing.js';
+import {officialImageModel,officialModel} from '../worker/src/official-pricing.js';
 import {refreshExchangeRate} from '../worker/src/fx-rate.js';
 
 const db=new DatabaseSync(':memory:');
@@ -44,9 +44,20 @@ try{
   assert.equal(db.prepare('SELECT enabled FROM model_catalog WHERE id=?').get(initial.id).enabled,1,'a failed probe cannot disable a published model');
   globalThis.fetch=async()=>new Response('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"botgo_probe","arguments":"{\\"value\\":\\"OK\\"}"}}]}}]}\n\ndata: {"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\n',{headers:{'content-type':'text/event-stream'}});
   const tested=await (await call('POST',`/admin/model-services/${initial.id}/test`)).json();assert.equal(tested.ok,true);
-  globalThis.fetch=async(url)=>url.endsWith('/models')?Response.json({data:[{id:'gpt-5.6-sol'},{id:'gpt-5.6-terra'},{id:'claude-sonnet-5'},{id:'grok-4.6'},{id:'custom-alias'}]}):new Response('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"botgo_probe","arguments":"{\\"value\\":\\"OK\\"}"}}]}}]}\n\ndata: {"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\n',{headers:{'content-type':'text/event-stream'}});
+  globalThis.fetch=async(url)=>url.endsWith('/models')?Response.json({data:[{id:'gpt-5.6-sol'},{id:'gpt-5.6-terra'},{id:'claude-sonnet-5'},{id:'grok-4.6'},{id:'gpt-image-2'},{id:'gpt-image-2.5-flare'},{id:'gpt-image-2-exact'},{id:'custom-alias'}]}):new Response('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"botgo_probe","arguments":"{\\"value\\":\\"OK\\"}"}}]}}]}\n\ndata: {"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\n',{headers:{'content-type':'text/event-stream'}});
   const available=await (await handleModelServicesAdmin(new Request(`https://botgo.invalid/admin/model-services/available?profileId=${profileId}`),env,'/admin/model-services/available',{id:'admin'},async()=>{})).json();
-  assert.deepEqual(available.models.map(item=>item.id),['gpt-5.6-sol','gpt-5.6-terra','claude-sonnet-5','grok-4.6']);
+  assert.deepEqual(available.models.map(item=>item.id),['gpt-5.6-sol','gpt-5.6-terra','claude-sonnet-5','grok-4.6','gpt-image-2','gpt-image-2.5-flare','gpt-image-2-exact']);
+  assert.equal(available.models.find(item=>item.id==='gpt-image-2').official,null,'image generation models are not agent models');
+  assert.equal(available.models.find(item=>item.id==='gpt-image-2').reference.imagePrice.imageOutput,30);
+  assert.equal(available.models.find(item=>item.id==='gpt-image-2-exact').reason,'unverified_alias');
+  assert.equal(officialImageModel('gpt-image-2.5-flare').agent,false);
+  assert.deepEqual(officialModel('gpt-5.6-sol').modalities.input,['text','image']);
+  assert.equal(officialModel('gpt-5.6-sol').reasoning,true);
+  assert.deepEqual(officialModel('gpt-5.6-sol').limit,{context:1050000,output:128000});
+  for(const id of ['claude-fable-5-1','claude-opus-5','claude-sonnet-5','claude-haiku-4-5-20251001','grok-4.6','grok-build-0.1','grok-4.5','grok-4.3','grok-4.20-multi-agent-0309','grok-4.20-0309-reasoning','grok-4.20-0309-non-reasoning']){
+    const model=officialModel(id);assert.ok(model.limit?.context>0,`${id} context is required`);assert.deepEqual(model.modalities,{input:['text','image'],output:['text']});
+  }
+  assert.equal(officialModel('grok-4.20-0309-non-reasoning').reasoning,false);
   assert.equal(officialModel('claude-sonnet-5').provider,'Anthropic');
   assert.equal(officialModel('grok-4.6').provider,'xAI');
   db.prepare("INSERT INTO model_service_drafts(model_id,config_json,tested_json) VALUES(?,'{}','{}')").run('gpt-5.6-terra');

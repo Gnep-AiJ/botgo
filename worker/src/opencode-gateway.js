@@ -1,6 +1,7 @@
 import { desktopCredentialFor, desktopRelayCredentialFor, issueDesktopKey } from './desktop-auth.js';
 import { catalog, meteredProxy, normalizedUsage, usageObserver } from './metering.js';
 import { resolveProfileConfig } from './platform-admin.js';
+import { officialModel } from './official-pricing.js';
 
 const reply = (data, status=200) => Response.json(data.error?{code:'REQUEST_REJECTED',retryable:false,requestId:crypto.randomUUID(),...data}:data, {status, headers:{'cache-control':'no-store'}});
 const bearer = request => request.headers.get('authorization')?.replace(/^Bearer\s+/i,'') || '';
@@ -43,8 +44,10 @@ export async function handleOpenCode(request, env, ctx, path) {
       const issued=await issueDesktopKey(env,bearer(request));
       await env.DB.prepare("UPDATE api_keys SET expires_at=datetime('now','+1 day') WHERE id=?").bind(issued.keyId).run();
       const {settings}=await catalog(env);
-      const models=rows.map(r=>({id:r.model_id,name:r.name,protocol:r.protocol,price:JSON.parse(r.price_json),
-        multiplier:(r.multiplier_ppm??settings.multiplier_ppm)/1e6,usdCny:settings.usd_cny_ppm/1e6}));
+      const models=rows.map(r=>{const official=officialModel(r.model_id);return {id:r.model_id,name:r.name,protocol:r.protocol,price:JSON.parse(r.price_json),
+        multiplier:(r.multiplier_ppm??settings.multiplier_ppm)/1e6,usdCny:settings.usd_cny_ppm/1e6,
+        ...(official?.modalities?{modalities:official.modalities,attachment:official.modalities.input.includes('image')}: {}),
+        ...(official?.reasoning?{reasoning:true}:{}),...(official?.limit?{limit:official.limit}:{})};});
       return reply({key:issued.key,models,defaultModel:models.some(m=>m.id===settings.default_model)?settings.default_model:models[0].id,
         account:{email:identity.account.email,balanceMicros:identity.account.credit_balance*10000+identity.account.credit_remainder_micros}},201);
     }

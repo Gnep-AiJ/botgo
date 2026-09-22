@@ -1,6 +1,6 @@
 import { probeAgentRoute } from './opencode-gateway.js';
 import { resolveProfileConfig } from './platform-admin.js';
-import { officialModel,officialModelIds } from './official-pricing.js';
+import { officialCatalogModel,officialModel,officialModelIds } from './official-pricing.js';
 
 const reply=(data,status=200)=>Response.json(data,{status,headers:{'cache-control':'no-store'}});
 const modelIdPattern=/^[a-z0-9][a-z0-9._-]{0,127}$/;
@@ -47,7 +47,10 @@ export async function handleModelServicesAdmin(request,env,path,admin,audit){
     const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
     let data;try{data=JSON.parse(new TextDecoder().decode(bytes));}catch{return reply({error:'上游模型列表格式无效。'},502);}
     const ids=[...new Set((Array.isArray(data?.data)?data.data:[]).map(item=>item?.id).filter(id=>typeof id==='string'&&id.length<=128))];
-    return reply({models:ids.filter(id=>/^(gpt-|claude-|grok-)/i.test(id)).map(id=>({id,official:officialModel(id)})),supported:officialModelIds});
+    return reply({models:ids.filter(id=>/^(gpt-|claude-|grok-)/i.test(id)).map(id=>{
+      const reference=officialCatalogModel(id);
+      return {id,official:reference?.agent?reference:null,reference,reason:reference&&!reference.agent?'image_generation':!reference?'unverified_alias':null};
+    }),supported:officialModelIds});
   }
   if(path==='/admin/model-services/import'&&request.method==='POST'){
     const input=await request.json().catch(()=>null),profileId=String(input?.profileId||''),id=String(input?.modelId||''),protocol=input?.protocol;

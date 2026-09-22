@@ -5,7 +5,7 @@ module.exports = {
   appId: 'com.botgo.desktop',
   productName: 'BotGo Desktop',
   artifactName: 'BotGo-${version}-win-x64.${ext}',
-  directories: { output: path.join(root, 'artifacts/releases/client-1.3.2'), buildResources: 'resources' },
+  directories: { output: path.join(root, 'artifacts/releases/client-1.3.3'), buildResources: 'resources' },
   electronDist: path.join(root, 'artifacts/opencode/node_modules/electron/dist'),
   electronVersion: '42.3.3',
   npmRebuild: false,

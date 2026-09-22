@@ -5,7 +5,7 @@ const {createBridge,configuration,originFor}=require('../opencode-desktop/runtim
 (async()=>{
   let sessions=0;const calls=[];let nextStatus=200;let clock=0;
   const fixture={key:'bgk_fixture123',defaultModel:'gpt-5.6-luna',account:{email:'test@example.invalid',balanceMicros:1000000},models:[
-    {id:'gpt-5.6-luna',protocol:'chat',price:{input:.2,cached:.02,write:.25,output:1.2},multiplier:.3},
+    {id:'gpt-5.6-luna',protocol:'chat',price:{input:.2,cached:.02,write:.25,output:1.2},multiplier:.3,modalities:{input:['text','image'],output:['text']},attachment:true,reasoning:true,limit:{context:1050000,output:128000}},
     {id:'gpt-6-astra',protocol:'responses',price:{input:10,cached:1,write:12.5,output:50},multiplier:.3}
   ]};
   const cloud=http.createServer(async(req,res)=>{
@@ -34,6 +34,10 @@ const {createBridge,configuration,originFor}=require('../opencode-desktop/runtim
     assert.equal(cfg.provider['botgo-responses'].npm,'@ai-sdk/openai');
     assert.equal(cfg.provider['botgo-chat'].npm,'@ai-sdk/openai-compatible');
     assert.equal(cfg.provider['botgo-chat'].models['gpt-5.6-luna'].cost.input,.06);
+    assert.deepEqual(cfg.provider['botgo-chat'].models['gpt-5.6-luna'].modalities,{input:['text','image'],output:['text']});
+    assert.equal(cfg.provider['botgo-chat'].models['gpt-5.6-luna'].attachment,true);
+    assert.equal(cfg.provider['botgo-chat'].models['gpt-5.6-luna'].reasoning,true);
+    assert.deepEqual(cfg.provider['botgo-chat'].models['gpt-5.6-luna'].limit,{context:1050000,output:128000});
     assert.ok(!JSON.stringify(cfg).includes(fixture.key));
     const {baseURL,apiKey}=cfg.provider['botgo-chat'].options;
     const send=(body,headers={},endpoint='/chat/completions')=>fetch(baseURL+endpoint,{method:'POST',headers:{authorization:`Bearer ${apiKey}`,'content-type':'application/json','x-session-id':'ses_root',...headers},body:JSON.stringify(body)});

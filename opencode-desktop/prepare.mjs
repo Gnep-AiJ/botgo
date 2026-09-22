@@ -310,7 +310,7 @@ staged.set('packages/ui/src/v2/components/wordmark-v2.tsx',fs.readFileSync(path.
 staged.set('packages/desktop/resources/icons/icon.ico',fs.readFileSync(path.join(here,'overlay/botgo-desktop.ico')));
 const pkg=JSON.parse(base('packages/desktop/package.json'));
 pkg.name='@botgo/desktop';
-pkg.version='1.3.2';
+pkg.version='1.3.3';
 pkg.homepage='https://botgo.win';
 // Keep upstream MIT authorship. Packaging is never publishing.
 staged.set('packages/desktop/package.json',JSON.stringify(pkg,null,2)+'\n');
