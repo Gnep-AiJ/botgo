@@ -12,6 +12,7 @@ updated: 2026-09-24
 | `artifacts/opencode/` | Ignored prepared upstream build copy | Generated input to build only; never hand-edit. |
 | `artifacts/verification/` | Isolated profiles, screenshots, test outputs, build and release evidence | No credentials, production profile copies, or root `.tmp-*` outputs. |
 | `artifacts/releases/client-1.3.6/` | Signed Windows 1.3.6 installer and generated packaging files | Retain the installer for release verification and rollback. |
+| Earlier `artifacts/releases/client-*/` | Signed installer and blockmap for each prior version | Retain these rollback files; old `win-unpacked/` directories are reproducible build output and may be pruned after release verification. |
 | `agent/` | Historical CLI and shared runner source | Keep as source history; it is excluded from website and public release. |
 
 The removed `desktop/` client and its 1.2.x evidence are retired. Device authorization endpoints retain their existing `/desktop/...` names for compatibility; they are shared service infrastructure, not a source directory or product name.
