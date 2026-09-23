@@ -44,9 +44,11 @@ try{
   assert.equal(db.prepare('SELECT enabled FROM model_catalog WHERE id=?').get(initial.id).enabled,1,'a failed probe cannot disable a published model');
   globalThis.fetch=async()=>new Response('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"botgo_probe","arguments":"{\\"value\\":\\"OK\\"}"}}]}}]}\n\ndata: {"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\n',{headers:{'content-type':'text/event-stream'}});
   const tested=await (await call('POST',`/admin/model-services/${initial.id}/test`)).json();assert.equal(tested.ok,true);
-  globalThis.fetch=async(url)=>url.endsWith('/models')?Response.json({data:[{id:'gpt-5.6-sol'},{id:'gpt-5.6-terra'},{id:'claude-sonnet-5'},{id:'grok-4.6'},{id:'gpt-image-2'},{id:'gpt-image-2.5-flare'},{id:'gpt-image-2-exact'},{id:'custom-alias'}]}):new Response('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"botgo_probe","arguments":"{\\"value\\":\\"OK\\"}"}}]}}]}\n\ndata: {"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\n',{headers:{'content-type':'text/event-stream'}});
+  globalThis.fetch=async(url)=>url.endsWith('/models')?Response.json({data:[{id:'gpt-5.6-sol'},{id:'gpt-5.6-terra'},{id:'gpt-6-sol'},{id:'gpt-6-luna'},{id:'claude-sonnet-5'},{id:'grok-4.6'},{id:'gpt-image-2'},{id:'gpt-image-2.5-flare'},{id:'gpt-image-2-exact'},{id:'custom-alias'}]}):new Response('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"botgo_probe","arguments":"{\\"value\\":\\"OK\\"}"}}]}}]}\n\ndata: {"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\n',{headers:{'content-type':'text/event-stream'}});
   const available=await (await handleModelServicesAdmin(new Request(`https://botgo.invalid/admin/model-services/available?profileId=${profileId}`),env,'/admin/model-services/available',{id:'admin'},async()=>{})).json();
-  assert.deepEqual(available.models.map(item=>item.id),['gpt-5.6-sol','gpt-5.6-terra','claude-sonnet-5','grok-4.6','gpt-image-2','gpt-image-2.5-flare','gpt-image-2-exact']);
+  assert.deepEqual(available.models.map(item=>item.id),['gpt-5.6-sol','gpt-5.6-terra','gpt-6-sol','gpt-6-luna','claude-sonnet-5','grok-4.6','gpt-image-2','gpt-image-2.5-flare','gpt-image-2-exact']);
+  assert.equal(available.models.find(item=>item.id==='gpt-6-sol').official.price.input,2);
+  assert.equal(available.models.find(item=>item.id==='gpt-6-luna').official.price.output,.5);
   assert.equal(available.models.find(item=>item.id==='gpt-image-2').official,null,'image generation models are not agent models');
   assert.equal(available.models.find(item=>item.id==='gpt-image-2').reference.imagePrice.imageOutput,30);
   assert.equal(available.models.find(item=>item.id==='gpt-image-2-exact').reason,'unverified_alias');
@@ -60,6 +62,14 @@ try{
   assert.equal(officialModel('grok-4.20-0309-non-reasoning').reasoning,false);
   assert.equal(officialModel('claude-sonnet-5').provider,'Anthropic');
   assert.equal(officialModel('grok-4.6').provider,'xAI');
+  globalThis.fetch=async url=>url.endsWith('/images/generations')?Response.json({data:[{b64_json:'iVBORw0KGgo='}],usage:{input_tokens:3,input_tokens_details:{text_tokens:3,image_tokens:0},output_tokens:8,output_tokens_details:{image_tokens:8}}}):new Response('not a model page',{status:404});
+  const imageImported=await (await call('POST','/admin/model-services/image-import',{profileId,modelId:'gpt-image-2'})).json();
+  assert.equal(imageImported.ok,true,'a verified official image model is addable');
+  assert.equal(db.prepare("SELECT enabled FROM image_model_routes WHERE model_id='gpt-image-2'").get().enabled,1);
+  assert.equal(JSON.parse(db.prepare("SELECT price_json FROM image_model_routes WHERE model_id='gpt-image-2'").get().price_json).imageOutput,30);
+  assert.equal((await (await call('GET','/admin/model-services/images')).json()).images.length,1);
+  assert.equal((await call('DELETE','/admin/model-services/images/gpt-image-2')).status,200);
+  globalThis.fetch=async()=>new Response('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"botgo_probe","arguments":"{\\"value\\":\\"OK\\"}"}}]}}]}\n\ndata: {"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\n',{headers:{'content-type':'text/event-stream'}});
   db.prepare("INSERT INTO model_service_drafts(model_id,config_json,tested_json) VALUES(?,'{}','{}')").run('gpt-5.6-terra');
   const imported=await (await call('POST','/admin/model-services/import',{profileId,modelId:'gpt-5.6-terra',protocol:'chat'})).json();
   assert.equal(imported.ok,true);

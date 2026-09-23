@@ -4,8 +4,10 @@ export const MODEL_SEEDS = [
   ['gpt-5.6-terra','GPT-5.6 Terra',2,.2,2.5,12],
   ['gpt-5.6-luna','GPT-5.6 Luna',.2,.02,.25,1.2],
   ['gpt-5.5','GPT-5.5',5,.5,5,30],
-  ['gpt-6-astra','GPT-6 Astra',10,1,12.5,50]
-].map(([id,name,input,cached,write,output]) => ({id,name,price:{input,cached,write,output,longThreshold:272000,longInput:2,longOutput:1.5,source:'https://developers.openai.com/api/docs/pricing',date:'2026-09-12',tier:'default'}}));
+  ['gpt-6-astra','GPT-6 Astra',10,1,12.5,50],
+  ['gpt-6-sol','GPT-6 Sol',2,.2,2.5,10],
+  ['gpt-6-luna','GPT-6 Luna',.1,.01,.125,.5]
+].map(([id,name,input,cached,write,output]) => ({id,name,price:{input,cached,write,output,longThreshold:272000,longInput:2,longOutput:1.5,source:'https://developers.openai.com/api/docs/pricing',date:id==='gpt-6-sol'||id==='gpt-6-luna'?'2026-09-22':'2026-09-12',tier:'default'}}));
 
 export const AUTO_REVIEW_MODEL_ID = 'codex-auto-review';
 export const AUTO_REVIEW_BILLING_MODEL_ID = 'gpt-5.6-luna';
@@ -54,6 +56,19 @@ export function costMicros(usage,snapshot) {
   const denominator=10n**24n;
   const result=(numerator+denominator-1n)/denominator;
   if(result>BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('COST_OVERFLOW');
+  return Number(result);
+}
+export function imageCostMicros(usage,snapshot) {
+  if(!usage||!Number.isSafeInteger(usage.input_tokens)||usage.input_tokens<0||!Number.isSafeInteger(usage.output_tokens)||usage.output_tokens<0)throw new Error('INVALID_IMAGE_USAGE');
+  const input=usage.input_tokens_details||{},output=usage.output_tokens_details||{};
+  const textInput=input.text_tokens??usage.input_tokens,imageInput=input.image_tokens??0,cachedText=input.cached_tokens??0;
+  const outputImage=output.image_tokens??usage.output_tokens;
+  if(![textInput,imageInput,cachedText,outputImage].every(n=>Number.isSafeInteger(n)&&n>=0)||textInput+imageInput>usage.input_tokens||cachedText>textInput||outputImage>usage.output_tokens)throw new Error('INVALID_IMAGE_USAGE');
+  const p=snapshot.price,rate=n=>BigInt(Math.round(n*1e6));
+  const sum=BigInt(textInput-cachedText)*rate(p.textInput)+BigInt(cachedText)*rate(p.textCached)+BigInt(imageInput)*rate(p.imageInput)+BigInt(outputImage)*rate(p.imageOutput);
+  const numerator=sum*BigInt(snapshot.multiplierPpm)*BigInt(snapshot.usdCnyPpm),denominator=10n**18n;
+  const result=(numerator+denominator-1n)/denominator;
+  if(result>BigInt(Number.MAX_SAFE_INTEGER))throw new Error('COST_OVERFLOW');
   return Number(result);
 }
 export function usageObserver() {

@@ -27,6 +27,10 @@ function validateSession(data){
     if(model.reasoning!==undefined&&typeof model.reasoning!=='boolean')throw Error('Invalid model reasoning capability');
     if(model.limit!==undefined&&(!Number.isSafeInteger(model.limit.context)||model.limit.context<1||!Number.isSafeInteger(model.limit.output)||model.limit.output<1||model.limit.output>model.limit.context))throw Error('Invalid model limits');
   }
+  const imageModels=data.imageModels??[];
+  if(!Array.isArray(imageModels)||imageModels.length>1000)throw Error('Invalid image model catalog');
+  const imageSeen=new Set();
+  for(const model of imageModels){if(!model||typeof model.id!=='string'||!modelPattern.test(model.id)||typeof model.billingModelId!=='string'||!modelPattern.test(model.billingModelId)||imageSeen.has(model.id))throw Error('Invalid image model catalog');imageSeen.add(model.id);}
   if(!seen.has(data.defaultModel)||!data.account||typeof data.account.email!=='string'||!Number.isSafeInteger(data.account.balanceMicros))throw Error('Invalid account session');
   return data;
 }
@@ -118,7 +122,7 @@ async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=u
     const auth=Buffer.from(request.headers.authorization||'');
     const expected=Buffer.from(`Bearer ${localKey}`);
     if(request.headers.origin||auth.length!==expected.length||!crypto.timingSafeEqual(auth,expected))return fail(401,'Unauthorized local request');
-    if(request.method!=='POST'||!['/v1/chat/completions','/v1/responses'].includes(request.url))return fail(404,'Unsupported route');
+    if(request.method!=='POST'||!['/v1/chat/completions','/v1/responses','/v1/images/generations'].includes(request.url))return fail(404,'Unsupported route');
     const controller=new AbortController();
     aborts.add(controller);
     const disconnect=()=>{if(!response.writableEnded)controller.abort();};
@@ -131,8 +135,9 @@ async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=u
       stage='session';const current=await refresh(controller.signal);
       onDiagnostic({stage:'session',requestId,elapsedMs:now()-startedAt});
       controller.signal.throwIfAborted();
+      const image=request.url.endsWith('/images/generations');
       const protocol=request.url.endsWith('/responses')?'responses':'chat';
-      if(!current.models.some(m=>m.id===body.model&&m.protocol===protocol))return fail(403,'Model or protocol not available');
+      if(image?!((current.imageModels??[]).some(m=>m.id===body.model)):!current.models.some(m=>m.id===body.model&&m.protocol===protocol))return fail(403,'Model or protocol not available');
       const taskId=taskFor(request);
       const idempotency=requestId;
       stage='request';
@@ -178,9 +183,14 @@ async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=u
   server.headersTimeout=15000;
   await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve);});
   const baseURL=`http://127.0.0.1:${server.address().port}/v1`;
+  function imageConfig(){
+    const models=(session.imageModels??[]).map(model=>({id:model.id,name:model.name||model.id,billingModelId:model.billingModelId}));
+    return models.length?{url:`${baseURL}/images/generations`,key:localKey,models}:null;
+  }
   return {
     config:()=>configuration(session,baseURL,localKey),
     account:()=>({...session.account}),
+    imageConfig,
     async usage(taskId){
       if(typeof taskId!=='string'||!taskPattern.test(taskId))throw Error('Invalid task ID');
       const current=await refresh();

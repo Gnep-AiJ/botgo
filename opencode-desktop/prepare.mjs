@@ -285,6 +285,13 @@ config=replace(config,'          config: result,',`          config: process.env
             ...JSON.parse(process.env.BOTGO_MANAGED_CONFIG),
           } : result,`);
 staged.set('packages/opencode/src/config/config.ts',config);
+staged.set('packages/opencode/src/tool/botgo-image.ts',fs.readFileSync(path.join(here,'overlay/botgo-image.ts')));
+let toolRegistry=base('packages/opencode/src/tool/registry.ts');
+toolRegistry=replace(toolRegistry,'import { ReadTool } from "./read"\n','import { ReadTool } from "./read"\nimport { BotGoImageTool } from "./botgo-image"\n');
+toolRegistry=replace(toolRegistry,'    const patchtool = yield* ApplyPatchTool\n','    const patchtool = yield* ApplyPatchTool\n    const botgoImage = process.env.BOTGO_IMAGE_MODELS ? yield* BotGoImageTool : undefined\n');
+toolRegistry=replace(toolRegistry,'          ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),','          ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),\n          ...(botgoImage ? { botgoImage: Tool.init(botgoImage) } : {}),');
+toolRegistry=replace(toolRegistry,'            ...(tool.execute ? [tool.execute] : []),','            ...(tool.execute ? [tool.execute] : []),\n            ...(tool.botgoImage ? [tool.botgoImage] : []),');
+staged.set('packages/opencode/src/tool/registry.ts',toolRegistry);
 staged.set('packages/opencode/src/session/retry.ts',replace(base('packages/opencode/src/session/retry.ts'),
   'export function retryable(error: Err, provider: string) {',
   'export function retryable(error: Err, provider: string) {\n  // Only the authenticated local bridge can mark a metered attempt safe to retry.\n  if (provider.startsWith("botgo-") && (!SessionV1.APIError.isInstance(error) || error.data.responseHeaders?.["x-botgo-retryable"] !== "1")) return undefined'));
@@ -310,7 +317,7 @@ staged.set('packages/ui/src/v2/components/wordmark-v2.tsx',fs.readFileSync(path.
 staged.set('packages/desktop/resources/icons/icon.ico',fs.readFileSync(path.join(here,'overlay/botgo-desktop.ico')));
 const pkg=JSON.parse(base('packages/desktop/package.json'));
 pkg.name='@botgo/desktop';
-pkg.version='1.3.3';
+pkg.version='1.3.4';
 pkg.homepage='https://botgo.win';
 // Keep upstream MIT authorship. Packaging is never publishing.
 staged.set('packages/desktop/package.json',JSON.stringify(pkg,null,2)+'\n');

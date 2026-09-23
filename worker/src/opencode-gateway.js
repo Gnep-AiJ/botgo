@@ -1,5 +1,5 @@
 import { desktopCredentialFor, desktopRelayCredentialFor, issueDesktopKey } from './desktop-auth.js';
-import { catalog, meteredProxy, normalizedUsage, usageObserver } from './metering.js';
+import { catalog, imageCostMicros, meteredProxy, normalizedUsage, usageObserver } from './metering.js';
 import { resolveProfileConfig } from './platform-admin.js';
 import { officialModel } from './official-pricing.js';
 
@@ -7,6 +7,14 @@ const reply = (data, status=200) => Response.json(data.error?{code:'REQUEST_REJE
 const bearer = request => request.headers.get('authorization')?.replace(/^Bearer\s+/i,'') || '';
 const protocols = new Set(['chat','responses']);
 const usableMember = member => Boolean(member.enabled&&member.verified_at&&(!member.blocked_reason||['abandoned','usage_review'].includes(member.blocked_reason)));
+
+async function boundedJson(response,maxBytes){
+  const reader=response.body?.getReader();if(!reader)throw Error('EMPTY_RESPONSE');
+  const chunks=[];let size=0;
+  for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>maxBytes){await reader.cancel();throw Error('RESPONSE_TOO_LARGE');}chunks.push(value);}
+  const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
 
 export async function agentRoutes(env) {
   const routes=(await env.DB.prepare(`SELECT r.*, m.name, m.upstream_id, m.price_json, m.multiplier_ppm,
@@ -34,25 +42,81 @@ export function availableAgentRoutes(routes) {
   return routes.filter(r=>r.enabled && r.model_enabled && r.agent_enabled && r.members?.some(usableMember));
 }
 
+export async function imageModelRoutes(env) {
+  return (await env.DB.prepare(`SELECT r.*,p.retired_at FROM image_model_routes r JOIN upstream_profiles p ON p.id=r.profile_id
+    WHERE r.enabled=1 AND r.verified_at IS NOT NULL AND p.retired_at IS NULL ORDER BY r.model_id`).all()).results||[];
+}
+
+async function settleImageRequest(env,id,cost,usage,state,reason=null){
+  await env.DB.prepare(`UPDATE metered_requests SET state=?,cost_micros=?,usage_json=?,review_reason=?,review_required=0
+    WHERE id=? AND state='reserved'`).bind(state,cost,usage?JSON.stringify(usage):null,reason,id).run();
+}
+
+async function handleImageGeneration(request,env,identity){
+  const id=crypto.randomUUID();
+  const reader=request.body?.getReader();if(!reader)return reply({error:'请求为空。'},400);
+  const chunks=[];let length=0;
+  for(;;){const {done,value}=await reader.read();if(done)break;length+=value.byteLength;if(length>65536){await reader.cancel();return reply({error:'请求过大。'},413);}chunks.push(value);}
+  let body;try{const bytes=new Uint8Array(length);let at=0;for(const part of chunks){bytes.set(part,at);at+=part.length;}body=JSON.parse(new TextDecoder().decode(bytes));}catch{return reply({error:'JSON 无效。'},400);}
+  if(typeof body?.model!=='string'||typeof body.prompt!=='string'||!body.prompt.trim()||body.prompt.length>8192||body.n!==undefined&&body.n!==1)return reply({error:'生图请求无效。仅支持一张图片，提示词最多 8192 字符。'},400);
+  const size=body.size??'1024x1024',quality=body.quality??'high';
+  if(!['1024x1024','1536x1024','1024x1536'].includes(size)||!['low','medium','high'].includes(quality))return reply({error:'当前支持 1024 方图或横竖 3:2 图片，以及 low、medium、high 质量。'},400);
+  if(identity.model&&identity.model!==body.model)return reply({error:'凭据不允许访问该模型。'},403);
+  const route=await env.DB.prepare('SELECT * FROM image_model_routes WHERE model_id=? AND enabled=1 AND verified_at IS NOT NULL').bind(body.model).first();
+  if(!route)return reply({error:'生图模型未启用或尚未通过测试。'},503);
+  let imagePrice;try{imagePrice=JSON.parse(route.price_json);}catch{return reply({error:'生图模型计价配置无效。'},503);}
+  if(!['textInput','textCached','imageInput','imageCached','imageOutput'].every(key=>Number.isFinite(imagePrice?.[key])&&imagePrice[key]>0))return reply({error:'生图模型计价配置无效。'},503);
+  const upstream=await resolveProfileConfig(env,route.profile_id);if(!upstream)return reply({error:'生图上游不可用。'},503);
+  await env.DB.prepare("UPDATE upstream_leases SET state='released',released_at=CURRENT_TIMESTAMP WHERE state='active' AND expires_at<=CURRENT_TIMESTAMP").run();
+  const {settings}=await catalog(env),snapshot={image:true,requestedModel:route.model_id,upstreamModel:route.upstream_model_id,billingModel:route.billing_model_id,profileId:route.profile_id,
+    price:imagePrice,multiplierPpm:settings.multiplier_ppm,usdCnyPpm:settings.usd_cny_ppm,settingsRevision:settings.revision,quality,size};
+  const maxInput=new TextEncoder().encode(body.prompt).length;
+  const reserved=imageCostMicros({input_tokens:maxInput,input_tokens_details:{text_tokens:maxInput},output_tokens:16384,output_tokens_details:{image_tokens:16384}},snapshot);
+  try{await env.DB.prepare(`INSERT INTO metered_requests(id,account_id,channel,model,snapshot,reserved_micros,state,review_required)
+      VALUES(?,?,'desktop_opencode',?,?,?,'reserved',0)`).bind(id,identity.account_id,route.model_id,JSON.stringify(snapshot),reserved).run();}
+  catch(error){if(String(error).includes('BILLING_INSUFFICIENT'))return reply({error:'余额不足，请充值后再生成图片。',code:'BILLING_INSUFFICIENT'},402);if(String(error).includes('AGENT_CONCURRENCY_LIMIT'))return reply({error:'当前任务较多，请稍后重试。',code:'AGENT_CONCURRENCY_LIMIT'},429);throw error;}
+  const leaseId=crypto.randomUUID();
+  try{await env.DB.prepare("INSERT INTO upstream_leases(id,request_id,account_id,profile_id,expires_at) VALUES(?,?,?, ?,datetime('now','+5 minutes'))").bind(leaseId,id,identity.account_id,route.profile_id).run();}
+  catch(error){await settleImageRequest(env,id,0,null,'refunded','capacity_unavailable');return reply({error:'上游繁忙，请稍后重试。',code:String(error).includes('UPSTREAM_CAPACITY_LIMIT')?'UPSTREAM_CAPACITY_LIMIT':'ACCOUNT_CONCURRENCY_LIMIT'},429);}
+  let response;
+  try{response=await fetch(`${upstream.baseUrl}/images/generations`,{method:'POST',redirect:'manual',headers:{authorization:`Bearer ${upstream.apiKey}`,'content-type':'application/json'},signal:AbortSignal.any([request.signal,AbortSignal.timeout(180000)]),body:JSON.stringify({model:route.upstream_model_id,prompt:body.prompt,size,quality,n:1,output_format:'png'})});}
+  catch(error){await settleImageRequest(env,id,0,null,'refunded',request.signal.aborted?'client_cancelled':'upstream_connection');return requestError(request.signal.aborted?'生成已停止，本次未扣费。':'连接中断，图片生成状态未知，本次未扣费。',502,request.signal.aborted?'CANCELLED':'REQUEST_UNCERTAIN',false,id);}
+  if(!response.ok){await response.body?.cancel();await settleImageRequest(env,id,0,null,'refunded','upstream_rejected');return requestError(`上游生图请求失败（HTTP ${response.status}），本次未扣费。`,502,'UPSTREAM_REJECTED',false,id);}
+  let result;
+  try{result=await boundedJson(response,16*1024*1024);if(result.error||!Array.isArray(result.data)||!result.data[0]?.b64_json)throw Error('INVALID_IMAGE_RESPONSE');}
+  catch{await settleImageRequest(env,id,0,null,'refunded','invalid_response');return requestError('上游返回的图片数据无效，本次未扣费。',502,'INVALID_IMAGE_RESPONSE',false,id);}
+  let cost;
+  try{cost=imageCostMicros(result.usage,snapshot);}catch{await settleImageRequest(env,id,0,null,'refunded','missing_image_usage');return requestError('上游未返回可核验的图像用量，本次未扣费。',502,'MISSING_IMAGE_USAGE',false,id);}
+  if(cost>reserved){await settleImageRequest(env,id,0,null,'refunded','image_usage_exceeded_reservation');return requestError('图片用量超过预留范围，本次未扣费。请降低图片尺寸或质量后重试。',502,'IMAGE_USAGE_LIMIT',false,id);}
+  await settleImageRequest(env,id,cost,result.usage,'completed');
+  const headers={'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-botgo-request-id':id};
+  return new Response(JSON.stringify({...result,model:route.model_id}),{headers});
+}
+
 export async function handleOpenCode(request, env, ctx, path) {
   if (!path.startsWith('/opencode/') && !path.startsWith('/desktop/opencode/')) return null;
   try {
     if (path==='/desktop/opencode/session' && request.method==='POST') {
       const identity=await desktopCredentialFor(env,bearer(request));
       const rows=availableAgentRoutes(await agentRoutes(env));
+      const imageRows=await imageModelRoutes(env);
       if (!rows.length) return reply({error:'尚无通过验证的 Agent 模型。'},503);
       const issued=await issueDesktopKey(env,bearer(request));
       await env.DB.prepare("UPDATE api_keys SET expires_at=datetime('now','+1 day') WHERE id=?").bind(issued.keyId).run();
       const {settings}=await catalog(env);
-      const models=rows.map(r=>{const official=officialModel(r.model_id);return {id:r.model_id,name:r.name,protocol:r.protocol,price:JSON.parse(r.price_json),
+      const cached=(await env.DB.prepare('SELECT model_id,model_json FROM official_model_cache').all()).results||[];
+      const cachedModels=new Map(cached.map(row=>[row.model_id,JSON.parse(row.model_json)]));
+      const models=rows.map(r=>{const official=cachedModels.get(r.model_id)||officialModel(r.model_id);return {id:r.model_id,name:r.name,protocol:r.protocol,price:JSON.parse(r.price_json),
         multiplier:(r.multiplier_ppm??settings.multiplier_ppm)/1e6,usdCny:settings.usd_cny_ppm/1e6,
         ...(official?.modalities?{modalities:official.modalities,attachment:official.modalities.input.includes('image')}: {}),
         ...(official?.reasoning?{reasoning:true}:{}),...(official?.limit?{limit:official.limit}:{})};});
-      return reply({key:issued.key,models,defaultModel:models.some(m=>m.id===settings.default_model)?settings.default_model:models[0].id,
+      const imageModels=imageRows.map(row=>({id:row.model_id,name:row.name,billingModelId:row.billing_model_id}));
+      return reply({key:issued.key,models,imageModels,defaultModel:models.some(m=>m.id===settings.default_model)?settings.default_model:models[0].id,
         account:{email:identity.account.email,balanceMicros:identity.account.credit_balance*10000+identity.account.credit_remainder_micros}},201);
     }
     const identity=await desktopRelayCredentialFor(env,bearer(request));
     if (!identity) return reply({error:'设备凭据无效或已撤销。'},401);
+    if(path==='/opencode/v1/images/generations'&&request.method==='POST')return await handleImageGeneration(request,env,identity);
     if (path==='/opencode/v1/models' && request.method==='GET') {
       return reply({object:'list',data:availableAgentRoutes(await agentRoutes(env)).map(r=>({id:r.model_id,object:'model',owned_by:'botgo'}))});
     }

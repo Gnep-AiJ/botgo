@@ -580,9 +580,11 @@ import { handleAgentRelease } from "./agent-releases.js";
 import { autoReviewCapability, catalog, publicCatalog, meteredProxy, releaseExpiredRequests } from "./metering.js";
 import { handleOpenCode } from './opencode-gateway.js';
 import { refreshExchangeRate } from './fx-rate.js';
+import { refreshCachedOfficialPrices } from './official-price-sync.js';
 
 export default {
-  async scheduled(event, env, ctx) { ctx.waitUntil(Promise.all([releaseExpiredRequests(env),purgeExpiredConversations(env),refreshExchangeRate(env).catch(()=>({updated:false}))])); },
+  async scheduled(event, env, ctx) { ctx.waitUntil(Promise.all([releaseExpiredRequests(env),purgeExpiredConversations(env),refreshExchangeRate(env).catch(()=>({updated:false})),
+    ...(event.cron==='23 3 * * *'?[refreshCachedOfficialPrices(env).catch(()=>({checked:0,updated:0}))]:[])])); },
   async fetch(request, env, ctx) {
     if (env.BOTGO_MAINTENANCE === "1") return json({ error: "服务更新中，请稍后重试。" }, 503, { "retry-after": "60" });
     if (!env.DB || !env.AUTH_SECRET) return json({ error: "后端绑定尚未配置。" }, 503);

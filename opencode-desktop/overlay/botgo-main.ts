@@ -50,6 +50,16 @@ export function createBotGo() {
     }
     process.env.BOTGO_MANAGED_CONFIG = JSON.stringify(bridge.config())
     process.env.OPENCODE_CONFIG_CONTENT = process.env.BOTGO_MANAGED_CONFIG
+    const image = bridge.imageConfig()
+    if (image) {
+      process.env.BOTGO_IMAGE_API_URL = image.url
+      process.env.BOTGO_IMAGE_API_KEY = image.key
+      process.env.BOTGO_IMAGE_MODELS = JSON.stringify(image.models)
+    } else {
+      delete process.env.BOTGO_IMAGE_API_URL
+      delete process.env.BOTGO_IMAGE_API_KEY
+      delete process.env.BOTGO_IMAGE_MODELS
+    }
     state = { status: "ready", email: account.email, balanceMicros: account.balanceMicros }
   }
   function error(error: unknown) {

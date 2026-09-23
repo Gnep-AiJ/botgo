@@ -227,7 +227,7 @@ async function upstreamRoutes(request, env, path, admin, audit) {
       env.DB.prepare(`SELECT p.id,p.name,p.base_url,p.key_hint,p.max_concurrency,p.last_tested_at,p.last_test_status,p.updated_at,p.retired_at,COUNT(l.id) AS active_requests
         FROM upstream_profiles p LEFT JOIN upstream_leases l ON l.profile_id=p.id AND l.state='active' AND l.expires_at>CURRENT_TIMESTAMP
         GROUP BY p.id,p.name,p.base_url,p.key_hint,p.max_concurrency,p.last_tested_at,p.last_test_status,p.updated_at,p.retired_at ORDER BY p.updated_at DESC`).all(),
-      env.DB.prepare("SELECT channel,profile_id,model_id FROM upstream_route_members UNION ALL SELECT 'desktop_opencode',profile_id,model_id FROM agent_route_members UNION SELECT 'desktop_opencode',profile_id,model_id FROM agent_model_routes").all(),
+      env.DB.prepare("SELECT channel,profile_id,model_id FROM upstream_route_members UNION ALL SELECT 'desktop_opencode',profile_id,model_id FROM agent_route_members UNION SELECT 'desktop_opencode',profile_id,model_id FROM agent_model_routes UNION ALL SELECT 'desktop_image_generation',profile_id,model_id FROM image_model_routes").all(),
       env.DB.prepare("SELECT profile_id, channel, model_id, status, http_status, latency_ms, error_code, tested_at FROM upstream_route_probes ORDER BY tested_at DESC").all(),
       env.DB.prepare('SELECT model_id,config_json FROM model_service_drafts').all()
     ]);

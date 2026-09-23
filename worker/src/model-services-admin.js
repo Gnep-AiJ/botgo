@@ -1,6 +1,8 @@
 import { probeAgentRoute } from './opencode-gateway.js';
 import { resolveProfileConfig } from './platform-admin.js';
-import { officialCatalogModel,officialModel,officialModelIds } from './official-pricing.js';
+import { officialCatalogModel,officialImageModel,officialModel,officialModelIds } from './official-pricing.js';
+import { verifiedOfficialModel } from './official-price-sync.js';
+import { imageCostMicros } from './metering.js';
 
 const reply=(data,status=200)=>Response.json(data,{status,headers:{'cache-control':'no-store'}});
 const modelIdPattern=/^[a-z0-9][a-z0-9._-]{0,127}$/;
@@ -34,8 +36,52 @@ function probeFailure(error){
   return {code:'PROBE_FAILED',stage:'unknown'};
 }
 
+async function readImageProbe(response){
+  const reader=response.body?.getReader();if(!reader)throw Error('EMPTY_RESPONSE');
+  const chunks=[];let size=0;
+  for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>4*1024*1024){await reader.cancel();throw Error('RESPONSE_TOO_LARGE');}chunks.push(value);}
+  const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
 export async function handleModelServicesAdmin(request,env,path,admin,audit){
   if(!path.startsWith('/admin/model-services'))return null;
+  if(path==='/admin/model-services/images'&&request.method==='GET'){
+    const rows=(await env.DB.prepare(`SELECT r.*,p.name AS upstream_name,p.base_url FROM image_model_routes r
+      JOIN upstream_profiles p ON p.id=r.profile_id ORDER BY r.updated_at DESC`).all()).results||[];
+    return reply({images:rows.map(row=>({...row,price:JSON.parse(row.price_json),enabled:!!row.enabled}))});
+  }
+  const imageRemove=path.match(/^\/admin\/model-services\/images\/([a-z0-9._-]{1,128})$/);
+  if(imageRemove&&request.method==='DELETE'){
+    const result=await env.DB.prepare('DELETE FROM image_model_routes WHERE model_id=?').bind(imageRemove[1]).run();
+    if(!result.meta?.changes)return reply({error:'生图模型不存在。'},404);
+    await audit(env,admin.id,'image_model_removed',{model:imageRemove[1]});return reply({ok:true});
+  }
+  if(path==='/admin/model-services/image-import'&&request.method==='POST'){
+    const input=await request.json().catch(()=>null),profileId=String(input?.profileId||''),upstreamModelId=String(input?.modelId||'');
+    const billingModelId=String(input?.billingModelId||upstreamModelId).toLowerCase();
+    if(!/^[0-9a-f-]{36}$/i.test(profileId)||!upstreamModelPattern.test(upstreamModelId)||!modelIdPattern.test(upstreamModelId.toLowerCase())||!modelIdPattern.test(billingModelId))return reply({error:'请选择有效上游和官方生图计价型号。'},400);
+    const billing=await verifiedOfficialModel(env,billingModelId,{force:true});
+    if(!billing?.imagePrice)return reply({error:'官方生图计价型号尚未核价。'},400);
+    const profile=await resolveProfileConfig(env,profileId);if(!profile)return reply({error:'上游不存在或已退役。'},404);
+    const exact=upstreamModelId.toLowerCase()===billingModelId?billing:await verifiedOfficialModel(env,upstreamModelId.toLowerCase());
+    if(exact&&billingModelId!==exact.id)return reply({error:'官方生图型号必须使用自身的官方价格。'},400);
+    let response;
+    try{response=await fetch(`${profile.baseUrl}/images/generations`,{method:'POST',redirect:'manual',headers:{authorization:`Bearer ${profile.apiKey}`,'content-type':'application/json'},signal:AbortSignal.timeout(90000),body:JSON.stringify({model:upstreamModelId,prompt:'A simple blue square on a white background.',size:'1024x1024',quality:'low',n:1,output_format:'png'})});}
+    catch(error){return reply({ok:false,code:error?.name==='TimeoutError'?'UPSTREAM_TIMEOUT':'UPSTREAM_CONNECT',stage:'image_generation'});}
+    if(!response.ok){await response.body?.cancel();return reply({ok:false,code:'UPSTREAM_HTTP',stage:'image_generation',upstreamStatus:response.status});}
+    let result;try{result=await readImageProbe(response);}catch{await response.body?.cancel().catch(()=>{});return reply({ok:false,code:'INVALID_IMAGE_RESPONSE',stage:'response'});}
+    const usage=result.usage,price=billing.imagePrice;
+    try{imageCostMicros(usage,{price,multiplierPpm:1000000,usdCnyPpm:1000000});}catch{return reply({ok:false,code:'MISSING_IMAGE_USAGE',stage:'usage'});}
+    if(!Array.isArray(result.data)||!result.data[0]?.b64_json)return reply({ok:false,code:'MISSING_IMAGE_DATA',stage:'response'});
+    const modelId=upstreamModelId.toLowerCase(),name=String(input?.name||modelId).slice(0,128);
+    await env.DB.prepare(`INSERT INTO image_model_routes(model_id,name,profile_id,upstream_model_id,billing_model_id,price_json,enabled,verified_at)
+      VALUES(?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(model_id) DO UPDATE SET name=excluded.name,profile_id=excluded.profile_id,
+      upstream_model_id=excluded.upstream_model_id,billing_model_id=excluded.billing_model_id,price_json=excluded.price_json,
+      enabled=1,verified_at=CURRENT_TIMESTAMP,revision=image_model_routes.revision+1,updated_at=CURRENT_TIMESTAMP`).bind(modelId,name,profileId,upstreamModelId,billingModelId,JSON.stringify(price)).run();
+    await audit(env,admin.id,'image_model_imported',{model:modelId,upstreamModelId,billingModelId,profileId});
+    return reply({ok:true,model:modelId,billingModelId});
+  }
   if(path==='/admin/model-services/available'&&request.method==='GET'){
     const profileId=new URL(request.url).searchParams.get('profileId');
     if(!/^[0-9a-f-]{36}$/i.test(profileId||''))return reply({error:'请选择上游。'},400);
@@ -46,16 +92,27 @@ export async function handleModelServicesAdmin(request,env,path,admin,audit){
     const chunks=[];let size=0;try{for(;;){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>1024*1024){await reader.cancel();return reply({error:'上游模型列表过大。'},502);}chunks.push(value);}}catch{return reply({error:'读取上游模型列表失败。'},502);}
     const bytes=new Uint8Array(size);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.byteLength;}
     let data;try{data=JSON.parse(new TextDecoder().decode(bytes));}catch{return reply({error:'上游模型列表格式无效。'},502);}
-    const ids=[...new Set((Array.isArray(data?.data)?data.data:[]).map(item=>item?.id).filter(id=>typeof id==='string'&&id.length<=128))];
-    return reply({models:ids.filter(id=>/^(gpt-|claude-|grok-)/i.test(id)).map(id=>{
-      const reference=officialCatalogModel(id);
-      return {id,official:reference?.agent?reference:null,reference,reason:reference&&!reference.agent?'image_generation':!reference?'unverified_alias':null};
+    const ids=[...new Set((Array.isArray(data?.data)?data.data:[]).map(item=>item?.id).filter(id=>typeof id==='string'&&id.length<=128))]
+      .filter(id=>/^(gpt-|claude-|grok-)/i.test(id));
+    const refresh=new URL(request.url).searchParams.get('refresh')==='1';
+    const uncached=ids.filter(id=>!officialCatalogModel(id) && /^gpt-/i.test(id)).slice(0,20);
+    const references=new Map(await Promise.all(ids.map(async id=>[id,
+      uncached.includes(id)||refresh&&officialCatalogModel(id)?.provider==='OpenAI'
+        ?await verifiedOfficialModel(env,id,{force:refresh}) :officialCatalogModel(id)])));
+    const stored=(await env.DB.prepare('SELECT model_json FROM official_model_cache ORDER BY fetched_at DESC LIMIT 100').all()).results||[];
+    const imageChoices=new Map(officialModelIds.map(modelId=>officialImageModel(modelId)).filter(Boolean).map(model=>[model.id,model]));
+    for(const row of stored){const model=JSON.parse(row.model_json);if(model.imagePrice)imageChoices.set(model.id,model);}
+    return reply({models:ids.map(id=>{
+      const reference=references.get(id);
+      return {id,official:reference?.agent?reference:null,reference,imageEligible:Boolean(reference&&!reference.agent||/^gpt-image-/i.test(id)),
+        billingModels:[...imageChoices.values()].map(model=>({id:model.id,name:model.name})),
+        reason:reference&&!reference.agent?'image_generation':!reference?'unverified_alias':null};
     }),supported:officialModelIds});
   }
   if(path==='/admin/model-services/import'&&request.method==='POST'){
     const input=await request.json().catch(()=>null),profileId=String(input?.profileId||''),id=String(input?.modelId||''),protocol=input?.protocol;
-    const official=officialModel(id);
-    if(!/^[0-9a-f-]{36}$/i.test(profileId)||!official||!['chat','responses'].includes(protocol))return reply({error:'仅支持已核实官方价格的 GPT、Claude、Grok 模型及有效上游。'},400);
+    const official=await verifiedOfficialModel(env,id,{force:true});
+    if(!/^[0-9a-f-]{36}$/i.test(profileId)||!official?.agent||!official.price||!['chat','responses'].includes(protocol))return reply({error:'仅支持已核实官方价格的 GPT、Claude、Grok 对话模型及有效上游。'},400);
     const profile=await env.DB.prepare('SELECT id,retired_at FROM upstream_profiles WHERE id=?').bind(profileId).first();if(!profile||profile.retired_at)return reply({error:'上游不存在或已退役。'},404);
     try{await probeAgentRoute(env,{profile_id:profileId,protocol},id);}catch(error){return reply({ok:false,...probeFailure(error)});}
     const current=await env.DB.prepare('SELECT id,name,archived FROM model_catalog WHERE id=?').bind(id).first();

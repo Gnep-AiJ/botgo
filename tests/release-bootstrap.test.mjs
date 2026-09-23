@@ -22,7 +22,8 @@ try{
  await bootstrap({...env,BOTGO_MAINTENANCE:'0'});assert.equal(calls,0);
  await bootstrap(env);
  assert.equal(db.prepare('SELECT COUNT(*) n FROM upstream_routes').get().n,2);
- assert.equal(db.prepare('SELECT COUNT(*) n FROM model_catalog WHERE enabled=1').get().n,4);
+ assert.deepEqual(db.prepare('SELECT id FROM model_catalog WHERE enabled=1 ORDER BY id').all().map(row=>row.id),
+   ['gpt-5.5','gpt-5.6-luna','gpt-5.6-sol','gpt-5.6-terra','gpt-6-luna','gpt-6-sol']);
  assert.equal(db.prepare("SELECT event FROM security_audit WHERE id='release-2026-09-12-metering'").get().event,'release_bootstrap_completed');
  const row=db.prepare('SELECT * FROM upstream_profiles').get();assert.notEqual(row.api_key_ciphertext,env.UPSTREAM_API_KEY);assert.ok(!JSON.stringify(row).includes(env.UPSTREAM_API_KEY));
  const once=calls;await bootstrap(env);assert.equal(calls,once,'cron repeats must not probe or mutate again');
