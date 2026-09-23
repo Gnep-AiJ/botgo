@@ -131,13 +131,13 @@ async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=u
       let length=0;const chunks=[];
       for await(const chunk of request){length+=chunk.length;if(length>1000000)return fail(413,'Request exceeds 1 MB');chunks.push(chunk);}
       let body;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{return fail(400,'Invalid JSON');}
-      if(!body||typeof body.model!=='string')return fail(400,'Model required');
+      if(!body||request.url!=='/v1/images/generations'&&typeof body.model!=='string'||request.url==='/v1/images/generations'&&body.model!==undefined&&typeof body.model!=='string')return fail(400,'Model required');
       stage='session';const current=await refresh(controller.signal);
       onDiagnostic({stage:'session',requestId,elapsedMs:now()-startedAt});
       controller.signal.throwIfAborted();
       const image=request.url.endsWith('/images/generations');
       const protocol=request.url.endsWith('/responses')?'responses':'chat';
-      if(image?!((current.imageModels??[]).some(m=>m.id===body.model)):!current.models.some(m=>m.id===body.model&&m.protocol===protocol))return fail(403,'Model or protocol not available');
+      if(image?body.model!==undefined&&!((current.imageModels??[]).some(m=>m.id===body.model)):!current.models.some(m=>m.id===body.model&&m.protocol===protocol))return fail(403,'Model or protocol not available');
       const taskId=taskFor(request);
       const idempotency=requestId;
       stage='request';

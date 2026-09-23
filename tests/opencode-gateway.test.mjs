@@ -5,6 +5,7 @@ import {MODEL_SEEDS,meteredProxy,settle,releaseExpiredRequests} from '../worker/
 import {agentRoutes,availableAgentRoutes,handleAgentAdmin,handleOpenCode} from '../worker/src/opencode-gateway.js';
 import {encryptSecret} from '../worker/src/platform-admin.js';
 import {revokeDesktopDevice} from '../worker/src/desktop-auth.js';
+import {officialImageModel} from '../worker/src/official-pricing.js';
 
 const sql=new DatabaseSync(':memory:');
 for(const file of fs.readdirSync('worker/migrations').filter(f=>f.endsWith('.sql')).sort())sql.exec(fs.readFileSync(`worker/migrations/${file}`,'utf8'));
@@ -115,6 +116,25 @@ try{
   sql.exec("UPDATE model_catalog SET enabled=1 WHERE id='gpt-5.6-sol'; UPDATE agent_model_routes SET profile_id='p',enabled=1,verified_at=CURRENT_TIMESTAMP WHERE model_id='gpt-5.6-sol'");
   const sessionResponse=await handleOpenCode(sessionRequest(),env,ctx,'/desktop/opencode/session');
   assert.equal(sessionResponse.status,201);const session=await sessionResponse.json();assert.ok(session.key.startsWith('bgk_'));assert.equal(session.models.some(model=>model.id==='gpt-5.6-sol'),true,'verified enabled Sol is returned to a native session');
+  const imagePrice=officialImageModel('gpt-image-2.5-sunburst').imagePrice;
+  sql.prepare(`INSERT INTO image_model_routes(model_id,name,profile_id,upstream_model_id,billing_model_id,price_json,enabled,verified_at)
+    VALUES('gpt-image-2.5-sunburst','Sunburst','p','gpt-image-2.5-sunburst','gpt-image-2.5-sunburst',?,1,CURRENT_TIMESTAMP)`).run(JSON.stringify(imagePrice));
+  sql.exec("UPDATE metering_settings SET default_image_model='gpt-image-2.5-sunburst'");
+  globalThis.fetch=async(url,init)=>{
+    assert.equal(url,'https://upstream.invalid/v1/images/generations');
+    assert.equal(JSON.parse(init.body).model,'gpt-image-2.5-sunburst');
+    return Response.json({data:[{b64_json:'iVBORw0KGgo='}],usage:{input_tokens:3,input_tokens_details:{text_tokens:3,image_tokens:0},output_tokens:8,output_tokens_details:{image_tokens:8}}});
+  };
+  const imageRequest=()=>new Request('https://botgo.test/opencode/v1/images/generations',{method:'POST',headers:{authorization:'Bearer '+session.key},body:JSON.stringify({prompt:'blue square',quality:'low'})});
+  const imageResult=await handleOpenCode(imageRequest(),env,ctx,'/opencode/v1/images/generations');
+  assert.equal(imageResult.status,200,'image request without model uses the configured default');
+  assert.equal((await imageResult.json()).model,'gpt-image-2.5-sunburst');
+  const imageLedger=sql.prepare("SELECT snapshot,state FROM metered_requests WHERE model='gpt-image-2.5-sunburst' ORDER BY created_at DESC LIMIT 1").get();
+  assert.equal(imageLedger.state,'completed');
+  assert.equal(JSON.parse(imageLedger.snapshot).multiplierPpm,300000,'image generation inherits the global multiplier');
+  sql.exec('UPDATE metering_settings SET default_image_model=NULL');
+  assert.equal((await handleOpenCode(imageRequest(),env,ctx,'/opencode/v1/images/generations')).status,503,'missing default cannot generate or charge');
+  sql.exec("UPDATE metering_settings SET default_image_model='gpt-image-2.5-sunburst'");
   const visibleModels=await handleOpenCode(new Request('https://botgo.test/opencode/v1/models',{headers:{authorization:'Bearer '+session.key}}),env,ctx,'/opencode/v1/models');
   assert.equal(visibleModels.status,200);assert.equal((await visibleModels.json()).data.some(model=>model.id==='gpt-5.6-sol'),true,'verified enabled Sol is listed by the native models endpoint');
   assert.equal(JSON.stringify(session).includes('fixture-upstream-secret'),false,'upstream key never reaches client');

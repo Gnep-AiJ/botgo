@@ -6,7 +6,6 @@ import * as Tool from "./tool"
 import { InstanceState } from "@/effect/instance-state"
 
 const Parameters = Schema.Struct({
-  model: Schema.String.annotate({ description: "Enabled BotGo image generation model ID" }),
   prompt: Schema.String.annotate({ description: "A clear description of the image to create" }),
   size: Schema.optional(Schema.String.annotate({ description: "1024x1024, 1536x1024, or 1024x1536" })),
   quality: Schema.optional(Schema.String.annotate({ description: "low, medium, or high" })),
@@ -24,12 +23,12 @@ function models() {
 export const BotGoImageTool = Tool.define(
   "botgo_image_generation",
   Effect.succeed({
-    description: `Generate one image through the account's enabled BotGo image model and save it in the current project under generated-images/. Available model IDs: ${models().map((item) => item.id).join(", ") || "none"}. Ask the user before generating if their intent is unclear.`,
+    description: `When the user explicitly asks you to generate an image, use this tool with their requested content. It uses the account's current default BotGo image model, saves one image under generated-images/ in the current project, and returns it to the conversation. Do not use it for image analysis or ordinary text requests. Ask only if the image request is ambiguous.`,
     parameters: Parameters,
-    execute: (args: { model: string; prompt: string; size?: string; quality?: string }, ctx: Tool.Context) =>
+    execute: (args: { prompt: string; size?: string; quality?: string }, ctx: Tool.Context) =>
       Effect.gen(function* () {
         const available = models()
-        if (!available.some((item) => item.id === args.model)) throw new Error("该生图模型当前不可用，请重新连接 BotGo 账户。")
+        if (!available.length) throw new Error("当前没有可用的生图模型，请重新连接 BotGo 账户。")
         if (!args.prompt.trim() || args.prompt.length > 8192) throw new Error("提示词不能为空，且最多 8192 个字符。")
         const url = process.env.BOTGO_IMAGE_API_URL
         const key = process.env.BOTGO_IMAGE_API_KEY
@@ -52,7 +51,7 @@ export const BotGoImageTool = Tool.define(
         const response = yield* Effect.promise(() => fetch(endpoint, {
           method: "POST",
           headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "x-session-id": ctx.sessionID },
-          body: JSON.stringify({ model: args.model, prompt: args.prompt, size: args.size || "1024x1024", quality: args.quality || "high", n: 1 }),
+          body: JSON.stringify({ prompt: args.prompt, size: args.size || "1024x1024", quality: args.quality || "high", n: 1 }),
           signal: ctx.abort,
         }))
         if (!response.ok) {

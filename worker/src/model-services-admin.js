@@ -49,10 +49,22 @@ export async function handleModelServicesAdmin(request,env,path,admin,audit){
   if(path==='/admin/model-services/images'&&request.method==='GET'){
     const rows=(await env.DB.prepare(`SELECT r.*,p.name AS upstream_name,p.base_url FROM image_model_routes r
       JOIN upstream_profiles p ON p.id=r.profile_id ORDER BY r.updated_at DESC`).all()).results||[];
-    return reply({images:rows.map(row=>({...row,price:JSON.parse(row.price_json),enabled:!!row.enabled}))});
+    const settings=await env.DB.prepare('SELECT default_image_model FROM metering_settings WHERE id=1').first();
+    return reply({defaultModelId:settings?.default_image_model||null,images:rows.map(row=>({...row,price:JSON.parse(row.price_json),enabled:!!row.enabled}))});
+  }
+  if(path==='/admin/model-services/images/default'&&request.method==='PUT'){
+    const input=await request.json().catch(()=>null),modelId=input?.modelId;
+    if(typeof modelId!=='string'||!modelIdPattern.test(modelId))return reply({error:'请选择有效的生图模型。'},400);
+    const route=await env.DB.prepare(`SELECT r.model_id FROM image_model_routes r JOIN upstream_profiles p ON p.id=r.profile_id
+      WHERE r.model_id=? AND r.enabled=1 AND r.verified_at IS NOT NULL AND p.retired_at IS NULL`).bind(modelId).first();
+    if(!route)return reply({error:'只能将已启用且已验证的生图模型设为默认。'},409);
+    await env.DB.prepare('UPDATE metering_settings SET default_image_model=?,revision=revision+1 WHERE id=1').bind(modelId).run();
+    await audit(env,admin.id,'default_image_model_changed',{model:modelId});return reply({ok:true,defaultModelId:modelId});
   }
   const imageRemove=path.match(/^\/admin\/model-services\/images\/([a-z0-9._-]{1,128})$/);
   if(imageRemove&&request.method==='DELETE'){
+    const settings=await env.DB.prepare('SELECT default_image_model FROM metering_settings WHERE id=1').first();
+    if(settings?.default_image_model===imageRemove[1])return reply({error:'请先设置其他默认生图模型，再删除当前默认型号。'},409);
     const result=await env.DB.prepare('DELETE FROM image_model_routes WHERE model_id=?').bind(imageRemove[1]).run();
     if(!result.meta?.changes)return reply({error:'生图模型不存在。'},404);
     await audit(env,admin.id,'image_model_removed',{model:imageRemove[1]});return reply({ok:true});
@@ -79,6 +91,7 @@ export async function handleModelServicesAdmin(request,env,path,admin,audit){
       VALUES(?,?,?,?,?,?,1,CURRENT_TIMESTAMP) ON CONFLICT(model_id) DO UPDATE SET name=excluded.name,profile_id=excluded.profile_id,
       upstream_model_id=excluded.upstream_model_id,billing_model_id=excluded.billing_model_id,price_json=excluded.price_json,
       enabled=1,verified_at=CURRENT_TIMESTAMP,revision=image_model_routes.revision+1,updated_at=CURRENT_TIMESTAMP`).bind(modelId,name,profileId,upstreamModelId,billingModelId,JSON.stringify(price)).run();
+    await env.DB.prepare('UPDATE metering_settings SET default_image_model=?,revision=revision+1 WHERE id=1 AND default_image_model IS NULL').bind(modelId).run();
     await audit(env,admin.id,'image_model_imported',{model:modelId,upstreamModelId,billingModelId,profileId});
     return reply({ok:true,model:modelId,billingModelId});
   }

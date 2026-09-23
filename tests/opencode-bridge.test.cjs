@@ -7,7 +7,7 @@ const {createBridge,configuration,originFor}=require('../opencode-desktop/runtim
   const fixture={key:'bgk_fixture123',defaultModel:'gpt-5.6-luna',account:{email:'test@example.invalid',balanceMicros:1000000},models:[
     {id:'gpt-5.6-luna',protocol:'chat',price:{input:.2,cached:.02,write:.25,output:1.2},multiplier:.3,modalities:{input:['text','image'],output:['text']},attachment:true,reasoning:true,limit:{context:1050000,output:128000}},
     {id:'gpt-6-astra',protocol:'responses',price:{input:10,cached:1,write:12.5,output:50},multiplier:.3}
-  ]};
+  ],imageModels:[{id:'gpt-image-2.5-sunburst',billingModelId:'gpt-image-2.5-sunburst'}]};
   const cloud=http.createServer(async(req,res)=>{
     if(req.url==='/api/desktop/opencode/session'){
       assert.equal(req.headers.authorization,'Bearer bgdt_fixture');sessions++;
@@ -48,15 +48,21 @@ const {createBridge,configuration,originFor}=require('../opencode-desktop/runtim
     assert.equal((await send(null)).status,400);
     assert.equal((await send(body,{},'/responses')).status,403);
     assert.equal((await send({...body,model:'unauthorized'})).status,403);
+    assert.equal(bridge.imageConfig().models.length,1);
+    const imageResponse=await send({prompt:'blue square',n:1},{},'/images/generations');
+    assert.equal(imageResponse.status,200);
+    await imageResponse.text();
+    assert.equal(calls[0].url,'/api/opencode/v1/images/generations');
+    assert.equal(calls[0].body.model,undefined,'the Worker selects the current default at request time');
     assert.equal((await send({...body,large:'a'.repeat(1000001)})).status,413);
-    assert.equal(calls.length,0);
+    assert.equal(calls.length,1);
     assert.match(await(await send(body)).text(),/\[DONE\]/);
     await(await send(body,{'x-session-id':'ses_child','x-parent-session-id':'ses_root'})).text();
     await(await send({model:'gpt-6-astra',input:'hi'}, {'x-session-id':'ses_grandchild','x-parent-session-id':'ses_child'},'/responses')).text();
-    assert.equal(calls.length,3);
+    assert.equal(calls.length,4);
     assert.ok(calls.every(c=>c.headers.authorization===`Bearer ${fixture.key}`&&c.headers['x-botgo-task-id']==='ses_root'));
-    assert.equal(new Set(calls.map(c=>c.headers['idempotency-key'])).size,3);
-    assert.equal(calls[2].url,'/api/opencode/v1/responses');
+    assert.equal(new Set(calls.map(c=>c.headers['idempotency-key'])).size,4);
+    assert.equal(calls[3].url,'/api/opencode/v1/responses');
     assert.equal((await bridge.usage('ses_grandchild')).taskId,'ses_root');
     assert.equal((await bridge.usage('ses_previous_child')).taskId,'ses_previous_root');
     assert.equal(saved.ses_grandchild,'ses_root');

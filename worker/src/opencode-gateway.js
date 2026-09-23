@@ -58,11 +58,13 @@ async function handleImageGeneration(request,env,identity){
   const chunks=[];let length=0;
   for(;;){const {done,value}=await reader.read();if(done)break;length+=value.byteLength;if(length>65536){await reader.cancel();return reply({error:'请求过大。'},413);}chunks.push(value);}
   let body;try{const bytes=new Uint8Array(length);let at=0;for(const part of chunks){bytes.set(part,at);at+=part.length;}body=JSON.parse(new TextDecoder().decode(bytes));}catch{return reply({error:'JSON 无效。'},400);}
-  if(typeof body?.model!=='string'||typeof body.prompt!=='string'||!body.prompt.trim()||body.prompt.length>8192||body.n!==undefined&&body.n!==1)return reply({error:'生图请求无效。仅支持一张图片，提示词最多 8192 字符。'},400);
+  if(!body||body.model!==undefined&&typeof body.model!=='string'||typeof body.prompt!=='string'||!body.prompt.trim()||body.prompt.length>8192||body.n!==undefined&&body.n!==1)return reply({error:'生图请求无效。仅支持一张图片，提示词最多 8192 字符。'},400);
   const size=body.size??'1024x1024',quality=body.quality??'high';
   if(!['1024x1024','1536x1024','1024x1536'].includes(size)||!['low','medium','high'].includes(quality))return reply({error:'当前支持 1024 方图或横竖 3:2 图片，以及 low、medium、high 质量。'},400);
-  if(identity.model&&identity.model!==body.model)return reply({error:'凭据不允许访问该模型。'},403);
-  const route=await env.DB.prepare('SELECT * FROM image_model_routes WHERE model_id=? AND enabled=1 AND verified_at IS NOT NULL').bind(body.model).first();
+  const selectedModel=body.model??(await env.DB.prepare('SELECT default_image_model FROM metering_settings WHERE id=1').first())?.default_image_model;
+  if(!selectedModel)return reply({error:'尚未设置默认生图模型。'},503);
+  if(identity.model&&identity.model!==selectedModel)return reply({error:'凭据不允许访问该模型。'},403);
+  const route=await env.DB.prepare('SELECT * FROM image_model_routes WHERE model_id=? AND enabled=1 AND verified_at IS NOT NULL').bind(selectedModel).first();
   if(!route)return reply({error:'生图模型未启用或尚未通过测试。'},503);
   let imagePrice;try{imagePrice=JSON.parse(route.price_json);}catch{return reply({error:'生图模型计价配置无效。'},503);}
   if(!['textInput','textCached','imageInput','imageCached','imageOutput'].every(key=>Number.isFinite(imagePrice?.[key])&&imagePrice[key]>0))return reply({error:'生图模型计价配置无效。'},503);

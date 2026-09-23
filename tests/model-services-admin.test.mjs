@@ -67,7 +67,15 @@ try{
   assert.equal(imageImported.ok,true,'a verified official image model is addable');
   assert.equal(db.prepare("SELECT enabled FROM image_model_routes WHERE model_id='gpt-image-2'").get().enabled,1);
   assert.equal(JSON.parse(db.prepare("SELECT price_json FROM image_model_routes WHERE model_id='gpt-image-2'").get().price_json).imageOutput,30);
-  assert.equal((await (await call('GET','/admin/model-services/images')).json()).images.length,1);
+  const imageList=await (await call('GET','/admin/model-services/images')).json();
+  assert.equal(imageList.images.length,1);
+  assert.equal(imageList.defaultModelId,'gpt-image-2','the first verified image route becomes the default');
+  assert.equal((await call('DELETE','/admin/model-services/images/gpt-image-2')).status,409,'default image model cannot be deleted before replacement');
+  db.prepare(`INSERT INTO image_model_routes(model_id,name,profile_id,upstream_model_id,billing_model_id,price_json,enabled,verified_at)
+    VALUES('gpt-image-2.5-sunburst','Sunburst',?,'gpt-image-2.5-sunburst','gpt-image-2.5-sunburst',?,1,CURRENT_TIMESTAMP)`).run(profileId,JSON.stringify(officialImageModel('gpt-image-2.5-sunburst').imagePrice));
+  assert.equal((await call('PUT','/admin/model-services/images/default',{modelId:'missing'})).status,409);
+  assert.equal((await call('PUT','/admin/model-services/images/default',{modelId:'gpt-image-2.5-sunburst'})).status,200);
+  assert.equal((await (await call('GET','/admin/model-services/images')).json()).defaultModelId,'gpt-image-2.5-sunburst');
   assert.equal((await call('DELETE','/admin/model-services/images/gpt-image-2')).status,200);
   globalThis.fetch=async()=>new Response('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"botgo_probe","arguments":"{\\"value\\":\\"OK\\"}"}}]}}]}\n\ndata: {"usage":{"prompt_tokens":1,"completion_tokens":1}}\n\n',{headers:{'content-type':'text/event-stream'}});
   db.prepare("INSERT INTO model_service_drafts(model_id,config_json,tested_json) VALUES(?,'{}','{}')").run('gpt-5.6-terra');
