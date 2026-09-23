@@ -292,6 +292,59 @@ toolRegistry=replace(toolRegistry,'    const patchtool = yield* ApplyPatchTool\n
 toolRegistry=replace(toolRegistry,'          ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),','          ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),\n          ...(botgoImage ? { botgoImage: Tool.init(botgoImage) } : {}),');
 toolRegistry=replace(toolRegistry,'            ...(tool.execute ? [tool.execute] : []),','            ...(tool.execute ? [tool.execute] : []),\n            ...(tool.botgoImage ? [tool.botgoImage] : []),');
 staged.set('packages/opencode/src/tool/registry.ts',toolRegistry);
+let modelMessages=base('packages/opencode/src/session/message-v2.ts');
+modelMessages=replace(modelMessages,
+  'const attachments = part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? [])',
+  'const attachments = part.tool === "botgo_image_generation" || part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? [])');
+staged.set('packages/opencode/src/session/message-v2.ts',modelMessages);
+staged.set('packages/opencode/test/session/message-v2.test.ts',base('packages/opencode/test/session/message-v2.test.ts')+`
+test("BotGo generated image remains in the session without replaying its bytes to the model", async () => {
+  const userID = "botgo-image-user"
+  const assistantID = "botgo-image-assistant"
+  const input: SessionV1.WithParts[] = [
+    { info: userInfo(userID), parts: [{ ...basePart(userID, "prompt"), type: "text", text: "Generate an image" }] as SessionV1.Part[] },
+    {
+      info: assistantInfo(assistantID, userID),
+      parts: [{
+        ...basePart(assistantID, "image-tool"), type: "tool", callID: "image-call", tool: "botgo_image_generation",
+        state: { status: "completed", input: { prompt: "A blue square" }, output: "Image saved: generated-images/image.png",
+          title: "Image generated", metadata: {}, time: { start: 0, end: 1 },
+          attachments: [{ ...basePart(assistantID, "image-file"), type: "file", mime: "image/png", url: "data:image/png;base64,Zm9v" }],
+        },
+      }] as SessionV1.Part[],
+    },
+  ]
+  const result = await MessageV2.toModelMessages(input, model)
+  expect(JSON.stringify(result)).not.toContain("Zm9v")
+  expect(JSON.stringify(result)).toContain("generated-images/image.png")
+})
+`);
+let messagePart=base('packages/session-ui/src/components/message-part.tsx');
+messagePart=replace(messagePart,
+  '  const render = createMemo(() => ToolRegistry.render(part().tool) ?? GenericTool)',
+  `  const generatedImages = createMemo(() => {
+    const value = part()
+    if (value.tool !== "botgo_image_generation" || value.state.status !== "completed") return []
+    return (value.state.attachments ?? []).filter(
+      (attachment) => attachment.mime === "image/png" && attachment.url.startsWith("data:image/png;base64,"),
+    )
+  })
+  const render = createMemo(() => ToolRegistry.render(part().tool) ?? GenericTool)`);
+messagePart=replace(messagePart,
+  '              onContentRendered={props.onContentRendered}\n            />\n          </Match>',
+  `              onContentRendered={props.onContentRendered}
+            />
+            <For each={generatedImages()}>
+              {(image) => (
+                <img
+                  src={image.url}
+                  alt="BotGo 生成的图片"
+                  style={{ display: "block", "max-width": "min(100%, 420px)", height: "auto", "border-radius": "8px", "margin-top": "12px" }}
+                />
+              )}
+            </For>
+          </Match>`);
+staged.set('packages/session-ui/src/components/message-part.tsx',messagePart);
 staged.set('packages/opencode/src/session/retry.ts',replace(base('packages/opencode/src/session/retry.ts'),
   'export function retryable(error: Err, provider: string) {',
   'export function retryable(error: Err, provider: string) {\n  // Only the authenticated local bridge can mark a metered attempt safe to retry.\n  if (provider.startsWith("botgo-") && (!SessionV1.APIError.isInstance(error) || error.data.responseHeaders?.["x-botgo-retryable"] !== "1")) return undefined'));
@@ -317,7 +370,7 @@ staged.set('packages/ui/src/v2/components/wordmark-v2.tsx',fs.readFileSync(path.
 staged.set('packages/desktop/resources/icons/icon.ico',fs.readFileSync(path.join(here,'overlay/botgo-desktop.ico')));
 const pkg=JSON.parse(base('packages/desktop/package.json'));
 pkg.name='@botgo/desktop';
-pkg.version='1.3.5';
+pkg.version='1.3.6';
 pkg.homepage='https://botgo.win';
 // Keep upstream MIT authorship. Packaging is never publishing.
 staged.set('packages/desktop/package.json',JSON.stringify(pkg,null,2)+'\n');
