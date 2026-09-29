@@ -16,7 +16,7 @@
     "package:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1"
   },
   "dependencies": {
-    "@openai/codex": "0.154.0",
+    "@openai/codex": "0.157.1",
     "keytar": "7.9.0"
   }
 }
