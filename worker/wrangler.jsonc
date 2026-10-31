@@ -9,7 +9,8 @@
     {
       "binding": "DB",
       "database_name": "botgo",
-      "database_id": "955ea0bd-0b55-43a5-97e6-ee7a7a5a7104"
+      // Set the real database_id locally or in CI from the Cloudflare dashboard or `wrangler d1 create`. Do not commit it.
+      "database_id": "00000000-0000-0000-0000-000000000000"
     }
   ],
   "r2_buckets": [
@@ -20,10 +21,11 @@
   ],
   "vars": {
     "AUTO_REVIEW_ENABLED": "0",
-    "ALIPAY_APP_ID": "2021006196695598",
+    // Placeholder only. Replace with your 16-digit Alipay App ID locally or in CI. Do not commit the real App ID.
+    "ALIPAY_APP_ID": "YOUR_ALIPAY_APP_ID",
     "ALIPAY_SIGN_TYPE": "RSA2",
     "ALIPAY_GATEWAY": "https://openapi.alipay.com/gateway.do",
-    "ALIPAY_NOTIFY_URL": "https://botgo.win/api/billing/notify",
-    "ALIPAY_RETURN_URL": "https://botgo.win/api/billing/return"
+    "ALIPAY_NOTIFY_URL": "https://your-domain.example/api/billing/notify",
+    "ALIPAY_RETURN_URL": "https://your-domain.example/api/billing/return"
   }
 }

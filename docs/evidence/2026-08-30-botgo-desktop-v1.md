@@ -25,6 +25,6 @@
 ## 版本控制状态
 
 - 基础提交：`738a5619dc98fe92059ca7617cecbc2d727bf868`。
-- GitHub remote：`https://github.com/Gnep-AiJ/botgo.git`。
+- GitHub remote：`https://github.com/<owner>/botgo.git`。
 - GitHub CLI 已授权，仓库可见性已确认私有。
 - 本次仅提交 BotGo 产品代码、桌面工程与证据；本地工具目录不删除、不提交。

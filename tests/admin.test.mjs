@@ -59,6 +59,9 @@ assert.match(worker, /ADMIN_EMAIL/, "管理员接口应要求指定的管理员�
 assert.match(migration, /ADD COLUMN role/, "账户表应保存管理员角色");
 assert.ok(exists("dist/admin.html"), "构建产物应包含后台管理页面");
 
-assert.doesNotMatch(workerConfig, /REPLACE_WITH_D1_DATABASE_ID/, "Worker configuration must bind a real D1 database before deployment");
+assert.match(workerConfig, /"database_id": "00000000-0000-0000-0000-000000000000"/, "公开仓库只保留 D1 database_id 占位符");
+assert.match(workerConfig, /YOUR_ALIPAY_APP_ID/, "公开仓库只保留支付宝 App ID 占位符");
+assert.match(workerConfig, /https:\/\/your-domain\.example\/api\/billing\/notify/, "支付回调必须是示例域名");
+assert.doesNotMatch(workerConfig, /REPLACE_WITH_D1_DATABASE_ID/);
 
 console.log("Admin and verification contract test passed");

@@ -7,9 +7,9 @@ DEV_TEST_PASSWORD=choose-a-local-test-password-with-12-or-more-characters
 EMAIL_FROM=verify@your-domain.example
 
 # Alipay website payment (Worker Web Crypto, RSA2)
-# This is the supplied production App ID. Replace it with the sandbox App ID
-# whenever ALIPAY_GATEWAY points at the sandbox gateway.
-ALIPAY_APP_ID=2021006196695598
+# Placeholder only. Set your own 16-digit App ID locally. Do not commit it.
+# Use the sandbox App ID whenever ALIPAY_GATEWAY points at the sandbox gateway.
+ALIPAY_APP_ID=YOUR_ALIPAY_APP_ID
 ALIPAY_SIGN_TYPE=RSA2
 ALIPAY_GATEWAY=https://openapi-sandbox.dl.alipaydev.com/gateway.do
 ALIPAY_SELLER_ID=
@@ -20,6 +20,7 @@ ALIPAY_PUBLIC_KEY=
 ALIPAY_APP_CERT=
 ALIPAY_PUBLIC_CERT=
 ALIPAY_ROOT_CERT=
-# Set this only for a publicly reachable HTTPS callback in the target environment.
+# Set these only for a publicly reachable HTTPS callback in the target environment.
+# Example shape: https://your-domain.example/api/billing/notify
 ALIPAY_NOTIFY_URL=
 ALIPAY_RETURN_URL=
