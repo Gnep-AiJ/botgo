@@ -7,6 +7,6 @@
   "sha256": "8119bcfc9181808c5d8696dbfe9a7ecf763e74e313fd79552c21d7fbb374317e",
   "sourceCommit": "60d48f9d2c10d68aa8d090413538eef69510dda3",
   "signature": "self-signed",
-  "signerThumbprint": "104C109C454B26C3B5028EE66D8B225F447F953F",
+  "signerThumbprint": "local-only",
   "notes": "Self-signed preview. Cross-device install, upgrade, uninstall and user-history acceptance pending; user authorized preview activation before acceptance."
 }

@@ -32,7 +32,7 @@ assert.equal(normalizeAmountCents(10_000_000_001), null);
 assert.equal(formatAlipayTimestamp(new Date(2026, 0, 2, 3, 4, 5)), "2026-01-02 03:04:05");
 
 const configured = alipayPaymentConfiguration({
-  ALIPAY_APP_ID: "2021006196695598",
+  ALIPAY_APP_ID: "2021000000000000",
   ALIPAY_PRIVATE_KEY: "private-key",
   ALIPAY_PUBLIC_KEY: "public-key",
   ALIPAY_SELLER_ID: "2088seller",
@@ -43,7 +43,7 @@ assert.equal(configured.signType, "RSA2");
 assert.equal(configured.privateKeyType, "PKCS1");
 
 const certificateConfigured = alipayPaymentConfiguration({
-  ALIPAY_APP_ID: "2021006196695598",
+  ALIPAY_APP_ID: "2021000000000000",
   ALIPAY_PRIVATE_KEY: "private-key",
   ALIPAY_APP_CERT: "app-cert",
   ALIPAY_PUBLIC_CERT: "public-cert",
@@ -54,7 +54,7 @@ assert.equal(certificateConfigured.available, true);
 assert.equal(certificateConfigured.certificateMode, true);
 
 const invalidPrivateKeyType = alipayPaymentConfiguration({
-  ALIPAY_APP_ID: "2021006196695598",
+  ALIPAY_APP_ID: "2021000000000000",
   ALIPAY_PRIVATE_KEY: "private-key",
   ALIPAY_PUBLIC_KEY: "public-key",
   ALIPAY_SELLER_ID: "2088seller",
@@ -64,7 +64,7 @@ assert.equal(invalidPrivateKeyType.available, false);
 assert.equal(invalidPrivateKeyType.reason, "invalid_private_key_type");
 
 const invalidGateway = alipayPaymentConfiguration({
-  ALIPAY_APP_ID: "2021006196695598",
+  ALIPAY_APP_ID: "2021000000000000",
   ALIPAY_PRIVATE_KEY: "private-key",
   ALIPAY_PUBLIC_KEY: "public-key",
   ALIPAY_SELLER_ID: "2088seller",
@@ -74,7 +74,7 @@ assert.equal(invalidGateway.available, false);
 assert.equal(invalidGateway.reason, "invalid_gateway");
 
 const sm2 = alipayPaymentConfiguration({
-  ALIPAY_APP_ID: "2021006196695598",
+  ALIPAY_APP_ID: "2021000000000000",
   ALIPAY_PRIVATE_KEY: "private-key",
   ALIPAY_PUBLIC_KEY: "public-key",
   ALIPAY_SIGN_TYPE: "SM2"
@@ -111,7 +111,7 @@ const { privateKey: testPrivateKey, publicKey: testPublicKey } = generateKeyPair
 const testPrivateKeyBase64 = testPrivateKey.export({ format: "der", type: "pkcs1" }).toString("base64");
 const testPublicKeyBase64 = testPublicKey.export({ format: "der", type: "spki" }).toString("base64");
 const testPaymentEnv = {
-  ALIPAY_APP_ID: "2021006196695598",
+  ALIPAY_APP_ID: "2021000000000000",
   ALIPAY_PRIVATE_KEY: testPrivateKeyBase64,
   ALIPAY_PUBLIC_KEY: testPublicKeyBase64,
   ALIPAY_SELLER_ID: "2088123456789012",

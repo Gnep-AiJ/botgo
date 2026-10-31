@@ -225,69 +225,69 @@
     "local": [
       {
         "path": "agent/dist/botgo-agent-0.1.3-win-x64.zip",
-        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\agent\\dist\\botgo-agent-0.1.3-win-x64.zip"
+        "absolute": "C:\\Users\\<local-user>\\Desktop\\BOTGO\\agent\\dist\\botgo-agent-0.1.3-win-x64.zip"
       },
       {
         "path": "agent/dist/botgo-agent-0.2.1-win-x64.zip",
-        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\agent\\dist\\botgo-agent-0.2.1-win-x64.zip"
+        "absolute": "C:\\Users\\<local-user>\\Desktop\\BOTGO\\agent\\dist\\botgo-agent-0.2.1-win-x64.zip"
       },
       {
         "path": "agent/dist/package-70815a2e24f44705bc253e1f210e27c1",
-        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\agent\\dist\\package-70815a2e24f44705bc253e1f210e27c1"
+        "absolute": "C:\\Users\\<local-user>\\Desktop\\BOTGO\\agent\\dist\\package-70815a2e24f44705bc253e1f210e27c1"
       },
       {
         "path": "agent/dist/package-fb4c0b20e3924eb38cca482907d80c20",
-        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\agent\\dist\\package-fb4c0b20e3924eb38cca482907d80c20"
+        "absolute": "C:\\Users\\<local-user>\\Desktop\\BOTGO\\agent\\dist\\package-fb4c0b20e3924eb38cca482907d80c20"
       },
       {
         "path": "desktop/dist/BotGo Desktop Setup 1.1.2.exe",
-        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.1.2.exe"
+        "absolute": "C:\\Users\\<local-user>\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.1.2.exe"
       },
       {
         "path": "desktop/dist/BotGo Desktop Setup 1.1.2.exe.blockmap",
-        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.1.2.exe.blockmap"
+        "absolute": "C:\\Users\\<local-user>\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.1.2.exe.blockmap"
       },
       {
         "path": "desktop/dist/BotGo Desktop Setup 1.2.0.exe",
-        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.2.0.exe"
+        "absolute": "C:\\Users\\<local-user>\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.2.0.exe"
       },
       {
         "path": "desktop/dist/BotGo Desktop Setup 1.2.0.exe.blockmap",
-        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.2.0.exe.blockmap"
+        "absolute": "C:\\Users\\<local-user>\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.2.0.exe.blockmap"
       },
       {
         "path": "desktop/dist/BotGo Desktop Setup 1.2.1-preview.1.exe",
-        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.2.1-preview.1.exe"
+        "absolute": "C:\\Users\\<local-user>\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.2.1-preview.1.exe"
       },
       {
         "path": "desktop/dist/BotGo Desktop Setup 1.2.1-preview.1.exe.blockmap",
-        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.2.1-preview.1.exe.blockmap"
+        "absolute": "C:\\Users\\<local-user>\\Desktop\\BOTGO\\desktop\\dist\\BotGo Desktop Setup 1.2.1-preview.1.exe.blockmap"
       },
       {
         "path": ".tmp-preview2-installer-check",
-        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\.tmp-preview2-installer-check"
+        "absolute": "C:\\Users\\<local-user>\\Desktop\\BOTGO\\.tmp-preview2-installer-check"
       },
       {
         "path": ".tmp-old-desktop-check",
-        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\.tmp-old-desktop-check"
+        "absolute": "C:\\Users\\<local-user>\\Desktop\\BOTGO\\.tmp-old-desktop-check"
       },
       {
         "path": ".tmp-release-acceptance/agent-0.2.1-readback.zip",
-        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\.tmp-release-acceptance\\agent-0.2.1-readback.zip"
+        "absolute": "C:\\Users\\<local-user>\\Desktop\\BOTGO\\.tmp-release-acceptance\\agent-0.2.1-readback.zip"
       },
       {
         "path": ".tmp-release-acceptance/desktop-1.2.1-preview.1-readback.exe",
-        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\.tmp-release-acceptance\\desktop-1.2.1-preview.1-readback.exe"
+        "absolute": "C:\\Users\\<local-user>\\Desktop\\BOTGO\\.tmp-release-acceptance\\desktop-1.2.1-preview.1-readback.exe"
       },
       {
         "path": "desktop/dist/win-unpacked",
-        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\desktop\\dist\\win-unpacked",
+        "absolute": "C:\\Users\\<local-user>\\Desktop\\BOTGO\\desktop\\dist\\win-unpacked",
         "verifiedVersion": "1.2.1-preview.1",
         "runningOwners": 0
       },
       {
         "path": "desktop/dist/builder-debug.yml",
-        "absolute": "C:\\Users\\49978\\Desktop\\BOTGO\\desktop\\dist\\builder-debug.yml"
+        "absolute": "C:\\Users\\<local-user>\\Desktop\\BOTGO\\desktop\\dist\\builder-debug.yml"
       }
     ],
     "localBranches": [

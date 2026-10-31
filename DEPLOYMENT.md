@@ -21,7 +21,9 @@ powershell -File opencode-desktop/package.ps1
 node scripts/verify-release-candidate.cjs
 ```
 
-`package.ps1` requires the existing local certificate identity with thumbprint `104C109C454B26C3B5028EE66D8B225F447F953F`. Do not publish if it is absent, expired, or does not sign the candidate.
+`package.ps1` signs with your own local certificate. Set `CODE_SIGN_THUMBPRINT` to that certificate's thumbprint, or point the gitignored `.secrets/desktop-preview-signing.json` at the same local identity. Do not commit a thumbprint. Do not publish if the identity is absent, expired, or does not sign the candidate.
+
+The committed Worker config and contact addresses are placeholders. Replace the nil D1 `database_id` from the Cloudflare dashboard or `wrangler d1 create`, and replace `YOUR_ALIPAY_APP_ID` plus the `https://your-domain.example` callback URLs with your own App ID and HTTPS endpoints. Set `BOTGO_SUPPORT_EMAIL` when preparing the desktop client, and replace `support@example.com` in the website before you deploy. Do not commit real merchant ids, callback hosts, or a personal contact address.
 
 Publish the native release only after the verified installer has been uploaded to private R2 and a `desktop_releases` entry with exact version, file name, object key, size and SHA-256 is published. Validate `GET /api/desktop/releases/current` with a device token. Retire 1.2.x release objects and rows only after this check succeeds.
 

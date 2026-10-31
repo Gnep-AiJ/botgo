@@ -23,7 +23,7 @@
     "desktopSha256": "2c8453e6f25f8bfd8dc1a94759b8542a2d7eba7fb444a57454eab62028ae5075",
     "cliSha256": "a6b407a7ba7ca740c50bcee2e3eaa49b443469e64dbb0cbc284048f96e340453",
     "codexVersion": "0.154.0",
-    "signingThumbprint": "104C109C454B26C3B5028EE66D8B225F447F953F"
+    "signingThumbprint": "local-only"
   },
   "blocked": [
     "production revocation, expired-key and insufficient-balance matrix lacks an independent test account/device",

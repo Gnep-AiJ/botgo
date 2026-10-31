@@ -12,10 +12,10 @@ tags: [botgo, handoff, agent-log, git, moc]
 
 ## 事实快照
 
-- 工作目录：`C:\Users\49978\Desktop\BOTGO`
+- 工作目录：本地检出（路径中的用户名已从公开记录中去掉）
 - 当前分支：`feat/botgo-cinematic-workspace`
 - 当前 HEAD：`df68b3f chore: establish clean BotGo baseline`（无父提交）
-- GitHub remote：`origin -> https://github.com/Gnep-AiJ/botgo.git`
+- GitHub remote：`origin -> https://github.com/<owner>/botgo.git`
 - 本地分支已跟踪 `origin/feat/botgo-cinematic-workspace`；当前远程 `main` 与 feature 分支均指向 `df68b3f`。
 - 接管时工作区包含一批尚未提交的产品、测试、Worker、桌面端和文档改动；这批改动不是本记录单独产生的，提交时必须先做一次变更审查。
 - 本次审查后曾创建 `12b675f` 与 `09f4454` 作为中间记录；本轮已用当前完整源码创建无父基线并强制更新 GitHub。
@@ -40,7 +40,7 @@ tags: [botgo, handoff, agent-log, git, moc]
 ## GitHub 连接状态
 
 - remote 配置已经存在，说明仓库本地已关联 GitHub。
-- `gh` 可执行（版本 2.96.0），但 `gh auth status` 仍报告账户 `Gnep-AiJ` 的默认 token 已失效；这只影响 GitHub CLI 的独立命令。
+- `gh` 可执行（版本 2.96.0），但 `gh auth status` 仍报告当时 GitHub 账户的默认 token 已失效；这只影响 GitHub CLI 的独立命令。
 - Git 的 HTTPS 凭据路径已经可用：本轮强制推送成功，远端接受无父提交 `df68b3f`。不要在聊天中粘贴 token；后续若直接使用 `gh`，仍需单独重新授权 CLI。
 
 ## 上传边界

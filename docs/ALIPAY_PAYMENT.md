@@ -6,7 +6,7 @@ Worker 使用支付宝 `alipay.trade.page.pay` 和 Web Crypto 原生 RSA2 签名
 
 ## 生产配置
 
-`worker/wrangler.jsonc` 只保存非敏感配置：生产 App ID、RSA2、网关以及 HTTPS 回调地址。以下值必须通过 Cloudflare Secret 配置：
+`worker/wrangler.jsonc` 只保存非敏感占位配置：`YOUR_ALIPAY_APP_ID`、RSA2、支付宝网关，以及示例回调 `https://your-domain.example/api/billing/notify` 和 `https://your-domain.example/api/billing/return`。部署前在本地或 CI 换成你自己的 16 位 App ID 和 HTTPS 回调，不要把真实 App ID 或商户域名提交进仓库。D1 `database_id` 同样只保留全零占位 UUID，真实 id 从 Cloudflare 控制台或 `wrangler d1 create` 取得后在本地填写。以下值必须通过 Cloudflare Secret 配置：
 
 ```text
 ALIPAY_PRIVATE_KEY   # 应用私钥，支持 PKCS#1 或 PKCS#8 DER/PEM 内容

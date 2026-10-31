@@ -77,7 +77,7 @@
 - Desktop `1.2.1-preview.6`：182252760 字节；SHA-256 `380b1758cabc24a28ca7c9cd6977a7005deb25d012dab84e2903f5fed9b03fea`。
 - CLI `0.2.4`：138204371 字节；SHA-256 `cdc1c42c9364b47cb3a7ed4c1959bbccf44364a89eb47d2fa885d66d96601da0`。
 - Desktop 打包后共享运行文件逐项匹配，包内 Codex 0.154.0 启动通过；另核对 ASAR 内 16 个应用源码/库文件与当前源码一致。
-- NSIS、主程序及卸载器沿用固定自签名身份 `104C109C454B26C3B5028EE66D8B225F447F953F`；安装包通过既有原生 Authenticode/指纹核验。这不建立 Windows 默认信任或 SmartScreen 声誉。
+- NSIS、主程序及卸载器沿用本机自签名身份（`CODE_SIGN_THUMBPRINT`，不要写入仓库）；安装包通过既有原生 Authenticode/指纹核验。这不建立 Windows 默认信任或 SmartScreen 声誉。
 - CLI 隔离安装验证通过：下载并验证固定私有 Node、启动 0.2.4 和 Codex 0.154.0、复用 Node、覆盖安装保留 previous、错误哈希拒绝且当前版本不变。日志：`artifacts/verification/native-compat/installer-smoke.log`。测试使用本地新包，不等于公网发布或跨设备验收。
 - 最终包内 Electron 测试 `desktop/tests/native-compat-ui.cjs --packaged` 通过，`errors=[]`；设置/附件/MCP 表单/审核卡片及缩放截图位于 `artifacts/verification/native-compat/electron-ui-packaged/`。
 - 构建只是本地未验收候选。安装包没有上传，线上设备鉴权版本接口的待部署变更仍保留。

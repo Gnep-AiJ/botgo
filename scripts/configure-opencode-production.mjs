@@ -11,11 +11,11 @@ const wrangler = path.join(root, '.tmp-wrangler-config', 'cli', 'node_modules', 
 const config = path.join(root, 'worker', 'wrangler.jsonc');
 const secretFile = path.join(root, '.secrets', 'upstream_config_key.txt');
 const modelId = process.argv[2] || 'gpt-5.6-terra';
-const profileId = process.argv[3] || '26a875e5-a370-4b79-ac06-104f41ee34e0';
+const profileId = process.argv[3] || '';
 const apply = process.argv.includes('--apply');
 
 if (!/^[A-Za-z0-9._-]{1,128}$/.test(modelId)) throw new Error('Invalid model id.');
-if (!/^[0-9a-f-]{36}$/i.test(profileId)) throw new Error('Invalid profile id.');
+if (!/^[0-9a-f-]{36}$/i.test(profileId)) throw new Error('Pass your upstream profile id as the third argument. Do not commit a production profile id.');
 if (!apply) throw new Error('Pass --apply to run the production probe and enable the route.');
 
 function sql(value) { return `'${String(value).replaceAll("'", "''")}'`; }

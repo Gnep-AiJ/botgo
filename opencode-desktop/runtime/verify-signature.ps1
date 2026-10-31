@@ -15,5 +15,11 @@ public static class BotGoAuthenticode {
 '@
 $signature=Get-AuthenticodeSignature -LiteralPath $FilePath
 $result=[BotGoAuthenticode]::Verify([IO.Path]::GetFullPath($FilePath))
-if ($signature.SignerCertificate.Thumbprint -ne '104C109C454B26C3B5028EE66D8B225F447F953F' -or ($result -ne 0 -and $result -ne [uint32]0x800B0109L)) { throw "Installer signature rejected: $result" }
+$expected = if ($env:CODE_SIGN_THUMBPRINT) { $env:CODE_SIGN_THUMBPRINT.Trim() } elseif ($env:BOTGO_PREVIEW_CERT_SHA1) { $env:BOTGO_PREVIEW_CERT_SHA1.Trim() } else { '' }
+if (-not $expected) {
+  $sidecar = Join-Path $PSScriptRoot 'code-sign-thumbprint.txt'
+  if (Test-Path -LiteralPath $sidecar) { $expected = (Get-Content -Raw -LiteralPath $sidecar).Trim() }
+}
+if ($expected -notmatch '^[A-Fa-f0-9]{40}$') { throw 'Set CODE_SIGN_THUMBPRINT to your local signing certificate thumbprint. Do not commit it.' }
+if ($signature.SignerCertificate.Thumbprint -ne $expected -or ($result -ne 0 -and $result -ne [uint32]0x800B0109L)) { throw "Installer signature rejected: $result" }
 Write-Output 'Verified pinned Authenticode signature'

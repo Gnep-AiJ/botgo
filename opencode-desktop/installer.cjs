@@ -1,6 +1,13 @@
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 if (!/^[A-Fa-f0-9]{40}$/.test(process.env.BOTGO_PREVIEW_CERT_SHA1 || '')) throw Error('Pinned preview signing identity required');
+const extraResources = [
+  { from: 'resources/icons', to: 'icons' },
+  { from: path.join(__dirname, 'runtime/verify-signature.ps1'), to: 'botgo/verify-signature.ps1' },
+];
+if (process.env.BOTGO_CODE_SIGN_THUMBPRINT_FILE) {
+  extraResources.push({ from: process.env.BOTGO_CODE_SIGN_THUMBPRINT_FILE, to: 'botgo/code-sign-thumbprint.txt' });
+}
 module.exports = {
   appId: 'com.botgo.desktop',
   productName: 'BotGo Desktop',
@@ -12,7 +19,7 @@ module.exports = {
   asar: true,
   files: ['out/**/*', '!out/**/*.map', 'resources/icons/icon.ico'],
   extraFiles: [{ from: path.join(root, 'artifacts/opencode/LICENSE'), to: 'LICENSE-engine.txt' }],
-  extraResources: [{ from: 'resources/icons', to: 'icons' }, { from: path.join(__dirname, 'runtime/verify-signature.ps1'), to: 'botgo/verify-signature.ps1' }],
+  extraResources,
   protocols: { name: 'BotGo', schemes: ['botgo'] },
   forceCodeSigning: true,
   win: {

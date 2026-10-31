@@ -159,10 +159,11 @@ renderer=renderer.replace('        icon: "https://opencode.ai/favicon-96x96-v3.p
 staged.set('packages/desktop/src/renderer/index.tsx',renderer);
 staged.set('packages/ui/src/components/favicon.tsx',base('packages/ui/src/components/favicon.tsx').replace('content="OpenCode"','content="BotGo"'));
 staged.set('packages/app/src/components/windows-app-menu.tsx',base('packages/app/src/components/windows-app-menu.tsx').replace('>OpenCode</DropdownMenu.GroupLabel>','>BotGo</DropdownMenu.GroupLabel>'));
+const supportMailto = `mailto:${process.env.BOTGO_SUPPORT_EMAIL || 'support@example.com'}`;
 for(const file of ['packages/app/src/desktop-menu.ts','packages/app/src/pages/layout.tsx','packages/app/src/components/settings-general.tsx','packages/app/src/components/settings-v2/general.tsx']){
-  staged.set(file,base(file).replaceAll('https://opencode.ai/desktop-feedback','mailto:gnepaij@qq.com').replace(/https:\/\/opencode\.ai\/[^"\s]*/g,'https://botgo.win/#product')
-    .replace(/https:\/\/github\.com\/anomalyco\/opencode\/issues\/new[^"\s]*/g,'mailto:gnepaij@qq.com')
-    .replaceAll('https://discord.com/invite/opencode','mailto:gnepaij@qq.com'));
+  staged.set(file,base(file).replaceAll('https://opencode.ai/desktop-feedback',supportMailto).replace(/https:\/\/opencode\.ai\/[^"\s]*/g,'https://botgo.win/#product')
+    .replace(/https:\/\/github\.com\/anomalyco\/opencode\/issues\/new[^"\s]*/g,supportMailto)
+    .replaceAll('https://discord.com/invite/opencode',supportMailto));
 }
 // A managed desktop cannot switch to an unrelated server and bypass its gateway.
 let titlebar=base('packages/app/src/components/titlebar.tsx');
