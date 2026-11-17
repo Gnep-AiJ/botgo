@@ -8,7 +8,9 @@ const { createUpdater, newer, parseVersion, validateRelease } = require('../open
 const origin = 'https://botgo.win';
 const bytes = Buffer.from('verified BotGo installer fixture');
 const digest = crypto.createHash('sha256').update(bytes).digest('hex');
-const root = fs.mkdtempSync(path.join(path.resolve('artifacts/verification'), 'updater-test-'));
+const verificationRoot = path.resolve('artifacts/verification');
+fs.mkdirSync(verificationRoot, { recursive: true });
+const root = fs.mkdtempSync(path.join(verificationRoot, 'updater-test-'));
 const release = (overrides = {}) => ({
   version: '1.3.1',
   sha256: digest,
