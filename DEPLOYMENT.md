@@ -29,7 +29,30 @@ node scripts/verify-release-candidate.cjs
 
 `package.ps1` signs with your own local certificate. Set `CODE_SIGN_THUMBPRINT` to that certificate's thumbprint, or point the gitignored `.secrets/desktop-preview-signing.json` at the same local identity. Do not commit a thumbprint. Do not publish if the identity is absent, expired, or does not sign the candidate.
 
-The committed Worker config and contact addresses are placeholders. Replace the nil D1 `database_id` from the Cloudflare dashboard or `wrangler d1 create`, and replace `YOUR_ALIPAY_APP_ID` plus the `https://your-domain.example` callback URLs with your own App ID and HTTPS endpoints. Set `BOTGO_SUPPORT_EMAIL` when preparing the desktop client, and replace `support@example.com` in the website before you deploy. Do not commit real merchant ids, callback hosts, or a personal contact address.
+The committed Worker config and contact addresses are placeholders. `scripts/render-worker-config.mjs` and `scripts/build.mjs` fill them from environment variables at deploy time, and `BOTGO_REQUIRE_DEPLOY_CONFIG=1` fails the build if a placeholder survives. Do not commit real merchant ids, callback hosts, or a personal contact address.
+
+## Automated deployment from GitHub
+
+`main` is the only deployment branch. `.github/workflows/verify.yml` runs `npm ci`, `npm run check` and `npm test`; when it succeeds, `.github/workflows/deploy.yml` builds with the deployment values, applies pending D1 migrations, deploys `botgo-api`, deploys Pages project `botgo`, and smoke-checks `/api/health` and `/`.
+
+Configure these once under GitHub → Settings → Secrets and variables → Actions:
+
+| Kind | Name | Value |
+| --- | --- | --- |
+| Variable | `BOTGO_D1_DATABASE_ID` | D1 database UUID for `botgo` |
+| Variable | `BOTGO_ALIPAY_APP_ID` | 16-digit production App ID |
+| Variable | `BOTGO_PUBLIC_ORIGIN` | `https://botgo.win` |
+| Variable | `BOTGO_SUPPORT_EMAIL` | public support address |
+| Variable | `BOTGO_WECHAT_ID` | public WeChat id |
+| Secret | `CLOUDFLARE_API_TOKEN` | token with Workers Scripts, Pages, D1 and R2 edit |
+| Secret | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare account id |
+| Secret (optional) | `BOTGO_CONTACT_QR_BASE64` | base64 PNG, must stay under the 48 KB secret limit |
+
+Until `CLOUDFLARE_API_TOKEN` exists the Deploy workflow skips every deployment step, so merging the workflow never publishes by itself. Standard GitHub-hosted runners are free for public repositories, so this path uses no GitHub Actions quota.
+
+GitHub caps one secret at 48 KB and the original contact QR is about 240 KB, so the QR cannot live in a secret. Auto-deployed builds hide the QR figure; local builds still pick up the gitignored `assets/botgo-contact-wechat.png`. Re-encode the QR below the limit or host it elsewhere before enabling it for the automated build.
+
+Rollback: `npx wrangler rollback --config worker/wrangler.deploy.jsonc` for the Worker, and re-run Deploy BotGo on the previous commit for Pages. Manual deployment remains `npm run build`, `npm run deploy:worker`, `npm run deploy:pages`.
 
 Publish the native release only after the verified installer has been uploaded to private R2 and a `desktop_releases` entry with exact version, file name, object key, size and SHA-256 is published. Validate `GET /api/desktop/releases/current` with a device token. Retire 1.2.x release objects and rows only after this check succeeds.
 
