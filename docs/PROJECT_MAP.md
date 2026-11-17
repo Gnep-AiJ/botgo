@@ -17,6 +17,7 @@ Inspect the working tree before edits. Generated content under `dist/` and `arti
 | Native BotGo client | `opencode-desktop/` overlay/runtime/package scripts | `npm run opencode:build`, isolated Electron check |
 | BotGo Agent client | `hermes-desktop/` overlay/runtime/package scripts; manual acceptance: `hermes-desktop/README.md` | Published 2.0.0-preview.5; installed Gateway/UI, real update download/hash/signature and website readback verified |
 | Device authorization and releases | `worker/src/desktop-auth.js`, `worker/src/platform-admin.js` | device/release authorization tests |
+| Automated deployment | `.github/workflows/verify.yml`, `.github/workflows/deploy.yml`, `scripts/deploy-overrides.mjs`, `scripts/render-worker-config.mjs`, `DEPLOYMENT.md` | Push to `main` → Verify → Deploy; smoke checks `/api/health` and `/` |
 | Historical CLI source | `agent/` | No longer part of website build or public release |
 
 ## Native client
@@ -32,5 +33,7 @@ Only BotGo model providers and the managed local server are enabled. Project per
 ## Evidence and release state
 
 Write new screenshots, isolated profiles, test logs and release snapshots under `artifacts/verification/`. Do not inspect archived profiles or credentials. The current release record is [[notes/Release 2026-09-14]].
+
+The public repository stores placeholders for merchant and personal values. Real deployment values live in GitHub Actions variables/secrets and are injected at build time; never commit them.
 
 Required local checks are `npm test`, `npm run check`, `git diff --check`, native build, and an actual isolated Electron render. Local tests do not prove production deployment, model probe success, signature availability, upload, or remote release publication.
