@@ -50,7 +50,7 @@ Configure these once under GitHub → Settings → Secrets and variables → Act
 
 Until `CLOUDFLARE_API_TOKEN` exists the Deploy workflow skips every deployment step, so merging the workflow never publishes by itself. Standard GitHub-hosted runners are free for public repositories, so this path uses no GitHub Actions quota.
 
-GitHub caps one secret at 48 KB and the original contact QR is about 240 KB, so the QR cannot live in a secret. Auto-deployed builds hide the QR figure; local builds still pick up the gitignored `assets/botgo-contact-wechat.png`. Re-encode the QR below the limit or host it elsewhere before enabling it for the automated build.
+The contact QR is stored only as the `BOTGO_CONTACT_QR_BASE64` secret: a 17 KB 8-level grayscale PNG whose base64 form is 23 KB, below GitHub's 48 KB secret limit. Regenerate it after replacing the QR by converting to grayscale, mapping pixels to eight levels spanning 0-255, saving as an optimized PNG, confirming it still decodes at 140-718 px, and re-encoding the base64 secret. Without the secret the build hides the QR figure instead of requesting a missing asset.
 
 Rollback: `npx wrangler rollback --config worker/wrangler.deploy.jsonc` for the Worker, and re-run Deploy BotGo on the previous commit for Pages. Manual deployment remains `npm run build`, `npm run deploy:worker`, `npm run deploy:pages`.
 
