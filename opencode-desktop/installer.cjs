@@ -1,5 +1,6 @@
 const path = require('node:path');
 const root = path.resolve(__dirname, '..');
+const {source}=require('./paths.cjs');
 if (!/^[A-Fa-f0-9]{40}$/.test(process.env.BOTGO_PREVIEW_CERT_SHA1 || '')) throw Error('Pinned preview signing identity required');
 const extraResources = [
   { from: 'resources/icons', to: 'icons' },
@@ -12,13 +13,13 @@ module.exports = {
   appId: 'com.botgo.desktop',
   productName: 'BotGo Desktop',
   artifactName: 'BotGo-${version}-win-x64.${ext}',
-  directories: { output: path.join(root, 'artifacts/releases/client-1.3.6'), buildResources: 'resources' },
-  electronDist: path.join(root, 'artifacts/opencode/node_modules/electron/dist'),
+  directories: { output: path.join(root, 'artifacts/releases/client-1.3.9'), buildResources: 'resources' },
+  electronDist: path.join(source, 'node_modules/electron/dist'),
   electronVersion: '42.3.3',
   npmRebuild: false,
   asar: true,
   files: ['out/**/*', '!out/**/*.map', 'resources/icons/icon.ico'],
-  extraFiles: [{ from: path.join(root, 'artifacts/opencode/LICENSE'), to: 'LICENSE-engine.txt' }],
+  extraFiles: [{ from: path.join(source, 'LICENSE'), to: 'LICENSE-engine.txt' }],
   extraResources,
   protocols: { name: 'BotGo', schemes: ['botgo'] },
   forceCodeSigning: true,

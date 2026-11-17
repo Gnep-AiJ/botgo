@@ -1,0 +1,8 @@
+{
+  "repository": "https://github.com/NousResearch/hermes-agent",
+  "commit": "81a55437f3f31a9f12a30c53b6c5d49d420898aa",
+  "archive": "artifacts/hermes-81a55437.zip",
+  "sha256": "a6242cffefd1209c3c36d77592ba5874417abc0a2ecb782cb6ebe9e1d2e99172",
+  "source": "artifacts/hermes",
+  "version": "2.0.0-preview.5"
+}

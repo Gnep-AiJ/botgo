@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
+import { applyContactOverrides, hideContactQr, CONTACT_QR_ASSET, assertNoPlaceholders } from "./deploy-overrides.mjs";
 
 const { copyFile, mkdir, readFile, rm, stat, writeFile } = fs.promises;
 const root = process.cwd();
@@ -11,10 +12,12 @@ const files = [
   "404.html",
   "styles.css",
   "app.js",
-  "download.js",
+  "download.js", "client-preview.js",
   "workspace.html",
   "workspace-redirect.js",
   "workspace-billing.js",
+  "chat.html", "chat.css", "chat.js", "ui-kit.js", "ui-kit.css",
+  "assets/botgo-chat-light-preview.png", "assets/botgo-chat-dark-preview.png",
   "desktop-authorize.html",
   "desktop-authorize.css",
   "desktop-authorize.js",
@@ -32,9 +35,9 @@ const files = [
   "assets/botgo-rocket.svg",
   "assets/botgo-robot-dynamic-mobile.webp",
   "assets/botgo-robot-dynamic-v2.webp",
-  "assets/botgo-client-chat-original.png",
-  "assets/botgo-client-connect-original.png",
-  "assets/botgo-client-start-original.png"
+  "assets/botgo-client-workspace.png",
+  "assets/botgo-client-wechat.png",
+  "assets/botgo-client-account.png"
 ];
 
 async function assertSourceFiles() {
@@ -49,6 +52,7 @@ async function assertSourceFiles() {
     .flatMap((source) => [...source.matchAll(/(?:src|srcset|href)="\.\/([^"?#]+)/g)].map((match) => match[1]));
   const missing = [];
   for (const file of new Set(referenced)) {
+    if (file === CONTACT_QR_ASSET) continue;
     try { await stat(path.join(root, file)); }
     catch { missing.push(file); }
   }
@@ -73,7 +77,7 @@ function withBuildVersion(script, buildVersion) {
 }
 
 function createProductionHeaders(headers, script) {
-  const scriptHash = crypto.createHash("sha256").update(script).digest("base64");
+  const scriptHash = crypto.createHash("sha256").update(script.replace(/\r\n?/g, "\n")).digest("base64");
   const source = "script-src 'self';";
   if (!headers.includes(source)) throw new Error("CSP script-src directive was not found");
   return headers.replace(source, `script-src 'self' 'sha256-${scriptHash}';`);
@@ -111,6 +115,27 @@ async function main() {
     await copyFile(path.join(root, file), target);
   }
 
+  // The contact QR is personal data and stays out of the repository. Prefer the
+  // Cloudflare build secret, otherwise use a local copy that git ignores.
+  const qrTarget = path.join(dist, CONTACT_QR_ASSET);
+  const qrBase64 = (process.env.BOTGO_CONTACT_QR_BASE64 || '').trim();
+  let hasContactQr = false;
+  if (qrBase64) {
+    const bytes = Buffer.from(qrBase64, "base64");
+    if (bytes.length < 100) throw new Error("BOTGO_CONTACT_QR_BASE64 does not decode to an image");
+    await mkdir(path.dirname(qrTarget), { recursive: true });
+    await writeFile(qrTarget, bytes);
+    hasContactQr = true;
+  } else {
+    try {
+      await stat(path.join(root, CONTACT_QR_ASSET));
+      await copyFile(path.join(root, CONTACT_QR_ASSET), qrTarget);
+      hasContactQr = true;
+    } catch {
+      hasContactQr = false;
+    }
+  }
+
   const [html, css, script, headers, workspaceHtml, adminHtml] = await Promise.all([
     readFile(path.join(root, "index.html"), "utf8"),
     readFile(path.join(root, "styles.css"), "utf8"),
@@ -121,12 +146,20 @@ async function main() {
   ]);
   const versionedScript = withBuildVersion(script, buildVersion);
   let homeVersioned = createProductionHome(html, css, versionedScript);
-  for (const asset of ['product-account.css', 'product-account.js', 'workspace-billing.js', 'download.js']) homeVersioned = withContentVersion(homeVersioned, asset, await readFile(path.join(root, asset), 'utf8'));
-  await writeFile(path.join(dist, "index.html"), homeVersioned);
+  for (const asset of ['product-account.css', 'product-account.js', 'workspace-billing.js', 'download.js', 'client-preview.js']) homeVersioned = withContentVersion(homeVersioned, asset, await readFile(path.join(root, asset), 'utf8'));
+  for (const asset of ['assets/botgo-chat-light-preview.png', 'assets/botgo-chat-dark-preview.png', 'assets/botgo-client-workspace.png', 'assets/botgo-client-wechat.png', 'assets/botgo-client-account.png']) homeVersioned = withContentVersion(homeVersioned, asset, await readFile(path.join(root, asset)));
+  let productionHome = applyContactOverrides(homeVersioned);
+  if (hasContactQr) productionHome = withContentVersion(productionHome, CONTACT_QR_ASSET, await readFile(qrTarget));
+  else productionHome = hideContactQr(productionHome);
+  if (process.env.BOTGO_REQUIRE_DEPLOY_CONFIG === '1') assertNoPlaceholders(productionHome);
+  await writeFile(path.join(dist, "index.html"), productionHome);
   await writeFile(path.join(dist, "workspace.html"), withContentVersion(workspaceHtml, "workspace-redirect.js", await readFile(path.join(root, "workspace-redirect.js"), "utf8")));
   let adminVersioned=adminHtml;
   for(const asset of ['admin.css','admin-layout.css','admin.js','admin-platform.js','admin-metering.js'])adminVersioned=withContentVersion(adminVersioned,asset,await readFile(path.join(root,asset),'utf8'));
   await writeFile(path.join(dist,"admin.html"),adminVersioned);
+  let chatVersioned=await readFile(path.join(root,'chat.html'),'utf8');
+  for(const asset of ['chat.css','chat.js','ui-kit.js','ui-kit.css'])chatVersioned=withContentVersion(chatVersioned,asset,await readFile(path.join(root,asset),'utf8'));
+  await writeFile(path.join(dist,'chat.html'),chatVersioned);
   await writeFile(path.join(dist, "_headers"), createProductionHeaders(headers, versionedScript));
   console.log(`Built ${files.length} production files in dist/`);
 }

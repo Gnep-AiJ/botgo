@@ -2,7 +2,8 @@ import { consumeLoginCode } from "./account-operations.js";
 import { connect } from "cloudflare:sockets";
 import { DesktopAuthError, approveDesktopWebAuthorization, cancelDesktopWebAuthorization, desktopCredentialFor, desktopRelayCredentialFor, desktopWebAuthorizationFor, exchangeDesktopWebAuthorization, executionKey, executionModelFromVerifiedKey, issueDesktopKey, revokeDesktopDevice, startDesktopWebAuthorization, validateExecutionModel } from "./desktop-auth.js";
 import { handlePlatformRoute, resolveUpstreamCandidates } from "./platform-admin.js";
-import { conversationRoute, startConversationTurn, purgeExpiredConversations } from "./conversations.js";
+import { purgeExpiredConversations } from "./conversations.js";
+import { handleWebChat } from './web-chat.js';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -579,12 +580,13 @@ async function proxyCodexModels(request, env) {
 import { handleAgentRelease } from "./agent-releases.js";
 import { autoReviewCapability, catalog, publicCatalog, meteredProxy, releaseExpiredRequests } from "./metering.js";
 import { handleOpenCode } from './opencode-gateway.js';
+import { purgeWebChatImages } from './web-chat-images.js';
 import { refreshExchangeRate } from './fx-rate.js';
 import { refreshCachedOfficialPrices } from './official-price-sync.js';
 
 export default {
-  async scheduled(event, env, ctx) { ctx.waitUntil(Promise.all([releaseExpiredRequests(env),purgeExpiredConversations(env),refreshExchangeRate(env).catch(()=>({updated:false})),
-    ...(event.cron==='23 3 * * *'?[refreshCachedOfficialPrices(env).catch(()=>({checked:0,updated:0}))]:[])])); },
+  async scheduled(event, env, ctx) { ctx.waitUntil(Promise.all([releaseExpiredRequests(env),purgeExpiredConversations(env).then(()=>purgeWebChatImages(env)),refreshExchangeRate(env).catch(()=>({updated:false})),
+    refreshCachedOfficialPrices(env,{now:event.scheduledTime}).catch(()=>({checked:0,updated:0}))])); },
   async fetch(request, env, ctx) {
     if (env.BOTGO_MAINTENANCE === "1") return json({ error: "服务更新中，请稍后重试。" }, 503, { "retry-after": "60" });
     if (!env.DB || !env.AUTH_SECRET) return json({ error: "后端绑定尚未配置。" }, 503);
@@ -596,12 +598,8 @@ export default {
       const desktop=token?.startsWith('bgdt_')?await desktopCredentialFor(env,token):null;
       return json(publicCatalog(data,{autoReview:desktop?await autoReviewCapability(env,data):false}));
     }
-    if (path === '/chat/stream' || path === '/conversations' || path.startsWith('/conversations/')) {
-      return json({error:'网页对话已停用，请下载 BotGo 桌面客户端。'},410);
-    }
-    if (path === '/conversations' || path.startsWith('/conversations/')) {
-      const identity = await sessionFor(request, env);
-      return await conversationRoute(request, env, identity?.sub, path) || json({error:'对话不存在。'},404);
+    if (path.startsWith('/chat/') || path === '/conversations' || path.startsWith('/conversations/')) {
+      return await handleWebChat(request,env,ctx,path,await sessionFor(request,env)) || json({error:'接口不存在。'},404);
     }
     if (request.method === 'POST' && path === '/v1/responses') {
       const channel = 'desktop_codex';
@@ -612,16 +610,6 @@ export default {
       const candidates = await resolveUpstreamCandidates(env, channel);
       if (!candidates.length) return json({error:'上游服务尚未配置。'},503);
       const accountId=identity.sub || identity.account_id;
-      if(channel==='web_chat' && body.conversationId) {
-        const turn=await startConversationTurn(env,accountId,body);
-        if(turn.response)return turn.response;
-        try {
-          const headers=new Headers(request.headers);headers.set('idempotency-key',body.requestId);
-          const response=await meteredProxy(new Request(request.url,{method:request.method,headers,signal:request.signal}),env,ctx,{accountId,channel,body:turn.body,candidates,history:turn.history});
-          if(!response.ok)await turn.history.finish('failed');
-          return response;
-        } catch(error) {await turn.history.finish('failed');throw error;}
-      }
       return meteredProxy(request, env, ctx, {accountId, channel, body, candidates, billingModel: channel==='desktop_codex'?identity.model:null});
     }
     if (path.startsWith('/agent/releases/')) return json({error:'BotGo CLI 已停止发布，请使用桌面客户端。'},410);

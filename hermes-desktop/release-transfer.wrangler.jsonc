@@ -1,0 +1,9 @@
+{
+  // Retained diagnostic configuration. The release helper uses a temporary
+  // edge Worker after both development proxy modes failed production proof.
+  "name": "botgo-release-transfer",
+  "account_id": "e34685eb42587931743b7aae6b38921e",
+  "compatibility_date": "2026-08-25",
+  "workers_dev": false,
+  "r2_buckets": [{ "binding": "RELEASES", "bucket_name": "botgo-desktop-releases", "preview_bucket_name": "botgo-desktop-releases", "remote": true }]
+}

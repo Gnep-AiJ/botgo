@@ -7,6 +7,8 @@ const noLongPremium=10000000;
 const visualInput={input:['text','image'],output:['text']};
 const imageOnly={input:['text','image'],output:['image']};
 const capabilities={
+  'claude-opus-5-5':{reasoning:true,context:1000000,output:128000,modalities:visualInput},
+  'claude-sonnet-5-5':{reasoning:true,context:1000000,output:128000,modalities:visualInput},
   'gpt-6-astra':{reasoning:true,context:1050000,output:128000,modalities:visualInput},
   'gpt-6-sol':{reasoning:true,context:1050000,output:128000,modalities:visualInput},
   'gpt-6-luna':{reasoning:true,context:1050000,output:128000,modalities:visualInput},
@@ -39,6 +41,8 @@ const capabilities={
 // name, provider, input, cached input, cache write, output, long threshold,
 // long input multiplier, long output multiplier, official source
 const rates={
+  'claude-opus-5-5':['Claude Opus 5.5','Anthropic',4,.2,5,20,noLongPremium,1,1,'https://platform.claude.com/docs/en/models/opus-5-5/overview'],
+  'claude-sonnet-5-5':['Claude Sonnet 5.5','Anthropic',2,.2,2.5,10,noLongPremium,1,1,'https://platform.claude.com/docs/en/models/sonnet-5-5/overview'],
   'gpt-6-astra':['GPT-6 Astra','OpenAI',10,1,12.5,50,272000,2,1.5,OPENAI_SOURCE],
   'gpt-6-sol':['GPT-6 Sol','OpenAI',2,.2,2.5,10,272000,2,1.5,OPENAI_SOURCE],
   'gpt-6-luna':['GPT-6 Luna','OpenAI',.1,.01,.125,.5,272000,2,1.5,OPENAI_SOURCE],
@@ -74,7 +78,7 @@ export function officialModel(id){
   const capability=capabilities[id]||{};
   return {id,name,provider,agent:true,reasoning:capability.reasoning===true,modalities:capability.modalities,
     limit:capability.context?{context:capability.context,output:capability.output}:undefined,
-    price:{tier:'default',input,cached,write,output,longThreshold,longInput,longOutput,source,date:id.startsWith('gpt-6-sol')||id.startsWith('gpt-6-luna')?'2026-09-22':'2026-09-21'}};
+    price:{tier:'default',input,cached,write,output,longThreshold,longInput,longOutput,source,date:['claude-opus-5-5','claude-sonnet-5-5'].includes(id)?'2026-09-30':id.startsWith('gpt-6-sol')||id.startsWith('gpt-6-luna')?'2026-09-22':'2026-09-21'}};
 }
 
 const imageRates={

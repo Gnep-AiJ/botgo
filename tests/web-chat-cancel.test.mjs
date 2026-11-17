@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import {createWebChatRuntime} from './fixtures/web-chat-runtime.mjs';
+import {handleWebChat} from '../worker/src/web-chat.js';
+const runtime=await createWebChatRuntime(),{db,env}=runtime,jobs=[];
+const call=(path,body,account='fixture-a')=>handleWebChat(new Request('https://botgo.test'+path,{method:'POST',headers:{origin:'https://botgo.test','content-type':'application/json'},body:JSON.stringify(body)}),env,{waitUntil(p){jobs.push(p);}},path,{sub:account});
+const balance=()=>db.prepare("SELECT credit_balance*10000+credit_remainder_micros AS n,billing_reserved_micros AS reserved FROM accounts WHERE id='fixture-a'").get();
+try{
+ const convo=await(await call('/conversations',{title:'Stop test'})).json();
+ const base={conversationId:convo.id,model:runtime.models[0].id,content:'hello'};
+ assert.equal((await call('/chat/cancel',{...base,requestId:crypto.randomUUID()},'fixture-b')).status,404);
+ const early={...base,requestId:crypto.randomUUID()};
+ assert.equal((await(await call('/chat/cancel',early)).json()).state,'stopped');
+ assert.equal((await call('/chat/stream',early)).status,499);assert.equal(runtime.upstreamCalls.length,0);
+ const original=balance();let aborted=false,entered;
+ const started=new Promise(resolve=>entered=resolve);
+ globalThis.fetch=async(url,init)=>{entered();return await new Promise((resolve,reject)=>init.signal.addEventListener('abort',()=>{aborted=true;reject(init.signal.reason);},{once:true}));};
+ const pending={...base,requestId:crypto.randomUUID()},r=call('/chat/stream',pending);await started;
+ assert.ok(balance().reserved>0);
+ assert.equal((await(await call('/chat/cancel',pending)).json()).state,'stopped');
+ assert.deepEqual(balance(),original,'explicit cancellation immediately refunds reservation');
+ assert.equal((await r).status,499);assert.ok(aborted,'cancel crosses request boundaries before headers');
+ assert.equal(db.prepare('SELECT state FROM web_chat_turns WHERE request_id=?').get(pending.requestId).state,'stopped');
+ assert.equal(db.prepare("SELECT COUNT(*) n FROM upstream_leases WHERE state='active'").get().n,0);
+ let streamCancelled=false;
+ globalThis.fetch=async()=>new Response(new ReadableStream({start(c){c.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'));},cancel(){streamCancelled=true;}}),{headers:{'content-type':'text/event-stream'}});
+ const live={...base,requestId:crypto.randomUUID()},stream=await call('/chat/stream',live),reader=stream.body.getReader();await reader.read();
+ const waiting=reader.read().catch(()=>null);
+ assert.equal((await(await call('/chat/cancel',live)).json()).state,'stopped');await waiting;await Promise.all(jobs.splice(0));
+ assert.ok(streamCancelled);assert.deepEqual(balance(),original);
+ globalThis.fetch=async()=>new Response('data: {"choices":[{"delta":{"content":"done"}}]}\n\ndata: {"usage":{"prompt_tokens":100,"completion_tokens":10}}\n\ndata: [DONE]\n\n',{headers:{'content-type':'text/event-stream'}});
+ const done={...base,requestId:crypto.randomUUID()},reply=await call('/chat/stream',done);await reply.text();await Promise.all(jobs.splice(0));
+ const charged=balance();assert.ok(charged.n<original.n);
+ assert.equal((await(await call('/chat/cancel',done)).json()).state,'completed');assert.deepEqual(balance(),charged,'late cancellation cannot refund a completed result');
+ console.log('Durable stop: ownership, cancel before admission/headers, streaming abort, atomic refund, lease release and late completion passed');
+}finally{await Promise.allSettled(jobs);runtime.close();}

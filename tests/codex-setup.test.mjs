@@ -19,7 +19,7 @@ assert.match(workspace, /workspace-redirect\.js/, "旧账户地址应跳回首�
 assert.match(downloadScript, /\/desktop\/releases\/current/, "下载页仅查询已发布版本");
 assert.doesNotMatch(workspace, /\/downloads\/BotGo-Desktop-Setup\.exe/, "未托管安装包不应在网页提供下载入口");
 assert.doesNotMatch(workspace, /API Key|Codex CLI|Claude Code|chatgpt\.com\/download/, "网页不应展示凭据或第三方下载入口");
-assert.doesNotMatch(client, /bootstrapCommand|\/account\/codex-key|navigator\.clipboard/, "网页脚本不应生成命令或处理凭据复制");
+assert.doesNotMatch(client, /bootstrapCommand|\/account\/codex-key/, "网页脚本不应生成命令或读取安装凭据；联系信息允许复制");
 assert.match(workspaceStyles, /color-scheme:\s*light dark;/, "工作台应跟随系统主题");
 
 assert.equal(fs.existsSync(path.join(root, "installer/botgo-bootstrap.ps1")), false, "旧 Windows 安装器应被移除");

@@ -4,13 +4,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import {fileURLToPath} from 'node:url';
+import paths from './paths.cjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 const root=path.dirname(here);
-const source=path.join(root,'artifacts/opencode');
-const original=path.join(root,'artifacts/verification/opencode-bootstrap/local-source/opencode-3104c1428ec91f809e5ab86631300de41eb6952e');
+const {source,original,upstream}=paths;
 const report=JSON.parse(fs.readFileSync(path.join(source,'extraction-report.json'),'utf8'));
-if(report.commitLabel!=='3104c1428ec91f809e5ab86631300de41eb6952e')throw Error('Unexpected upstream source');
+if(report.commitLabel!==upstream.commit)throw Error('Unexpected upstream source');
 const manifestPath=path.join(source,'botgo-overlay.json');
 const previous=fs.existsSync(manifestPath)?JSON.parse(fs.readFileSync(manifestPath,'utf8')):{};
 const staged=new Map();
@@ -41,7 +41,6 @@ function brand(value){
 let main=brand(base('packages/desktop/src/main/index.ts'));
 main='import { createBotGo } from "./botgo-main"\n'+main;
 main=replace(main,'  if (!app.isPackaged) app.commandLine.appendSwitch("remote-debugging-port", "9222")','  // BotGo previews may contain real accounts; never open an unauthenticated debugging port.');
-main=replace(main,'const SIDECAR_VERSION = process.env.OPENCODE_SIDECAR_V2 === "1" ? "v2" : "v1"','const SIDECAR_VERSION: string = "v1"');
 main=replace(main,'  if (!TEST_ONBOARDING) migrate()','  // BotGo never imports or mutates an existing OpenCode installation.');
 main=replace(main,'join(app.getPath("appData"), appId),','process.env.BOTGO_PROFILE_ROOT ?? join(app.getPath("appData"), appId),');
 main=replace(main,'  if (onboardingTestRoot) app.setPath("sessionData", join(onboardingTestRoot, "session"))','  app.setPath("sessionData", onboardingTestRoot ? join(onboardingTestRoot, "session") : join(app.getPath("userData"), "chromium"))');
@@ -52,11 +51,10 @@ main=replace(main,'  const shellEnv = preferAppEnv(app.getPath("userData"))',`  
     mkdirSync(directory, { recursive: true })
     process.env[\`XDG_\${name}_HOME\`] = directory
   }
-  process.env.OPENCODE_DISABLE_AUTOUPDATE = "true"
-  process.env.OPENCODE_DISABLE_MODELS_FETCH = "true"`);
+  process.env.OPENCODE_DISABLE_AUTOUPDATE = "true"`);
 main=replace(main,'app.setAsDefaultProtocolClient("opencode")','app.setAsDefaultProtocolClient("botgo")');
 main=replace(main,'  const updater = setupAutoUpdater(stopSidecars)','  const botgo = createBotGo()\n  void botgo.initialize()\n  const updater = setupAutoUpdater(stopSidecars, botgo)');
-main=replace(main,'  void updater.start()\n  const updateTimer = setInterval(() => void updater.check(), 10 * 60 * 1000)\n  updateTimer.unref()\n  app.once("will-quit", () => clearInterval(updateTimer))','  // BotGo checks only after a successful device login.');
+main=replace(main,'  void updater.start()\n  const updateTimer = setInterval(() => void updater.check(), 10 * 60 * 1000)\n  updateTimer.unref()\n  app.once("will-quit", () => clearInterval(updateTimer))','  // Check after login, every six hours normally, and hourly after a failed check.\n  const hasUpdateCredential = () => {\n    try { return !!botgo.deviceToken() } catch { return false }\n  }\n  const updateTimer = setInterval(() => {\n    if (hasUpdateCredential() && updater.getState().status !== "ready") void updater.check()\n  }, 6 * 60 * 60 * 1000)\n  const retryTimer = setInterval(() => {\n    if (hasUpdateCredential() && updater.getState().status === "error") void updater.check()\n  }, 60 * 60 * 1000)\n  updateTimer.unref()\n  retryTimer.unref()\n  app.once("will-quit", () => { clearInterval(updateTimer); clearInterval(retryTimer) })');
 main=replace(main,'  registerIpcHandlers({','  registerIpcHandlers({\n    botgo,');
 main=replace(main,'    logger.log("sidecar connection started", { version: SIDECAR_VERSION })',
   '    yield* Effect.promise(() => botgo.ready)\n    void updater.start()\n    logger.log("sidecar connection started", { version: SIDECAR_VERSION })');
@@ -117,25 +115,6 @@ appSource=replace(appSource,`    api?: {
 appSource=replace(appSource,'          void window.api?.setTitlebar?.({ mode, scheme })',`          const desktop = window as Window & { api?: { setTitlebar?: (theme: { mode: "light" | "dark"; scheme?: "system" | "light" | "dark" }) => Promise<void> } }
           void desktop.api?.setTitlebar?.({ mode, scheme })`);
 staged.set('packages/app/src/app.tsx',appSource);
-// A rebuilt local service has no record of tabs persisted by an older preview.
-// Remove only the server-confirmed missing tab, then reopen a blank draft in its
-// remembered project when that project is still available. Network and other
-// errors keep the original upstream error handling.
-let sessionPage=base('packages/app/src/pages/session.tsx');
-sessionPage=replace(sessionPage,'import { useTabs } from "@/context/tabs"','import { tabKey, useTabs } from "@/context/tabs"');
-sessionPage=replace(sessionPage,`  const closeTab = () => {
-    if (!props.sessionID) return
-    tabs.removeSessionTab({ server: props.serverKey ?? server.key, sessionId: props.sessionID })
-  }`, `  const recoverMissingSession = () => {
-    if (!props.sessionID || !isCurrentSessionNotFoundError(props.error, props.sessionID)) return
-    const tab = { type: "session" as const, server: props.serverKey ?? server.key, sessionId: props.sessionID }
-    const directory = tabs.info[tabKey(tab)]?.directory
-    tabs.removeSessionTab({ server: tab.server, sessionId: tab.sessionId })
-    if (directory) void tabs.newDraft({ server: tab.server, directory })
-  }
-  onMount(recoverMissingSession)`);
-sessionPage=replace(sessionPage,'onClick={closeTab}','onClick={recoverMissingSession}');
-staged.set('packages/app/src/pages/session.tsx',sessionPage);
 // Translate product copy, never module names, config identifiers or licenses.
 // The shared UI bundle owns quota/errors that can appear in the native shell too.
 for(const directory of ['packages/app/src/i18n','packages/desktop/src/renderer/i18n','packages/ui/src/i18n']){
@@ -165,10 +144,10 @@ for(const file of ['packages/app/src/desktop-menu.ts','packages/app/src/pages/la
     .replace(/https:\/\/github\.com\/anomalyco\/opencode\/issues\/new[^"\s]*/g,supportMailto)
     .replaceAll('https://discord.com/invite/opencode',supportMailto));
 }
-// A managed desktop cannot switch to an unrelated server and bypass its gateway.
+// Brand the title bar without removing native Provider or Server controls.
 let titlebar=base('packages/app/src/components/titlebar.tsx');
 titlebar=replace(titlebar,'import { IconButton } from "@opencode-ai/ui/icon-button"','import { Logo } from "@opencode-ai/ui/logo"\nimport { IconButton } from "@opencode-ai/ui/icon-button"');
-titlebar=titlebar.replaceAll('<ChannelIndicator debugTools={props.debugTools} />','<div class="px-2 flex items-center"><Logo class="h-6 w-auto" /></div>');
+titlebar=titlebar.replaceAll('<ChannelIndicator debugTools={props.debugTools} />','<button type="button" aria-label="BotGo" data-botgo-home class="px-2 flex items-center" onClick={() => platform.openExternal("https://botgo.win")}><Logo class="h-6 w-auto" /></button>');
 staged.set('packages/app/src/components/titlebar.tsx',titlebar);
 let servers=base('packages/app/src/context/server.tsx');
 servers=replace(servers,'return resolveServerList({ stored: store.list, props: props.servers })','return (props.servers ?? []).filter(ServerConnection.builtin)');
@@ -283,7 +262,9 @@ for(const [locale,strings] of Object.entries(translations)){
 let config=base('packages/opencode/src/config/config.ts');
 config=replace(config,'          config: result,',`          config: process.env.BOTGO_MANAGED_CONFIG ? {
             ...result,
-            ...JSON.parse(process.env.BOTGO_MANAGED_CONFIG),
+            provider: { ...result.provider, ...JSON.parse(process.env.BOTGO_MANAGED_CONFIG).provider },
+            enabled_providers: JSON.parse(process.env.BOTGO_MANAGED_CONFIG).enabled_providers,
+            autoupdate: false,
           } : result,`);
 staged.set('packages/opencode/src/config/config.ts',config);
 staged.set('packages/opencode/src/tool/botgo-image.ts',fs.readFileSync(path.join(here,'overlay/botgo-image.ts')));
@@ -293,33 +274,6 @@ toolRegistry=replace(toolRegistry,'    const patchtool = yield* ApplyPatchTool\n
 toolRegistry=replace(toolRegistry,'          ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),','          ...(codeModeTool ? { execute: Tool.init(codeModeTool) } : {}),\n          ...(botgoImage ? { botgoImage: Tool.init(botgoImage) } : {}),');
 toolRegistry=replace(toolRegistry,'            ...(tool.execute ? [tool.execute] : []),','            ...(tool.execute ? [tool.execute] : []),\n            ...(tool.botgoImage ? [tool.botgoImage] : []),');
 staged.set('packages/opencode/src/tool/registry.ts',toolRegistry);
-let modelMessages=base('packages/opencode/src/session/message-v2.ts');
-modelMessages=replace(modelMessages,
-  'const attachments = part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? [])',
-  'const attachments = part.tool === "botgo_image_generation" || part.state.time.compacted || options?.stripMedia ? [] : (part.state.attachments ?? [])');
-staged.set('packages/opencode/src/session/message-v2.ts',modelMessages);
-staged.set('packages/opencode/test/session/message-v2.test.ts',base('packages/opencode/test/session/message-v2.test.ts')+`
-test("BotGo generated image remains in the session without replaying its bytes to the model", async () => {
-  const userID = "botgo-image-user"
-  const assistantID = "botgo-image-assistant"
-  const input: SessionV1.WithParts[] = [
-    { info: userInfo(userID), parts: [{ ...basePart(userID, "prompt"), type: "text", text: "Generate an image" }] as SessionV1.Part[] },
-    {
-      info: assistantInfo(assistantID, userID),
-      parts: [{
-        ...basePart(assistantID, "image-tool"), type: "tool", callID: "image-call", tool: "botgo_image_generation",
-        state: { status: "completed", input: { prompt: "A blue square" }, output: "Image saved: generated-images/image.png",
-          title: "Image generated", metadata: {}, time: { start: 0, end: 1 },
-          attachments: [{ ...basePart(assistantID, "image-file"), type: "file", mime: "image/png", url: "data:image/png;base64,Zm9v" }],
-        },
-      }] as SessionV1.Part[],
-    },
-  ]
-  const result = await MessageV2.toModelMessages(input, model)
-  expect(JSON.stringify(result)).not.toContain("Zm9v")
-  expect(JSON.stringify(result)).toContain("generated-images/image.png")
-})
-`);
 let messagePart=base('packages/session-ui/src/components/message-part.tsx');
 messagePart=replace(messagePart,
   '  const render = createMemo(() => ToolRegistry.render(part().tool) ?? GenericTool)',
@@ -371,7 +325,7 @@ staged.set('packages/ui/src/v2/components/wordmark-v2.tsx',fs.readFileSync(path.
 staged.set('packages/desktop/resources/icons/icon.ico',fs.readFileSync(path.join(here,'overlay/botgo-desktop.ico')));
 const pkg=JSON.parse(base('packages/desktop/package.json'));
 pkg.name='@botgo/desktop';
-pkg.version='1.3.6';
+pkg.version='1.3.9';
 pkg.homepage='https://botgo.win';
 // Keep upstream MIT authorship. Packaging is never publishing.
 staged.set('packages/desktop/package.json',JSON.stringify(pkg,null,2)+'\n');

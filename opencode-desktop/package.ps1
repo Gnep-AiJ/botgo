@@ -1,5 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $clientRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$upstreamPin = Get-Content -Raw -LiteralPath (Join-Path $PSScriptRoot 'upstream.json') | ConvertFrom-Json
+$sourceRoot = Join-Path $clientRoot $upstreamPin.source
 $thumbprint = $env:CODE_SIGN_THUMBPRINT
 if (-not $thumbprint) {
     $identityPath = Join-Path $clientRoot '.secrets/desktop-preview-signing.json'
@@ -17,7 +19,7 @@ Set-Content -LiteralPath $thumbprintFile -Value $certificate.Thumbprint -NoNewli
 $env:BOTGO_CODE_SIGN_THUMBPRINT_FILE = $thumbprintFile
 $env:ELECTRON_BUILDER_CACHE = Join-Path $clientRoot 'artifacts/cache/electron-builder'
 try {
-    & node (Join-Path $clientRoot 'artifacts/opencode/node_modules/electron-builder/cli.js') --projectDir (Join-Path $clientRoot 'artifacts/opencode/packages/desktop') --config (Join-Path $PSScriptRoot 'installer.cjs') --win --x64 --publish never
+    & node (Join-Path $sourceRoot 'node_modules/electron-builder/cli.js') --projectDir (Join-Path $sourceRoot 'packages/desktop') --config (Join-Path $PSScriptRoot 'installer.cjs') --win --x64 --publish never
     if ($LASTEXITCODE -ne 0) { throw 'Client packaging failed' }
 } finally {
     Remove-Item Env:BOTGO_PREVIEW_CERT_SHA1 -ErrorAction SilentlyContinue

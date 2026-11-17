@@ -7,13 +7,14 @@
     const oldContent = button?.innerHTML;
     if (button) { button.setAttribute('aria-busy', 'true'); button.textContent = '正在获取安装包…'; }
     try {
-      const response = await fetch('/api/desktop/releases/current', { credentials: 'same-origin' });
+      const response = await fetch('/api/desktop/releases/current', { credentials: 'same-origin', headers: { 'x-botgo-client-engine': 'hermes' } });
       if (response.status === 401) {
         if (redirectForLogin) window.botgoAccount?.open('account', { next: 'download' });
         return;
       }
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.error || '暂时无法获取安装包');
+      if (body.engine !== 'hermes' || body.release && body.release.engine !== 'hermes') throw new Error('新版本暂不可用，请稍后重试');
       if (!body.release?.downloadUrl) throw new Error('当前没有可下载的版本');
       const url = new URL(body.release.downloadUrl, location.origin);
       if (!['http:', 'https:'].includes(url.protocol)) throw new Error('下载地址无效');

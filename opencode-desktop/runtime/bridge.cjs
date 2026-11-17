@@ -7,6 +7,8 @@ const retryCodes=new Set(['AGENT_CONCURRENCY_LIMIT','ACCOUNT_CONCURRENCY_LIMIT',
 
 const taskPattern=/^[A-Za-z0-9_-]{1,128}$/;
 const modelPattern=/^[A-Za-z0-9._-]{1,128}$/;
+const nativeModalities=new Set(['text','image','audio','video','pdf']);
+const MAX_REQUEST_BYTES=16*1024*1024;
 function originFor(value){
   const url=new URL(value);
   if(url.protocol!=='https:'&&!(url.protocol==='http:'&&url.hostname==='127.0.0.1'))throw Error('Invalid BotGo origin');
@@ -23,7 +25,7 @@ function validateSession(data){
     seen.add(model.id);
     if(!model.price||!['input','output','cached','write'].every(k=>Number.isFinite(model.price[k])&&model.price[k]>=0))throw Error('Invalid model prices');
     if(!Number.isFinite(model.multiplier)||model.multiplier<0)throw Error('Invalid price multiplier');
-    if(model.modalities!==undefined&&(!Array.isArray(model.modalities.input)||!Array.isArray(model.modalities.output)||model.modalities.input.some(x=>!['text','image'].includes(x))||model.modalities.output.some(x=>!['text','image'].includes(x))))throw Error('Invalid model modalities');
+    if(model.modalities!==undefined&&(!Array.isArray(model.modalities.input)||!Array.isArray(model.modalities.output)||model.modalities.input.some(x=>!nativeModalities.has(x))||model.modalities.output.some(x=>!nativeModalities.has(x))))throw Error('Invalid model modalities');
     if(model.reasoning!==undefined&&typeof model.reasoning!=='boolean')throw Error('Invalid model reasoning capability');
     if(model.limit!==undefined&&(!Number.isSafeInteger(model.limit.context)||model.limit.context<1||!Number.isSafeInteger(model.limit.output)||model.limit.output<1||model.limit.output>model.limit.context))throw Error('Invalid model limits');
   }
@@ -56,8 +58,8 @@ function configuration(session,baseURL,localKey){
     };
   }
   const selected=session.models.find(m=>m.id===session.defaultModel);
-  return {enabled_providers:Object.keys(provider),provider,model:`botgo-${selected.protocol}/${selected.id}`,
-    small_model:`botgo-${selected.protocol}/${selected.id}`,share:'disabled',autoupdate:false};
+  return {provider,enabled_providers:Object.keys(provider),model:`botgo-${selected.protocol}/${selected.id}`,
+    small_model:`botgo-${selected.protocol}/${selected.id}`,autoupdate:false};
 }
 
 async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=undefined,now=Date.now,onDiagnostic=(_data)=>{},retryDelays=[500,1500],taskStore={load:(_email)=>({}),save:(_email,_value)=>{}}}){
@@ -80,7 +82,7 @@ async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=u
     pending=flight;
     flight.promise=(async()=>{
       const response=await fetchRead(fetchImpl,`${origin}/api/desktop/opencode/session`,{method:'POST',redirect:'error',
-        headers:{authorization:`Bearer ${deviceToken}`}},{session:true,signal:AbortSignal.any([lifetime.signal,flight.controller.signal]),delays:retryDelays});
+        headers:{authorization:`Bearer ${deviceToken}`,'x-botgo-native-modalities':[...nativeModalities].join(',')}},{session:true,signal:AbortSignal.any([lifetime.signal,flight.controller.signal]),delays:retryDelays});
       if(!response.ok)throw Object.assign(Error(`BotGo session HTTP ${response.status}`),{status:response.status});
       session=validateSession(await response.json());
       expiresAt=now()+23*60*60*1000;
@@ -99,8 +101,10 @@ async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=u
     roots.set(task,root);
   }
   function taskFor(request){
-    const task=request.headers['x-session-id'];
-    const parent=request.headers['x-parent-session-id'];
+    const task=request.headers['x-opencode-session-id']??request.headers['x-session-id'];
+    const parent=request.headers['x-opencode-parent-session-id']??request.headers['x-parent-session-id'];
+    if(request.headers['x-session-id']!==undefined&&request.headers['x-opencode-session-id']!==undefined&&request.headers['x-session-id']!==task)throw Object.assign(Error('Conflicting session identifiers'),{status:400});
+    if(request.headers['x-parent-session-id']!==undefined&&request.headers['x-opencode-parent-session-id']!==undefined&&request.headers['x-parent-session-id']!==parent)throw Object.assign(Error('Conflicting parent session identifiers'),{status:400});
     if(typeof task!=='string'||!taskPattern.test(task))throw Object.assign(Error('Session ID required'),{status:400});
     if(parent!==undefined&&(typeof parent!=='string'||!taskPattern.test(parent)))throw Object.assign(Error('Invalid parent session'),{status:400});
     if(roots.size>=10000&&!roots.has(task))throw Object.assign(Error('Session map capacity reached'),{status:429});
@@ -111,6 +115,9 @@ async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=u
   const server=http.createServer(async(request,response)=>{
     const requestId=crypto.randomUUID(),startedAt=now();let stage='prepare';
     const fail=(status,message,code='REQUEST_FAILED',retryable=false,remoteId=requestId,retryAfter)=>{
+      // Drain rejected uploads without retaining bytes or destroying the socket
+      // before the client can receive the structured HTTP error.
+      if(!request.complete)request.resume();
       if(response.headersSent){
         if(!response.destroyed&&String(response.getHeader('content-type')||'').includes('text/event-stream'))response.end(`data: ${JSON.stringify({type:'error',code:'STREAM_INTERRUPTED',message:`响应中断，请手动继续。\n请求编号：${remoteId}`,error:{message:`响应中断，请手动继续。\n请求编号：${remoteId}`,type:'botgo_error',code:'STREAM_INTERRUPTED'}})}\n\n`);
         else response.destroy();
@@ -128,8 +135,13 @@ async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=u
     const disconnect=()=>{if(!response.writableEnded)controller.abort();};
     response.once('close',disconnect);
     try{
-      let length=0;const chunks=[];
-      for await(const chunk of request){length+=chunk.length;if(length>1000000)return fail(413,'Request exceeds 1 MB');chunks.push(chunk);}
+      let length=0,tooLarge=false;const chunks=[];
+      for await(const chunk of request){
+        length+=chunk.length;
+        if(length>MAX_REQUEST_BYTES){tooLarge=true;chunks.length=0;continue;}
+        if(!tooLarge)chunks.push(chunk);
+      }
+      if(tooLarge)return fail(413,'Attachments and context exceed the 16 MiB request limit');
       let body;try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'));}catch{return fail(400,'Invalid JSON');}
       if(!body||request.url!=='/v1/images/generations'&&typeof body.model!=='string'||request.url==='/v1/images/generations'&&body.model!==undefined&&typeof body.model!=='string')return fail(400,'Model required');
       stage='session';const current=await refresh(controller.signal);
@@ -203,4 +215,4 @@ async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=u
   };
 }
 
-module.exports={originFor,validateSession,configuration,createBridge};
+module.exports={originFor,validateSession,configuration,createBridge,MAX_REQUEST_BYTES};

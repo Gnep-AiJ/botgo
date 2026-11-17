@@ -125,12 +125,16 @@ try{
     assert.equal(JSON.parse(init.body).model,'gpt-image-2.5-sunburst');
     return Response.json({data:[{b64_json:'iVBORw0KGgo='}],usage:{input_tokens:3,input_tokens_details:{text_tokens:3,image_tokens:0},output_tokens:8,output_tokens_details:{image_tokens:8}}});
   };
-  const imageRequest=()=>new Request('https://botgo.test/opencode/v1/images/generations',{method:'POST',headers:{authorization:'Bearer '+session.key},body:JSON.stringify({prompt:'blue square',quality:'low'})});
+  const imageRequest=(taskId='native-image-fixture')=>new Request('https://botgo.test/opencode/v1/images/generations',{method:'POST',headers:{authorization:'Bearer '+session.key,'x-botgo-task-id':taskId},body:JSON.stringify({prompt:'blue square',quality:'low'})});
+  assert.equal((await handleOpenCode(imageRequest('invalid/task'),env,ctx,'/opencode/v1/images/generations')).status,400,'invalid image billing identity cannot reach upstream');
   const imageResult=await handleOpenCode(imageRequest(),env,ctx,'/opencode/v1/images/generations');
   assert.equal(imageResult.status,200,'image request without model uses the configured default');
   assert.equal((await imageResult.json()).model,'gpt-image-2.5-sunburst');
   const imageLedger=sql.prepare("SELECT snapshot,state FROM metered_requests WHERE model='gpt-image-2.5-sunburst' ORDER BY created_at DESC LIMIT 1").get();
   assert.equal(imageLedger.state,'completed');
+  assert.equal(JSON.parse(imageLedger.snapshot).taskId,'native-image-fixture');
+  const imageTotals=await handleOpenCode(new Request('https://botgo.test/opencode/usage?taskId=native-image-fixture',{headers:{authorization:'Bearer '+session.key}}),env,ctx,'/opencode/usage');
+  const imageUsage=await imageTotals.json();assert.equal(imageUsage.requests.length,1);assert.ok(imageUsage.chargedMicros>0,'native image billing appears in the same session usage endpoint');
   assert.equal(JSON.parse(imageLedger.snapshot).multiplierPpm,300000,'image generation inherits the global multiplier');
   sql.exec('UPDATE metering_settings SET default_image_model=NULL');
   assert.equal((await handleOpenCode(imageRequest(),env,ctx,'/opencode/v1/images/generations')).status,503,'missing default cannot generate or charge');

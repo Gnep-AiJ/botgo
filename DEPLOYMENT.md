@@ -4,6 +4,12 @@ The current desktop product is BotGo Desktop 1.3.1 from `opencode-desktop/`. It 
 
 Create every upstream endpoint and API key through the Web admin. Keys are encrypted with the `UPSTREAM_CONFIG_KEY` Worker Secret; do not add upstream credentials to Wrangler vars, client packages, release metadata, build logs, or the repository.
 
+## OPCPay recharge
+
+- For a read-only merchant check, run `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\opcpay-probe.ps1` from the repository and enter the key at the hidden prompt. The resulting `merchant.json` contains capability flags and SKU fields.
+- Configure the production `opcpay_api_key` as a Cloudflare Worker Secret on `botgo-api`. Apply D1 migration `0033_opcpay_recharges.sql` before releasing the Worker and Pages changes together. The checkout return address is `https://botgo.win`.
+- The current CNY plan converts whole points to BotGo usage balance at ￥1 per point. Verify the live purchase link, locked SKU snapshot, signed payment status, and original consumption receipt before accepting production checkout. Direct Alipay reconciliation remains available for historical orders. OPCPay refund and consumption-reversal APIs are unavailable for the configured merchant.
+
 Before any remote action, run:
 
 ```powershell

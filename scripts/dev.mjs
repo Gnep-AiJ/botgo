@@ -2,11 +2,15 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { forwardDevApi, localApiOrigin } from "./dev-api.mjs";
 
 const root = process.cwd();
 const dist = path.join(root, "dist");
 const host = process.env.BOTGO_DEV_HOST || "127.0.0.1";
 const port = Number(process.env.BOTGO_DEV_PORT || 4173);
+const apiOrigin = localApiOrigin(process.env.BOTGO_DEV_API_ORIGIN);
 const ignoredRoots = new Set(["artifacts", "agent", ".secrets", ".npm-cache", ".wrangler", ".agents", ".claude", ".codex", ".git", ".skill-archive", "desktop", "dist", "docs", "node_modules", "tests", "worker"]);
 const ignoredPrefixes = [".tmp-", "tmp-", "layout-", "debug-"];
 const clients = new Set();
@@ -89,7 +93,28 @@ function scheduleRebuild(filename) {
 await runBuild();
 
 const server = http.createServer(async (request, response) => {
-  const url = new URL(request.url || "/", `http://${host}`);
+  const url = new URL(request.url || "/", `http://${request.headers.host || `${host}:${port}`}`);
+  if (url.pathname === '/api' || url.pathname.startsWith('/api/')) {
+    const abort = new AbortController();
+    response.once('close', () => { if (!response.writableFinished) abort.abort(); });
+    try {
+      const apiRequest = new Request(url, {
+        method: request.method, headers: request.headers, signal: abort.signal,
+        ...(!['GET', 'HEAD'].includes(request.method) ? { body: Readable.toWeb(request), duplex: 'half' } : {})
+      });
+      const result = await forwardDevApi(apiRequest, apiOrigin);
+      response.writeHead(result.status, {
+        ...Object.fromEntries(result.headers),
+        ...(result.headers.has('set-cookie') ? { 'set-cookie': result.headers.getSetCookie() } : {})
+      });
+      if (result.body) await pipeline(Readable.fromWeb(result.body), response);
+      else response.end();
+    } catch {
+      if (!response.headersSent) response.writeHead(503, { 'content-type': 'application/json; charset=utf-8', 'cache-control': 'no-store' });
+      if (!response.destroyed) response.end(JSON.stringify({ error: '本地后端连接中断，请重试。' }));
+    }
+    return;
+  }
   if (url.pathname === "/__botgo-reload") {
     response.writeHead(200, {
       "Cache-Control": "no-cache",
@@ -144,6 +169,7 @@ const watcher = fs.watch(root, { recursive: true }, (_event, filename) => {
 
 server.listen(port, host, () => {
   console.log(`[dev] BotGo 本地预览：http://${host}:${port}/`);
+  console.log(apiOrigin ? `[dev] 本地 API：${apiOrigin}` : '[dev] 静态预览；需要联调时配置 BOTGO_DEV_API_ORIGIN。');
 });
 
 function shutdown() {

@@ -1,7 +1,8 @@
 import { desktopCredentialFor, desktopRelayCredentialFor, issueDesktopKey } from './desktop-auth.js';
-import { catalog, imageCostMicros, meteredProxy, normalizedUsage, usageObserver } from './metering.js';
+import { catalog, imageCostMicros, meteredProxy, normalizedUsage, usageObserver, requestError } from './metering.js';
 import { resolveProfileConfig } from './platform-admin.js';
 import { officialModel } from './official-pricing.js';
+import { nativeCapabilities, NATIVE_REQUEST_MAX_BYTES } from './native-capabilities.js';
 
 const reply = (data, status=200) => Response.json(data.error?{code:'REQUEST_REJECTED',retryable:false,requestId:crypto.randomUUID(),...data}:data, {status, headers:{'cache-control':'no-store'}});
 const bearer = request => request.headers.get('authorization')?.replace(/^Bearer\s+/i,'') || '';
@@ -42,6 +43,15 @@ export function availableAgentRoutes(routes) {
   return routes.filter(r=>r.enabled && r.model_enabled && r.agent_enabled && r.members?.some(usableMember));
 }
 
+export async function resolveAgentCandidates(env,route){
+  const members=route.members.filter(usableMember)
+    .sort((a,b)=>(a.active_requests/a.max_concurrency)-(b.active_requests/b.max_concurrency)||a.priority-b.priority);
+  return (await Promise.all(members.map(async member=>{
+    const upstream=await resolveProfileConfig(env,member.profile_id);
+    return upstream?{...upstream,upstreamModelId:member.upstream_model_id||route.upstream_id,activeLeases:member.active_requests,maxConcurrency:member.max_concurrency}:null;
+  }))).filter(Boolean);
+}
+
 export async function imageModelRoutes(env) {
   return (await env.DB.prepare(`SELECT r.*,p.retired_at FROM image_model_routes r JOIN upstream_profiles p ON p.id=r.profile_id
     WHERE r.enabled=1 AND r.verified_at IS NOT NULL AND p.retired_at IS NULL ORDER BY r.model_id`).all()).results||[];
@@ -52,8 +62,9 @@ async function settleImageRequest(env,id,cost,usage,state,reason=null){
     WHERE id=? AND state='reserved'`).bind(state,cost,usage?JSON.stringify(usage):null,reason,id).run();
 }
 
-async function handleImageGeneration(request,env,identity){
-  const id=crypto.randomUUID();
+export async function handleImageGeneration(request,env,identity,options={}){
+  const channel=options.channel||'desktop_opencode';
+  const id=options.requestId?`${identity.account_id}:${channel}:${options.requestId}`:crypto.randomUUID();
   const reader=request.body?.getReader();if(!reader)return reply({error:'请求为空。'},400);
   const chunks=[];let length=0;
   for(;;){const {done,value}=await reader.read();if(done)break;length+=value.byteLength;if(length>65536){await reader.cancel();return reply({error:'请求过大。'},413);}chunks.push(value);}
@@ -70,19 +81,25 @@ async function handleImageGeneration(request,env,identity){
   if(!['textInput','textCached','imageInput','imageCached','imageOutput'].every(key=>Number.isFinite(imagePrice?.[key])&&imagePrice[key]>0))return reply({error:'生图模型计价配置无效。'},503);
   const upstream=await resolveProfileConfig(env,route.profile_id);if(!upstream)return reply({error:'生图上游不可用。'},503);
   await env.DB.prepare("UPDATE upstream_leases SET state='released',released_at=CURRENT_TIMESTAMP WHERE state='active' AND expires_at<=CURRENT_TIMESTAMP").run();
-  const {settings}=await catalog(env),snapshot={image:true,requestedModel:route.model_id,upstreamModel:route.upstream_model_id,billingModel:route.billing_model_id,profileId:route.profile_id,
+  const {settings}=await catalog(env),snapshot={image:true,requestedModel:route.model_id,upstreamModel:route.upstream_model_id,billingModel:route.billing_model_id,profileId:route.profile_id,taskId:options.taskId||null,
     price:imagePrice,multiplierPpm:settings.multiplier_ppm,usdCnyPpm:settings.usd_cny_ppm,settingsRevision:settings.revision,quality,size};
   const maxInput=new TextEncoder().encode(body.prompt).length;
   const reserved=imageCostMicros({input_tokens:maxInput,input_tokens_details:{text_tokens:maxInput},output_tokens:16384,output_tokens_details:{image_tokens:16384}},snapshot);
   try{await env.DB.prepare(`INSERT INTO metered_requests(id,account_id,channel,model,snapshot,reserved_micros,state,review_required)
-      VALUES(?,?,'desktop_opencode',?,?,?,'reserved',0)`).bind(id,identity.account_id,route.model_id,JSON.stringify(snapshot),reserved).run();}
-  catch(error){if(String(error).includes('BILLING_INSUFFICIENT'))return reply({error:'余额不足，请充值后再生成图片。',code:'BILLING_INSUFFICIENT'},402);if(String(error).includes('AGENT_CONCURRENCY_LIMIT'))return reply({error:'当前任务较多，请稍后重试。',code:'AGENT_CONCURRENCY_LIMIT'},429);throw error;}
+      VALUES(?,?,?,?,?,?,'reserved',0)`).bind(id,identity.account_id,channel,route.model_id,JSON.stringify(snapshot),reserved).run();}
+  catch(error){if(String(error).includes('UNIQUE'))return requestError('该请求已受理，请刷新对话。',409,'REQUEST_EXISTS',false,id);if(String(error).includes('BILLING_INSUFFICIENT'))return reply({error:'余额不足，请充值后再生成图片。',code:'BILLING_INSUFFICIENT'},402);if(String(error).includes('AGENT_CONCURRENCY_LIMIT'))return reply({error:'当前任务较多，请稍后重试。',code:'AGENT_CONCURRENCY_LIMIT'},429);throw error;}
   const leaseId=crypto.randomUUID();
   try{await env.DB.prepare("INSERT INTO upstream_leases(id,request_id,account_id,profile_id,expires_at) VALUES(?,?,?, ?,datetime('now','+5 minutes'))").bind(leaseId,id,identity.account_id,route.profile_id).run();}
   catch(error){await settleImageRequest(env,id,0,null,'refunded','capacity_unavailable');return reply({error:'上游繁忙，请稍后重试。',code:String(error).includes('UPSTREAM_CAPACITY_LIMIT')?'UPSTREAM_CAPACITY_LIMIT':'ACCOUNT_CONCURRENCY_LIMIT'},429);}
+  const abort=new AbortController(),signal=AbortSignal.any([request.signal,abort.signal,AbortSignal.timeout(180000)]);
+  let finished=false,cancelTimer,userCancelled=false;
+  const checkCancellation=async()=>{if(options.history?.cancelled&&await options.history.cancelled()){userCancelled=true;abort.abort(new DOMException('Cancelled','AbortError'));}signal.throwIfAborted();};
+  const poll=async()=>{try{await checkCancellation();}catch(error){abort.abort(error);}if(!finished&&!signal.aborted)cancelTimer=setTimeout(poll,1000);};
+  if(options.history?.cancelled)cancelTimer=setTimeout(poll,1000);
+  try{
   let response;
-  try{response=await fetch(`${upstream.baseUrl}/images/generations`,{method:'POST',redirect:'manual',headers:{authorization:`Bearer ${upstream.apiKey}`,'content-type':'application/json'},signal:AbortSignal.any([request.signal,AbortSignal.timeout(180000)]),body:JSON.stringify({model:route.upstream_model_id,prompt:body.prompt,size,quality,n:1,output_format:'png'})});}
-  catch(error){await settleImageRequest(env,id,0,null,'refunded',request.signal.aborted?'client_cancelled':'upstream_connection');return requestError(request.signal.aborted?'生成已停止，本次未扣费。':'连接中断，图片生成状态未知，本次未扣费。',502,request.signal.aborted?'CANCELLED':'REQUEST_UNCERTAIN',false,id);}
+  try{await checkCancellation();response=await fetch(`${upstream.baseUrl}/images/generations`,{method:'POST',redirect:'manual',headers:{authorization:`Bearer ${upstream.apiKey}`,'content-type':'application/json'},signal,body:JSON.stringify({model:route.upstream_model_id,prompt:body.prompt,size,quality,n:1,output_format:'png'})});}
+  catch(error){const stopped=request.signal.aborted||userCancelled;await settleImageRequest(env,id,0,null,'refunded',stopped?'client_cancelled':'upstream_connection');return requestError(stopped?'生成已停止。':'连接中断，图片生成状态未知，请手动重试。',stopped?499:502,stopped?'CANCELLED':signal.aborted?'UPSTREAM_TIMEOUT':'REQUEST_UNCERTAIN',false,id);}
   if(!response.ok){await response.body?.cancel();await settleImageRequest(env,id,0,null,'refunded','upstream_rejected');return requestError(`上游生图请求失败（HTTP ${response.status}），本次未扣费。`,502,'UPSTREAM_REJECTED',false,id);}
   let result;
   try{result=await boundedJson(response,16*1024*1024);if(result.error||!Array.isArray(result.data)||!result.data[0]?.b64_json)throw Error('INVALID_IMAGE_RESPONSE');}
@@ -90,9 +107,13 @@ async function handleImageGeneration(request,env,identity){
   let cost;
   try{cost=imageCostMicros(result.usage,snapshot);}catch{await settleImageRequest(env,id,0,null,'refunded','missing_image_usage');return requestError('上游未返回可核验的图像用量，本次未扣费。',502,'MISSING_IMAGE_USAGE',false,id);}
   if(cost>reserved){await settleImageRequest(env,id,0,null,'refunded','image_usage_exceeded_reservation');return requestError('图片用量超过预留范围，本次未扣费。请降低图片尺寸或质量后重试。',502,'IMAGE_USAGE_LIMIT',false,id);}
+  await checkCancellation();
+  if(options.complete)return await options.complete({result,cost,id,model:route.model_id,signal});
   await settleImageRequest(env,id,cost,result.usage,'completed');
   const headers={'content-type':'application/json; charset=utf-8','cache-control':'no-store','x-botgo-request-id':id};
   return new Response(JSON.stringify({...result,model:route.model_id}),{headers});
+  }catch(error){const stopped=request.signal.aborted||userCancelled;await settleImageRequest(env,id,0,null,'refunded',stopped?'client_cancelled':'image_persistence_failed');return requestError(stopped?'生成已停止。':'图片未能保存，请手动重试。',stopped?499:502,stopped?'CANCELLED':'IMAGE_STORAGE_FAILED',false,id);}
+  finally{finished=true;clearTimeout(cancelTimer);await env.DB.prepare("UPDATE upstream_leases SET state='released',released_at=CURRENT_TIMESTAMP WHERE request_id=? AND state='active'").bind(id).run();}
 }
 
 export async function handleOpenCode(request, env, ctx, path) {
@@ -110,7 +131,7 @@ export async function handleOpenCode(request, env, ctx, path) {
       const cachedModels=new Map(cached.map(row=>[row.model_id,JSON.parse(row.model_json)]));
       const models=rows.map(r=>{const official=cachedModels.get(r.model_id)||officialModel(r.model_id);return {id:r.model_id,name:r.name,protocol:r.protocol,price:JSON.parse(r.price_json),
         multiplier:(r.multiplier_ppm??settings.multiplier_ppm)/1e6,usdCny:settings.usd_cny_ppm/1e6,
-        ...(official?.modalities?{modalities:official.modalities,attachment:official.modalities.input.includes('image')}: {}),
+        ...nativeCapabilities(official,(request.headers.get('x-botgo-native-modalities')||'text,image').split(',').map(kind=>kind.trim())),
         ...(official?.reasoning?{reasoning:true}:{}),...(official?.limit?{limit:official.limit}:{})};});
       const imageModels=imageRows.map(row=>({id:row.model_id,name:row.name,billingModelId:row.billing_model_id}));
       return reply({key:issued.key,models,imageModels,defaultModel:models.some(m=>m.id===settings.default_model)?settings.default_model:models[0].id,
@@ -118,7 +139,11 @@ export async function handleOpenCode(request, env, ctx, path) {
     }
     const identity=await desktopRelayCredentialFor(env,bearer(request));
     if (!identity) return reply({error:'设备凭据无效或已撤销。'},401);
-    if(path==='/opencode/v1/images/generations'&&request.method==='POST')return await handleImageGeneration(request,env,identity);
+    if(path==='/opencode/v1/images/generations'&&request.method==='POST') {
+      const taskId=request.headers.get('x-botgo-task-id');
+      if(taskId&&!/^[A-Za-z0-9_-]{1,128}$/.test(taskId))return reply({error:'任务标识无效。'},400);
+      return await handleImageGeneration(request,env,identity,{taskId:taskId||null});
+    }
     if (path==='/opencode/v1/models' && request.method==='GET') {
       return reply({object:'list',data:availableAgentRoutes(await agentRoutes(env)).map(r=>({id:r.model_id,object:'model',owned_by:'botgo'}))});
     }
@@ -134,19 +159,14 @@ export async function handleOpenCode(request, env, ctx, path) {
     // Bound request memory before JSON parsing, including requests without Content-Length.
     const reader=request.body?.getReader(); if(!reader)return reply({error:'请求为空。'},400);
     const chunks=[];let length=0;
-    for(;;){const {done,value}=await reader.read();if(done)break;length+=value.length;if(length>1000000){await reader.cancel();return reply({error:'请求过大。'},413);}chunks.push(value);}
+    for(;;){const {done,value}=await reader.read();if(done)break;length+=value.length;if(length>NATIVE_REQUEST_MAX_BYTES){await reader.cancel();return reply({error:'附件与上下文合计超过 16 MiB 请求上限。'},413);}chunks.push(value);}
     const bytes=new Uint8Array(length);let offset=0;for(const chunk of chunks){bytes.set(chunk,offset);offset+=chunk.length;}
     let body;try{body=JSON.parse(new TextDecoder().decode(bytes));}catch{return reply({error:'JSON 无效。'},400);}
     if(!body||typeof body.model!=='string'||(protocol==='chat'?!Array.isArray(body.messages):body.input===undefined))return reply({error:'请求不完整。'},400);
     if(identity.model && identity.model!==body.model)return reply({error:'凭据不允许访问该模型。'},403);
     const route=availableAgentRoutes(await agentRoutes(env)).find(r=>r.model_id===body.model && r.protocol===protocol);
     if(!route)return reply({error:'模型或协议未启用，请检查模型配置。',code:'ROUTE_UNAVAILABLE'},503);
-    const members=route.members.filter(usableMember)
-      .sort((a,b)=>(a.active_requests/a.max_concurrency)-(b.active_requests/b.max_concurrency)||a.priority-b.priority);
-    const candidates=(await Promise.all(members.map(async member=>{
-      const upstream=await resolveProfileConfig(env,member.profile_id);
-      return upstream?{...upstream,upstreamModelId:member.upstream_model_id||route.upstream_id,activeLeases:member.active_requests,maxConcurrency:member.max_concurrency}:null;
-    }))).filter(Boolean);
+    const candidates=await resolveAgentCandidates(env,route);
     if(!candidates.length)return reply({error:'上游配置不可用。'},503);
     const taskId=request.headers.get('x-botgo-task-id');
     if(taskId && !/^[A-Za-z0-9_-]{1,128}$/.test(taskId))return reply({error:'任务标识无效。'},400);
@@ -182,10 +202,14 @@ export async function probeAgentRoute(env, route, upstreamId) {
   const fn={name:'botgo_probe',description:'Return a fixed probe value.',parameters:{type:'object',properties:{value:{type:'string'}},required:['value'],additionalProperties:false},strict:true};
   const prompt={role:'user',content:'Call botgo_probe with value OK; then reply OK.'};
   const tools=chat?[{type:'function',function:fn}]:[{type:'function',...fn}];
+  // New Claude releases reject forced tool_choice. A prompt-driven auto call
+  // still must produce a real native tool call, usage, and a continuation.
+  const claude=/^claude-/.test(upstreamId);
   const invoke=body=>fetch(`${upstream.baseUrl}/${chat?'chat/completions':'responses'}`,{method:'POST',redirect:'manual',
     headers:{authorization:`Bearer ${upstream.apiKey}`,'content-type':'application/json'},signal:AbortSignal.timeout(45000),
-    body:JSON.stringify({model:upstreamId,stream:true,...(chat?{max_completion_tokens:128,stream_options:{include_usage:true}}:{max_output_tokens:128}),...body})}).then(readProbe);
-  const events=await invoke(chat?{messages:[prompt],tools,tool_choice:{type:'function',function:{name:fn.name}}}:{input:[prompt],tools,tool_choice:{type:'function',name:fn.name}});
+    body:JSON.stringify({model:upstreamId,stream:true,...(chat?{max_completion_tokens:claude?512:128,stream_options:{include_usage:true}}:{max_output_tokens:claude?512:128}),...body})}).then(readProbe);
+  const toolChoice=claude?'auto':chat?{type:'function',function:{name:fn.name}}:{type:'function',name:fn.name};
+  const events=await invoke(chat?{messages:[prompt],tools,tool_choice:toolChoice}:{input:[prompt],tools,tool_choice:toolChoice});
   if(chat){
     const call={id:'',type:'function',function:{name:'',arguments:''}};
     for(const e of events)for(const c of e.choices?.[0]?.delta?.tool_calls||[]){if(c.index!==0)continue;call.id+=c.id||'';call.function.name+=c.function?.name||'';call.function.arguments+=c.function?.arguments||'';}

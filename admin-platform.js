@@ -183,9 +183,11 @@
 
   async function loadPlan() {
     const [data, orders] = await Promise.all([api("/admin/billing/plan"), api("/admin/billing/orders")]);
-    $("#payment-state").textContent = data.paymentAvailable ? "可用" : "未开放"; $("#payment-state").className = `status-pill ${data.paymentAvailable ? "success" : "warning"}`;
-    const states = { pending: "待支付", paid: "已入账", closed: "已关闭", failed: "失败" };
-    const rows = (orders.orders || []).map((order) => `<tr>${cell("订单", escapeHtml(order.outTradeNo || order.out_trade_no || order.id))}${cell("账户", escapeHtml(order.email))}${cell("金额（元）", (Number(order.amountCents ?? order.amount_cents) / 100).toFixed(2))}${cell("状态", states[order.status] || escapeHtml(order.status))}${cell("时间", formatTime(order.createdAt || order.created_at))}</tr>`);
+    const reasons = { secret_missing: '缺少支付凭据', provider_auth: '支付凭据验证失败', provider_busy: '支付服务繁忙', provider_response: '支付服务响应异常', provider_unavailable: '支付服务连接失败', plan_unavailable: '套餐或所需能力未开放' };
+    $("#payment-state").textContent = data.paymentAvailable ? "可用" : reasons[data.reason] || "未开放";
+    $("#payment-state").className = `status-pill ${data.paymentAvailable ? "success" : "warning"}`;
+    const states = { pending: "待确认", paid: "已入账", paid_uncredited: "已付款，待入账", refunded: "已退款", closed: "已关闭", failed: "失败" };
+    const rows = (orders.orders || []).map((order) => `<tr>${cell("订单", escapeHtml(order.outTradeNo || order.out_trade_no || order.id))}${cell("账户", escapeHtml(order.email))}${cell("金额（元）", (Number(order.amountCents ?? order.amount_cents) / 100).toFixed(2))}${cell("状态", order.provider === 'alipay' && order.status === 'pending' ? '待支付' : states[order.status] || escapeHtml(order.status))}${cell("时间", formatTime(order.createdAt || order.created_at))}</tr>`);
     $("#order-list").innerHTML = table(["订单", "账户", "金额（元）", "状态", "时间"], rows, "暂无充值订单");
   }
 

@@ -1,3 +1,6 @@
+import { supportsWebSearch, searchUsage, searchWasUsed } from './web-search.js';
+import { officialModel } from './official-pricing.js';
+import { NATIVE_REQUEST_MAX_BYTES } from './native-capabilities.js';
 // Standard OpenAI API rate snapshot, USD per million tokens, 2026-09-12.
 export const MODEL_SEEDS = [
   ['gpt-5.6-sol','GPT-5.6 Sol',4,.4,5,20],
@@ -47,7 +50,7 @@ export function normalizedUsage(usage) {
 }
 export function costMicros(usage,snapshot) {
   const {input,output,cached,write}=normalizedUsage(usage);
-  const p=snapshot.price, long=input>p.longThreshold;
+  const p=snapshot.price, long=p.longThresholdInclusive===true?input>=p.longThreshold:input>p.longThreshold;
   // Rates have up to six decimals; BigInt avoids float drift in tiny charges.
   const rate=n=>BigInt(Math.round(n*1e6));
   const inFactor=rate(long?p.longInput:1), outFactor=rate(long?p.longOutput:1);
@@ -72,15 +75,16 @@ export function imageCostMicros(usage,snapshot) {
   return Number(result);
 }
 export function usageObserver() {
-  let buffer='',usage=null,invalid=false,failed=false,terminalSeen=false,firstEventAt=null;
+  let buffer='',usage=null,invalid=false,failed=false,terminalSeen=false,firstEventAt=null,searched=false;
   const decoder=new TextDecoder();
   function line(value) {
     if(!value.startsWith('data:'))return;
     const data=value.slice(5).trim();if(!data)return;if(data==='[DONE]'){terminalSeen=true;return;}
     try {const item=JSON.parse(data);if(item.error||['error','response.failed','response.incomplete'].includes(item.type))failed=true;
       if(item.type==='response.completed')terminalSeen=true;
+      if(item.type==='response.web_search_call.completed'||searchWasUsed(item.response))searched=true;
       if(firstEventAt===null&&(item.choices?.some(c=>c.delta?.content||c.delta?.reasoning_content||c.delta?.tool_calls?.length)||/^response\.(output_text|reasoning.*|function_call_arguments)\.delta$/.test(item.type||'')||item.type==='response.output_item.added'&&item.item?.type==='function_call'))firstEventAt=Date.now();
-      const terminal=!item.type||['response.completed','response.incomplete','response.failed'].includes(item.type);const candidate=terminal?(item.usage??item.response?.usage):null;if(candidate){normalizedUsage(candidate);usage=candidate;}}
+      const terminal=!item.type||['response.completed','response.incomplete','response.failed'].includes(item.type);const candidate=terminal?(item.usage??item.response?.usage):null;if(candidate){normalizedUsage(candidate);const search=searchUsage(item.response);usage=search?{...candidate,tool_usage:{web_search:search}}:candidate;}}
     catch {invalid=true;}
   }
   return {
@@ -89,7 +93,8 @@ export function usageObserver() {
     latest(){return invalid?null:usage;},
     failed(){return failed||invalid;},
     complete(){return terminalSeen;},
-    firstEventAt(){return firstEventAt;}
+    firstEventAt(){return firstEventAt;},
+    searchUsed(){return searched;}
   };
 }
 export async function settle(env,id,usage,snapshot,state='completed',blockRoute=true,reviewReason=null) {
@@ -101,12 +106,13 @@ export async function settle(env,id,usage,snapshot,state='completed',blockRoute=
   if(state==='refunded'&&!reviewReason)reviewReason=blockRoute?'request_failed':'client_cancelled';
   const settled=await env.DB.prepare("UPDATE metered_requests SET state=?,cost_micros=?,usage_json=?,review_reason=?,review_required=0 WHERE id=? AND state='reserved'").bind(state,cost,usage?JSON.stringify(usage):null,reviewReason,id).run();
   // Late cancellation/duplicate completion must not change route health or costs.
-  if(settled.meta?.changes===0)return;
+  if(settled.meta?.changes===0)return (await env.DB.prepare('SELECT state FROM metered_requests WHERE id=?').bind(id).first())?.state;
   if(usage && snapshot.costPrice) {
     const estimate=costMicros(usage,{...snapshot,multiplierPpm:1000000,price:{...snapshot.price,...snapshot.costPrice}});
     await env.DB.prepare('UPDATE metered_requests SET upstream_cost_estimate_micros=? WHERE id=? AND upstream_cost_estimate_micros IS NULL').bind(estimate,id).run();
   }
   // Failure reasons remain auditable but never alter account or global route state.
+  return state;
 }
 async function releaseUpstreamLease(env,requestId,profileId=null) {
   const suffix=profileId?' AND profile_id=?':'';
@@ -136,10 +142,10 @@ export async function releaseExpiredRequests(env,accountId=null) {
     accountId?expired.bind(accountId):expired
   ]);
 }
-export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstream,candidates,history,billingModel=null,agentRoute=null,taskId=null}) {
+export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstream,candidates,history,billingModel=null,agentRoute=null,taskId=null,nativeWebSearch=false,imageTool=null,webTurnId=null}) {
   const startedAt=Date.now();
   let pool=(Array.isArray(candidates)&&candidates.length?candidates:upstream?[upstream]:[]).filter(candidate=>candidate?.profileId&&candidate.baseUrl&&candidate.apiKey);
-  if(channel==='desktop_opencode' && (!agentRoute || !agentRoute.enabled || agentRoute.model_id!==body.model || !pool.length))return reply({error:'Agent 路由未经验证。'},503);
+  if((channel==='desktop_opencode'||agentRoute) && (!agentRoute || !agentRoute.enabled || agentRoute.model_id!==body.model || !pool.length))return reply({error:'Agent 路由未经验证。'},503);
   // Recover abandoned reservations only after the upstream timeout has elapsed.
   await releaseExpiredRequests(env,accountId);
   if(agentRoute){
@@ -152,7 +158,7 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
   const requestedModel=body.model==='gpt-5.6'?data.settings.default_model:body.model;
   if(requestedModel===AUTO_REVIEW_MODEL_ID)return reply({error:'旧版自动审核协议不可用，请更新客户端。'},503);
   const model=data.models.find(m=>m.id===requestedModel);
-  if(!model?.enabled || !(channel==='web_chat'?model.web_enabled:model.agent_enabled)) return reply({error:'所选模型暂不可用。'},400);
+  if(!model?.enabled || !(channel==='web_chat'&&!agentRoute?model.web_enabled:model.agent_enabled)) return reply({error:'所选模型暂不可用。'},400);
   pool=pool.filter(candidate=>!candidate.routeModelId||candidate.routeModelId===model.upstream_id);
   if(!pool.length)return reply({error:'所选模型没有启用的上游路由。'},503);
   const autoReview=channel==='desktop_codex'&&billingModel&&model.id===AUTO_REVIEW_BILLING_MODEL_ID&&model.id!==billingModel;
@@ -170,16 +176,30 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
   if(body.service_tier && !['auto','default'].includes(body.service_tier)) return reply({error:'当前仅支持 Standard 计费。'},400);
   if(body.background || body.previous_response_id) return reply({error:'请发送完整上下文；暂不支持后台任务或上游会话引用。'},400);
   if(body.tools!==undefined&&(!Array.isArray(body.tools)||body.tools.some(t=>!t||!['function','custom','local_shell','shell','apply_patch'].includes(t.type)||(t.type==='shell'&&t.environment?.type!=='local')))) return reply({error:'暂不支持另行计费的托管工具。'},400);
+  if(nativeWebSearch&&(channel!=='web_chat'||body.tools!==undefined||!pool.every(c=>supportsWebSearch(c,agentRoute))))return reply({error:'联网路由未通过验证。'},400);
+  if(imageTool&&(channel!=='web_chat'||body.tools!==undefined))return reply({error:'生图工具来源无效。'},400);
   if(body.n!==undefined&&body.n!==1) return reply({error:'每次请求只支持一个结果。'},400);
   const price=model.price;
   const upstreamModel=model.upstream_id;
   const snapshot={requestedModel,billingModel:model.id,selectedModel:billingModel||model.id,requestPurpose:autoReview?'auto_review':'task',upstreamModel,profileId:null,attempts:[],price,revision:model.revision,multiplierPpm:model.multiplier_ppm??data.settings.multiplier_ppm,usdCnyPpm:data.settings.usd_cny_ppm,settingsRevision:data.settings.revision,
+    ...(nativeWebSearch?{webSearch:{provider:'kedaya',protocol:'responses',toolFee:'not_in_token_estimate'}}:{}),
+    ...(channel==='web_chat'&&webTurnId?{webTurnId}:{}),
     ...(agentRoute?{agentProtocol:agentRoute.protocol,routeRevision:agentRoute.revision,taskId,costPrice:agentRoute.cost_price_json?JSON.parse(agentRoute.cost_price_json):null}: {})};
   const requested=body.max_output_tokens??body.max_completion_tokens??body.max_tokens??8192;
   if(!Number.isInteger(requested)||requested<1) return reply({error:'输出上限无效。'},400);
-  const maxOutput=Math.min(requested,16384);
-  const inputBound=new TextEncoder().encode(JSON.stringify(body)).length+4096;
-  if(inputBound>1000000) return reply({error:'上下文过长，请开始新对话。'},413);
+  const native=channel==='desktop_opencode';
+  const cachedNative=native?await env.DB.prepare('SELECT model_json FROM official_model_cache WHERE model_id=?').bind(model.id).first():null;
+  const nativeModel=cachedNative?JSON.parse(cachedNative.model_json):native?officialModel(model.id):null;
+  const outputLimit=native?(nativeModel?.limit?.output||8192):16384;
+  if(native&&requested>outputLimit)return reply({error:'输出上限超过当前模型已声明的能力。'},400);
+  const maxOutput=Math.min(requested,outputLimit);
+  const requestBytes=new TextEncoder().encode(JSON.stringify(body)).length;
+  if(requestBytes>(native?NATIVE_REQUEST_MAX_BYTES:1000000-4096)) return reply({error:native?'附件与上下文合计超过 16 MiB 请求上限。':'上下文过长，请开始新对话。'},413);
+  // Compressed PDF/image bytes do not bound visual tokens. Reserve at the
+  // declared native context limit for binary input; charge only actual usage.
+  const binaryInput=native&&[...(body.messages||[]),...(Array.isArray(body.input)?body.input:[])].some(message=>Array.isArray(message?.content)&&message.content.some(part=>['file','input_file','image_url','input_image','input_audio','audio','input_video','video'].includes(part?.type)));
+  const contextLimit=native?(nativeModel?.limit?.context||128000):Number.MAX_SAFE_INTEGER;
+  const inputBound=binaryInput?contextLimit:Math.min(requestBytes+4096,contextLimit);
   const reserved=costMicros({input_tokens:inputBound,output_tokens:maxOutput},{...snapshot,price:{...price,input:Math.max(price.input,price.write)}});
   const retryKey=request.headers.get('idempotency-key');
   if(retryKey&&!/^[a-zA-Z0-9_-]{16,128}$/.test(retryKey))return reply({error:'请求标识无效。'},400);
@@ -199,6 +219,8 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
     delete payload.max_tokens;
     if(chat){delete payload.max_output_tokens;delete payload.input;}
     else {delete payload.max_completion_tokens;if(channel==='web_chat'){payload.input=payload.messages;delete payload.messages;}}
+    if(nativeWebSearch){payload.tools=[{type:'web_search',search_context_size:'low'}];payload.tool_choice='auto';payload.include=['web_search_call.action.sources'];}
+    if(imageTool){payload.tools=[...(payload.tools||[]),chat?{type:'function',function:imageTool}:{type:'function',...imageTool}];payload.tool_choice='auto';payload.parallel_tool_calls=false;}
     return {chat,payload};
   };
   const abort=new AbortController();
@@ -206,13 +228,25 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
   const cancel=()=>abort.abort(request.signal.reason);
   request.signal.addEventListener('abort',cancel,{once:true});
   if(request.signal.aborted)cancel();
+  let userCancelled=false,cancelTimer;
+  const checkCancellation=async()=>{
+    if(history?.cancelled&&await history.cancelled()){
+      userCancelled=true;abort.abort(new DOMException('Cancelled','AbortError'));
+    }
+    abort.signal.throwIfAborted();
+  };
+  const pollCancellation=async()=>{
+    try{await checkCancellation();}catch(error){abort.abort(error);}
+    if(!finished&&!abort.signal.aborted)cancelTimer=setTimeout(pollCancellation,1000);
+  };
   const timing={prepareMs:Date.now()-startedAt};
   let finished=false;
   function finish(reason){
-    if(finished)return;finished=true;clearTimeout(timeout);request.signal.removeEventListener('abort',cancel);
+    if(finished)return;finished=true;clearTimeout(timeout);clearTimeout(cancelTimer);request.signal.removeEventListener('abort',cancel);
     console.log(JSON.stringify({event:'botgo_request',requestId:id,model:requestedModel,...timing,totalMs:Date.now()-startedAt,reason}));
   }
   let response,selected,selectedReader,firstChunk,firstDone=false,uncertain=false,capacityBlocked=0;
+  if(history?.cancelled)cancelTimer=setTimeout(pollCancellation,1000);
   try { for(const candidate of [...new Map(pool.map(p=>[p.profileId,p])).values()]) {
     if(abort.signal.aborted)break;
     const lease=await acquireUpstreamLease(env,id,accountId,candidate.profileId);
@@ -224,7 +258,7 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
     snapshot.attempts.push({profileId:candidate.profileId,startedAt:new Date().toISOString()});
     await env.DB.prepare('UPDATE metered_requests SET snapshot=? WHERE id=? AND state=\'reserved\'').bind(JSON.stringify(snapshot),id).run();
     try {
-      abort.signal.throwIfAborted();
+      await checkCancellation();
       const {chat,payload}=requestPayload(candidate);
       const upstreamStartedAt=Date.now();
       response=await fetch(`${candidate.baseUrl}/${chat?'chat/completions':'responses'}`,{method:'POST',headers:{authorization:`Bearer ${candidate.apiKey}`,'content-type':'application/json'},body:JSON.stringify(payload),signal:abort.signal,redirect:'manual'});
@@ -254,7 +288,7 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
     return requestError('服务暂不可用，本次未扣费。',503,'GATEWAY_ERROR',false,id);
   }
   if(!selected) {
-    const stopped=request.signal.aborted,reason=stopped?'client_cancelled':abort.signal.aborted?'upstream_timeout':uncertain?'request_uncertain':'upstream_unavailable';
+    const stopped=request.signal.aborted||userCancelled,reason=stopped?'client_cancelled':abort.signal.aborted?'upstream_timeout':uncertain?'request_uncertain':'upstream_unavailable';
     await settle(env,id,null,snapshot,'refunded',!stopped,reason);finish(reason);
     if(stopped)return requestError('请求已停止。',499,'CANCELLED',false,id);
     if(uncertain)return requestError('上游连接中断，执行状态未知，本次未扣费。请手动继续。',502,'REQUEST_UNCERTAIN',false,id);
@@ -271,10 +305,14 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
       const result=JSON.parse(new TextDecoder().decode(bytes));
       abort.signal.throwIfAborted();
       if(result.error||['failed','incomplete'].includes(result.status))throw Error('UPSTREAM_RESPONSE_FAILED');
-      await settle(env,id,result.usage,snapshot);
+      if(history?.validateResult&&!history.validateResult(result))throw Error('EMPTY_ANSWER');
+      await checkCancellation();
+      const search=searchUsage(result);
+      const state=await settle(env,id,search?{...result.usage,tool_usage:{web_search:search}}:result.usage,snapshot);
+      if(state!=='completed'){if(history)await history.finish(userCancelled?'stopped':'failed');return requestError('回答未完整返回，请稍后重试。',502,'INVALID_RESPONSE',false,id);}
       if(history)await history.result(result);
       return new Response(bytes,{headers});
-    } catch {await settle(env,id,null,snapshot,'refunded',true,'invalid_response');return requestError('上游响应异常，本次未扣费。',502,'INVALID_RESPONSE',false,id);}
+    } catch {const stopped=request.signal.aborted||userCancelled;await settle(env,id,null,snapshot,'refunded',!stopped,stopped?'client_cancelled':'invalid_response');if(history)await history.finish(stopped?'stopped':'failed');return requestError(stopped?'请求已停止。':'上游响应异常，本次未扣费。',stopped?499:502,stopped?'CANCELLED':'INVALID_RESPONSE',false,id);}
     finally {finish('json_finished');await releaseUpstreamLease(env,id,selected.profileId);}
   }
   const observer=usageObserver();const transform=new TransformStream();const writer=transform.writable.getWriter();const reader=selectedReader;const outputReader=transform.readable.getReader();let downstreamCancelled=false;
@@ -288,12 +326,16 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
       if(!firstDone)for(;;){abort.signal.throwIfAborted();const {done,value}=await reader.read();if(done)break;observer.push(value);if(history)await history.push(value);await writer.write(value);}
       if(downstreamCancelled||request.signal.aborted)throw Error('CANCELLED');
       abort.signal.throwIfAborted();
+      await checkCancellation();
       const usage=observer.finish(),failed=observer.failed();
       if(!observer.complete())throw Error('INCOMPLETE_STREAM');
-      await settle(env,id,usage,snapshot,failed?'refunded':'completed',true,failed?'stream_failed':null);
-      if(history)await history.finish(failed?'failed':'completed');await writer.close();
+      if(history?.hasAnswer&&!history.hasAnswer())throw Error('EMPTY_ANSWER');
+      const state=await settle(env,id,usage,snapshot,failed?'refunded':'completed',true,failed?'stream_failed':null);
+      if(history)await history.finish(state==='completed'?'completed':userCancelled?'stopped':'failed');
+      if(state!=='completed')await writer.write(new TextEncoder().encode('data: '+JSON.stringify({error:'回答未完整返回，请稍后重试。'})+'\n\n'));
+      await writer.close();
     }
-    catch(error){const stopped=downstreamCancelled||request.signal.aborted;abort.abort();await reader.cancel().catch(()=>{});try{await settle(env,id,observer.latest(),snapshot,'refunded',!stopped,stopped?'client_cancelled':'stream_failed');if(history)await history.finish(stopped?'stopped':'failed');}finally{await writer.abort(error).catch(()=>{});}}
+    catch(error){const stopped=downstreamCancelled||request.signal.aborted||userCancelled;abort.abort();await reader.cancel().catch(()=>{});try{await settle(env,id,observer.latest(),snapshot,'refunded',!stopped,stopped?'client_cancelled':'stream_failed');if(history)await history.finish(stopped?'stopped':'failed');}finally{await writer.abort(error).catch(()=>{});}}
     finally {abort.signal.removeEventListener('abort',stopStream);const first=observer.firstEventAt();if(first!==null)timing.firstModelEventMs=first-startedAt;finish(downstreamCancelled?'cancelled':'stream_finished');await releaseUpstreamLease(env,id,selected.profileId);}
   })();
   ctx.waitUntil(pipeline);

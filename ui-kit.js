@@ -22,13 +22,25 @@
     select.addEventListener('change',sync);new MutationObserver(sync).observe(select,{attributes:true,childList:true,subtree:true});sync();return button;
   }
   function inline(text,parent) {
-    const tokens=String(text).split(/(`[^`\n]+`|\*\*[^*\n]+\*\*)/g);
-    for(const token of tokens){let node;if(token.startsWith('`')&&token.endsWith('`')){node=document.createElement('code');node.textContent=token.slice(1,-1);}else if(token.startsWith('**')&&token.endsWith('**')){node=document.createElement('strong');node.textContent=token.slice(2,-2);}else node=document.createTextNode(token);parent.append(node);}
+    const tokens=String(text).split(/(`[^`\n]+`|\*\*[^*\n]+\*\*|\[[^\]\n]{1,200}\]\(https?:\/\/[^\s()]{1,2048}\))/g);
+    for(const token of tokens){let node;const link=token.match(/^\[([^\]]+)\]\((https?:\/\/[^\s()]+)\)$/);if(link){try{const url=new URL(link[2]);if(url.username||url.password)throw Error('Invalid link');node=document.createElement('a');node.href=url.href;node.textContent=link[1];node.target='_blank';node.rel='noopener noreferrer';}catch{node=document.createTextNode(token);}}else if(token.startsWith('`')&&token.endsWith('`')){node=document.createElement('code');node.textContent=token.slice(1,-1);}else if(token.startsWith('**')&&token.endsWith('**')){node=document.createElement('strong');node.textContent=token.slice(2,-2);}else node=document.createTextNode(token);parent.append(node);}
   }
   function markdown(target,text) {
     target.replaceChildren();const parts=String(text).split(/```([^\n`]*)\n([\s\S]*?)(?:```|$)/g);
     for(let i=0;i<parts.length;i++){if(i%3===1){const pre=document.createElement('pre'),code=document.createElement('code'),bar=document.createElement('div'),copy=document.createElement('button');bar.className='code-bar';bar.textContent=parts[i]||'代码';copy.type='button';copy.textContent='复制代码';const content=parts[++i];copy.addEventListener('click',()=>copyText(content,copy));bar.append(copy);code.textContent=content;pre.append(bar,code);target.append(pre);continue;}if(i%3===2)continue;let list=null;for(const line of parts[i].split('\n')){const item=line.match(/^\s*(?:[-*]|\d+\.)\s+(.+)/);if(item){if(!list){list=document.createElement('ul');target.append(list);}const li=document.createElement('li');inline(item[1],li);list.append(li);}else{list=null;if(!line.trim())continue;const heading=line.match(/^(#{1,3})\s+(.+)/);const p=document.createElement(heading?`h${heading[1].length+1}`:'p');inline(heading?heading[2]:line,p);target.append(p);}}}
   }
   async function copyText(text,button){try{await navigator.clipboard.writeText(text);const old=button.textContent;button.textContent='已复制';setTimeout(()=>button.textContent=old,1400);}catch{button.textContent='复制失败';}}
-  window.BotGoUI={menu,enhanceSelect,markdown,copyText};
+  function citedAnswer(text,result){
+    const sources=new Map();
+    sourceItems:for(const item of result?.output||[])for(const content of item.content||[])for(const citation of content.annotations||[]){
+      if(citation.type!=='url_citation'||typeof citation.url!=='string'||citation.url.length>2048)continue;
+      try{const url=new URL(citation.url);if(!['https:','http:'].includes(url.protocol)||url.username||url.password)continue;
+        const title=String(citation.title||url.hostname).replace(/[\[\]()`<>\r\n]/g,' ').replace(/\s+/g,' ').trim().slice(0,160);
+        sources.set(url.href,`- [${title||url.hostname}](${url.href.replaceAll('(','%28').replaceAll(')','%29')})`);
+        if(sources.size>=12)break sourceItems;
+      }catch{}
+    }
+    return sources.size?text+'\n\n来源\n'+[...sources.values()].join('\n'):text;
+  }
+  window.BotGoUI={menu,enhanceSelect,markdown,copyText,citedAnswer};
 })();

@@ -13,6 +13,14 @@ const originals=files(baseline);
 if(!originals.includes('_headers')||!originals.includes('workspace.html')||!originals.includes('index.html'))throw Error('Incomplete production baseline.');
 fs.cpSync(baseline,output,{recursive:true});
 for(const file of allowed)fs.copyFileSync(path.join(root,'dist',file),path.join(output,file));
+// The page must reference the new asset hash so existing browser caches expire.
+const adminHTML=fs.readFileSync(path.join(output,'admin.html'),'utf8');
+for(const match of adminHTML.matchAll(/src="\.\/(admin(?:-platform|-metering)?\.js)\?v=([a-f0-9]{12})"/g)){
+  if(match[2]!==hash(path.join(output,match[1])).slice(0,12))throw Error('Stale Admin script reference: '+match[1]);
+}
+for(const file of ['admin.js','admin-platform.js','admin-metering.js']){
+  if(!adminHTML.includes(`./${file}?v=${hash(path.join(output,file)).slice(0,12)}`))throw Error('Missing Admin script version: '+file);
+}
 const preserved=originals.filter(file=>!allowed.has(file));
 for(const file of preserved)if(hash(path.join(baseline,file))!==hash(path.join(output,file)))throw Error('Unexpected change: '+file);
 for(const file of files(output))if(!originals.includes(file)&&!allowed.has(file))throw Error('Unexpected new asset: '+file);

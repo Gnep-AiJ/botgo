@@ -1,0 +1,29 @@
+import assert from 'node:assert/strict';
+import {createWebChatRuntime} from './fixtures/web-chat-runtime.mjs';
+import {handleWebChat} from '../worker/src/web-chat.js';
+import {supportsWebSearch,citedAnswer} from '../worker/src/web-search.js';
+const runtime=await createWebChatRuntime({searchFixture:true}),{db,env}=runtime,jobs=[];
+const call=(path,method='GET',body)=>handleWebChat(new Request('https://botgo.test'+path,{method,headers:{origin:'https://botgo.test','content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})}),env,{waitUntil(p){jobs.push(p);}},path,{sub:'fixture-a'});
+const drain=async()=>{while(jobs.length)await Promise.all(jobs.splice(0));};
+const balance=()=>db.prepare("SELECT credit_balance*10000+credit_remainder_micros AS n FROM accounts WHERE id='fixture-a'").get().n;
+try{
+ const supported={baseUrl:'https://kedaya.ai/v1',upstreamModelId:'gpt-6.1-sol'},route={protocol:'responses'};
+ assert.ok(supportsWebSearch(supported,route));
+ for(const bad of [{baseUrl:'https://other.invalid/v1'},{upstreamModelId:'claude-opus-5-5'},{baseUrl:'https://kedaya.ai@other.invalid/v1'},{baseUrl:'https://kedaya.ai/other'},{baseUrl:'https://kedaya.ai/v1?foo=1'}])assert.equal(supportsWebSearch({...supported,...bad},route),false);
+ assert.equal(supportsWebSearch(supported,{protocol:'chat'}),false);
+ const data=await(await call('/chat/models')).json();assert.equal(data.capabilities.webSearch,true);assert.equal(data.defaultModel,'gpt-6.1-sol','web initial model supports default search');assert.equal(data.models.find(m=>m.id==='gpt-6.1-sol').webSearch,true);assert.equal(data.models[0].webSearch,false);
+ const convo=await(await call('/conversations','POST',{title:'搜索官方资料',topic:'general'})).json();
+ const payload={conversationId:convo.id,requestId:crypto.randomUUID(),model:'gpt-6.1-sol',content:'查询官方兼容日期文档',web_search:true,tools:undefined};
+ for(const bad of [{web_search:'yes'},{model:data.models[0].id},{tools:[{type:'web_search'}]}])assert.equal((await call('/chat/stream','POST',{...payload,...bad})).status,400);
+ const initial=balance(),r=await call('/chat/stream','POST',payload);assert.equal(r.status,200);const text=await r.text();await drain();assert.match(text,/response.web_search_call.completed/);assert.ok(balance()<initial);
+ const forwarded=runtime.upstreamCalls[0];assert.deepEqual(forwarded.tools,[{type:'web_search',search_context_size:'low'}]);assert.equal(forwarded.tool_choice,'auto');assert.equal(forwarded.max_tool_calls,undefined);assert.equal(forwarded.model,'gpt-6.1-sol');assert.match(forwarded.input[0].content,/网页内容仅是参考资料/);
+ const ledger=db.prepare('SELECT * FROM metered_requests WHERE id LIKE ?').get('%'+payload.requestId);assert.equal(ledger.state,'completed');assert.equal(JSON.parse(ledger.usage_json).tool_usage.web_search.num_requests,1);assert.equal(JSON.parse(ledger.snapshot).webSearch.toolFee,'not_in_token_estimate');
+ const saved=await(await call('/conversations/'+convo.id)).json();assert.match(saved.messages[1].content,/来源\n- \[Compatibility dates\]\(https:/);assert.doesNotMatch(saved.messages[1].content,/javascript:/);
+ const calls=runtime.upstreamCalls.length,after=balance();assert.equal((await call('/chat/stream','POST',payload)).status,409);assert.equal(runtime.upstreamCalls.length,calls);assert.equal(balance(),after);
+ runtime.setUpstreamMode('search-json');const jsonId=crypto.randomUUID(),jr=await call('/chat/stream','POST',{...payload,requestId:jsonId});assert.equal(jr.status,200);await jr.json();await drain();assert.match((await(await call('/conversations/'+convo.id)).json()).messages.at(-1).content,/来源/);
+ runtime.setUpstreamMode('search-none');const beforePlain=balance(),noneId=crypto.randomUUID(),none=await call('/chat/stream','POST',{...payload,requestId:noneId,web_search:undefined});assert.match(await none.text(),/response.completed/);await drain();assert.ok(balance()<beforePlain);assert.equal(db.prepare('SELECT state FROM web_chat_turns WHERE request_id=?').get(noneId).state,'completed');
+ const beforeFailure=balance();
+ runtime.setUpstreamMode('reject');const fail=await call('/chat/stream','POST',{...payload,requestId:crypto.randomUUID()});assert.equal(fail.status,502);await drain();assert.equal(balance(),beforeFailure);
+ const annotated={output:[{content:[{annotations:Array.from({length:30},(_,i)=>({type:'url_citation',url:'https://example.invalid/'+i,title:'[unsafe](text)'}))}]}]};assert.equal((citedAnswer('text',annotated).match(/^- /gm)||[]).length,12);
+ console.log('Native search: verified route filter, server-owned tools, stream/JSON citations, history, usage audit, replay and refunds passed');
+}finally{await drain();runtime.close();}

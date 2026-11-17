@@ -22,6 +22,13 @@ assets/*
 !assets/botgo-client-chat-original.png
 !assets/botgo-client-connect-original.png
 !assets/botgo-client-start-original.png
+!assets/botgo-client-workspace.png
+!assets/botgo-client-wechat.png
+!assets/botgo-client-account.png
+# 联系二维码含个人微信信息，不入库；本地构建读磁盘，云端构建由 BOTGO_CONTACT_QR_BASE64 注入
+
+# 由 scripts/render-worker-config.mjs 生成，含真实 D1/支付宝配置
+worker/wrangler.deploy.jsonc
 
 # Local AI/agent skill overlays and reversible cleanup archives
 .codex/

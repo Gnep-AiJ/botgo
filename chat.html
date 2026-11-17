@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
+  <title>对话 · BotGo</title>
+  <link rel="stylesheet" href="./ui-kit.css"><link rel="stylesheet" href="./chat.css">
+  <script src="./ui-kit.js" defer></script><script src="./chat.js" defer></script>
+</head>
+<body>
+  <div class="chat-app">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head"><a class="brand" href="./index.html" aria-label="BotGo 首页"><span class="brand-bot-mark" aria-hidden="true"><img src="./assets/botgo-robot-dynamic-mobile.webp" width="600" height="611" alt="" /></span><span>BotGo</span></a><button id="sidebar-close" class="icon-button" type="button" aria-label="收起侧栏" title="收起侧栏"><span class="panel-icon" aria-hidden="true"></span></button></div>
+      <button class="new-chat" type="button" id="new-chat"><span aria-hidden="true">＋</span> 新对话</button>
+      <nav class="topics" aria-label="对话领域">
+        <button type="button" data-topic="general" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h7v15H4zM11 5h9v15h-9M7 9h1M15 9h2M15 13h2"/></svg>百科</button>
+        <button type="button" data-topic="doctor" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6v5h5v6h-5v5H9v-5H4V9h5z"/></svg>医生</button>
+        <button type="button" data-topic="tarot" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14v18H5zM12 7l1.5 3.5L17 12l-3.5 1.5L12 17l-1.5-3.5L7 12l3.5-1.5z"/></svg>塔罗牌</button>
+      </nav>
+      <div class="history-head"><span>最近对话</span><button id="refresh-history" type="button" aria-label="刷新历史">刷新</button></div>
+      <div id="history" class="history"></div>
+      <button id="more-history" class="more-history" type="button" hidden>更多</button>
+      <div class="account-bar">
+        <button id="account-button" type="button">登录</button>
+        <a href="./index.html?panel=recharge">充值</a>
+        <button id="logout" type="button" hidden>退出</button>
+      </div>
+    </aside>
+    <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="关闭侧栏" tabindex="-1" hidden></button>
+    <main>
+      <header class="chat-header">
+        <button id="sidebar-toggle" class="sidebar-toggle icon-button" type="button" aria-label="切换侧栏" aria-controls="sidebar" aria-expanded="false" title="切换侧栏"><span class="panel-icon" aria-hidden="true"></span></button>
+        <span id="topic-name" class="topic-name">百科</span>
+        <button id="theme-toggle" class="theme-toggle" type="button" aria-label="切换为深色主题" title="切换为深色主题"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="theme-moon" d="M20 14a8 8 0 0 1-10-10 8.5 8.5 0 1 0 10 10Z"/><g class="theme-sun"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></g></svg></button>
+      </header>
+      <div id="conversation-stage" class="conversation-stage is-empty is-start">
+      <picture class="city-backdrop" aria-hidden="true"><source media="(max-width:700px)" srcset="./assets/botgo-city-clean-mobile.webp"><img src="./assets/botgo-city-clean-v2.webp" width="1672" height="941" alt="" decoding="async"></picture>
+      <section id="scroll-area" class="scroll-area" aria-label="对话内容">
+        <div class="reading-column">
+          <section id="welcome" class="welcome"><img class="welcome-buddy" src="./assets/botgo-robot-dynamic-v2.webp" width="900" height="916" alt="" aria-hidden="true" decoding="async"><h1 id="welcome-title">你好，想聊些什么？</h1></section>
+          <section id="tarot-cards" class="tarot-cards" aria-label="本次牌阵" hidden></section>
+          <div id="messages" class="messages"></div>
+        </div>
+      </section>
+      <div class="composer-area">
+        <button id="jump-latest" class="jump-latest" type="button" hidden>↓ 最新</button>
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+        <form id="chat-form" class="composer">
+          <label class="sr-only" for="chat-input">消息</label><textarea id="chat-input" rows="2" maxlength="100000" placeholder="从这里说起…" required></textarea>
+          <div class="composer-actions"><div class="composer-options"><label class="model-control"><span class="sr-only">模型</span><select id="model" aria-label="选择模型" disabled><option value="">登录后选择模型</option></select></label><span id="web-search" class="web-search" title="模型按问题决定是否搜索" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18Z"/></svg><span>按需联网</span></span><button id="retry-models" type="button" hidden>重试</button><button type="button" id="draw-cards" hidden>抽三张牌</button><span id="draft-status"></span></div><button type="button" id="stop" aria-label="停止生成" title="停止生成" hidden><span class="stop-icon" aria-hidden="true"></span><span class="sr-only">停止</span></button><button type="submit" id="send" aria-label="发送" title="发送" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg></button></div>
+        </form>
+        <div id="suggestions" class="suggestions" aria-label="试着聊聊"></div>
+        <p id="mode-note" class="mode-note">重要信息，记得再确认</p>
+      </div>
+      </div>
+    </main>
+  </div>
+  <dialog id="auth-dialog" aria-labelledby="auth-title">
+    <div class="dialog-head"><h2 id="auth-title">登录 BotGo</h2><button id="auth-close" type="button" aria-label="关闭">×</button></div>
+    <form id="auth-form">
+      <label for="email">邮箱</label><input id="email" name="email" type="email" autocomplete="email" required>
+      <div id="code-field" hidden><label for="code">验证码</label><input id="code" name="code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9０-９]{6}"></div>
+      <p id="auth-status" role="status"></p><button type="submit" id="auth-submit">发送验证码</button><button type="button" id="auth-back" hidden>修改邮箱</button>
+    </form>
+  </dialog>
+  <dialog id="rename-dialog" aria-labelledby="rename-title">
+    <div class="dialog-head"><h2 id="rename-title">给对话起个名字</h2><button id="rename-close" type="button" aria-label="关闭">×</button></div>
+    <form id="rename-form">
+      <label for="rename-input">对话名称</label><input id="rename-input" name="title" maxlength="40" autocomplete="off" required>
+      <p id="rename-status" role="status" aria-live="polite"></p><button id="rename-submit" type="submit">保存</button>
+    </form>
+  </dialog>
+<dialog id="image-dialog" aria-labelledby="image-preview-title"><div class="dialog-head"><h2 id="image-preview-title">图片</h2><button type="button" id="image-preview-close" aria-label="关闭图片预览">×</button></div><img id="image-preview-full" alt="生成的图片"><a id="image-download" download>下载图片</a></dialog></body>
+</html>

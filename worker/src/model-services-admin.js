@@ -1,7 +1,7 @@
 import { probeAgentRoute } from './opencode-gateway.js';
 import { resolveProfileConfig } from './platform-admin.js';
 import { officialCatalogModel,officialImageModel,officialModel,officialModelIds } from './official-pricing.js';
-import { verifiedOfficialModel } from './official-price-sync.js';
+import { verifiedOfficialModel, supportsOfficialSync } from './official-price-sync.js';
 import { imageCostMicros } from './metering.js';
 
 const reply=(data,status=200)=>Response.json(data,{status,headers:{'cache-control':'no-store'}});
@@ -46,6 +46,25 @@ async function readImageProbe(response){
 
 export async function handleModelServicesAdmin(request,env,path,admin,audit){
   if(!path.startsWith('/admin/model-services'))return null;
+  if(path==='/admin/model-services/prices'&&request.method==='GET'){
+    const references=new Map(officialModelIds.map(id=>[id,{id,reference:officialCatalogModel(id),verification:{status:'pinned',checkedAt:null}}]));
+    const cached=(await env.DB.prepare('SELECT model_id,model_json,fetched_at FROM official_model_cache ORDER BY fetched_at DESC LIMIT 100').all()).results||[];
+    for(const row of cached)references.set(row.model_id,{id:row.model_id,reference:JSON.parse(row.model_json),verification:{status:'cached',checkedAt:row.fetched_at}});
+    return reply({models:[...references.values()].map(item=>({...item,official:item.reference?.agent?item.reference:null}))});
+  }
+  if(path==='/admin/model-services/refresh-prices'&&request.method==='POST'){
+    const input=await request.json().catch(()=>null);
+    if(!Array.isArray(input?.modelIds)||!input.modelIds.length||input.modelIds.length>5||
+        input.modelIds.some(id=>typeof id!=='string'||!modelIdPattern.test(id)))return reply({error:'每次最多核对 5 个有效模型。'},400);
+    const models=[];
+    for(const id of [...new Set(input.modelIds)]){
+      const verification={};
+      const reference=await verifiedOfficialModel(env,id,{force:true,verification});
+      models.push({id,official:reference?.agent?reference:null,reference,verification});
+    }
+    await audit(env,admin.id,'official_prices_refreshed',{models:models.map(item=>({id:item.id,status:item.verification.status}))});
+    return reply({models});
+  }
   if(path==='/admin/model-services/images'&&request.method==='GET'){
     const rows=(await env.DB.prepare(`SELECT r.*,p.name AS upstream_name,p.base_url FROM image_model_routes r
       JOIN upstream_profiles p ON p.id=r.profile_id ORDER BY r.updated_at DESC`).all()).results||[];
@@ -107,19 +126,25 @@ export async function handleModelServicesAdmin(request,env,path,admin,audit){
     let data;try{data=JSON.parse(new TextDecoder().decode(bytes));}catch{return reply({error:'上游模型列表格式无效。'},502);}
     const ids=[...new Set((Array.isArray(data?.data)?data.data:[]).map(item=>item?.id).filter(id=>typeof id==='string'&&id.length<=128))]
       .filter(id=>/^(gpt-|claude-|grok-)/i.test(id));
-    const refresh=new URL(request.url).searchParams.get('refresh')==='1';
-    const uncached=ids.filter(id=>!officialCatalogModel(id) && /^gpt-/i.test(id)).slice(0,20);
+    const params=new URL(request.url).searchParams;
+    const cachedOnly=params.get('prices')==='cached';
+    const refresh=!cachedOnly&&params.get('refresh')==='1';
+    const stored=(await env.DB.prepare('SELECT model_id,model_json,fetched_at FROM official_model_cache ORDER BY fetched_at DESC LIMIT 100').all()).results||[];
+    const cached=new Map(stored.map(row=>[row.model_id,JSON.parse(row.model_json)]));
+    const uncached=cachedOnly?[]:ids.filter(id=>!officialCatalogModel(id)&&!cached.has(id)&&supportsOfficialSync(id)).slice(0,5);
+    const refreshIds=refresh?ids.filter(supportsOfficialSync).slice(0,5):[];
+    // The UI refreshes in batches of five: stay within Workers Free request limits.
     const references=new Map(await Promise.all(ids.map(async id=>[id,
-      uncached.includes(id)||refresh&&officialCatalogModel(id)?.provider==='OpenAI'
-        ?await verifiedOfficialModel(env,id,{force:refresh}) :officialCatalogModel(id)])));
-    const stored=(await env.DB.prepare('SELECT model_json FROM official_model_cache ORDER BY fetched_at DESC LIMIT 100').all()).results||[];
+      uncached.includes(id)||refreshIds.includes(id)
+        ?await verifiedOfficialModel(env,id,{force:refresh}) :cached.get(id)||officialCatalogModel(id)])));
     const imageChoices=new Map(officialModelIds.map(modelId=>officialImageModel(modelId)).filter(Boolean).map(model=>[model.id,model]));
     for(const row of stored){const model=JSON.parse(row.model_json);if(model.imagePrice)imageChoices.set(model.id,model);}
     return reply({models:ids.map(id=>{
       const reference=references.get(id);
       return {id,official:reference?.agent?reference:null,reference,imageEligible:Boolean(reference&&!reference.agent||/^gpt-image-/i.test(id)),
         billingModels:[...imageChoices.values()].map(model=>({id:model.id,name:model.name})),
-        reason:reference&&!reference.agent?'image_generation':!reference?'unverified_alias':null};
+        reason:reference&&!reference.agent?'image_generation':!reference?'unverified_alias':null,
+        verification:{status:cached.has(id)?'cached':reference?'pinned':'unverified',checkedAt:stored.find(row=>row.model_id===id)?.fetched_at||null}};
     }),supported:officialModelIds});
   }
   if(path==='/admin/model-services/import'&&request.method==='POST'){

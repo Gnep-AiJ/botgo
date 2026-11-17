@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict');
 const http=require('node:http');
-const {createBridge,configuration,originFor}=require('../opencode-desktop/runtime/bridge.cjs');
+const {createBridge,configuration,originFor,MAX_REQUEST_BYTES}=require('../opencode-desktop/runtime/bridge.cjs');
 
 (async()=>{
   let sessions=0;const calls=[];let nextStatus=200;let clock=0;
@@ -30,7 +30,8 @@ const {createBridge,configuration,originFor}=require('../opencode-desktop/runtim
     bridge=await createBridge({origin,deviceToken:'bgdt_fixture',now:()=>clock,taskStore});
     const cfg=bridge.config();
     assert.equal(sessions,1);
-    assert.deepEqual(cfg.enabled_providers,['botgo-chat','botgo-responses']);
+    assert.deepEqual(cfg.enabled_providers,['botgo-chat','botgo-responses'],'only authenticated BotGo providers are available');
+    assert.equal(cfg.share,undefined,'native share setting is preserved');
     assert.equal(cfg.provider['botgo-responses'].npm,'@ai-sdk/openai');
     assert.equal(cfg.provider['botgo-chat'].npm,'@ai-sdk/openai-compatible');
     assert.equal(cfg.provider['botgo-chat'].models['gpt-5.6-luna'].cost.input,.06);
@@ -54,7 +55,7 @@ const {createBridge,configuration,originFor}=require('../opencode-desktop/runtim
     await imageResponse.text();
     assert.equal(calls[0].url,'/api/opencode/v1/images/generations');
     assert.equal(calls[0].body.model,undefined,'the Worker selects the current default at request time');
-    assert.equal((await send({...body,large:'a'.repeat(1000001)})).status,413);
+    assert.equal((await send({...body,large:'a'.repeat(MAX_REQUEST_BYTES+1)})).status,413);
     assert.equal(calls.length,1);
     assert.match(await(await send(body)).text(),/\[DONE\]/);
     await(await send(body,{'x-session-id':'ses_child','x-parent-session-id':'ses_root'})).text();

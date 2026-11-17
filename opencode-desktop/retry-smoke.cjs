@@ -4,7 +4,7 @@ const fs=require('node:fs'),path=require('node:path'),assert=require('node:asser
 const {pathToFileURL}=require('node:url');
 const {once}=require('node:events');
 const {createBridge}=require('./runtime/bridge.cjs');
-const root=path.resolve(__dirname,'..'),desktop=path.join(root,'artifacts/opencode/packages/desktop');
+const root=path.resolve(__dirname,'..'),desktop=path.join(require('./paths.cjs').source,'packages/desktop');
 const out=path.join(root,'artifacts/verification/native-retry',String(Date.now()));
 fs.mkdirSync(out,{recursive:true});app.disableHardwareAcceleration();app.setAppPath(desktop);
 app.setPath('userData',path.join(out,'profile'));app.setPath('sessionData',path.join(out,'chromium'));

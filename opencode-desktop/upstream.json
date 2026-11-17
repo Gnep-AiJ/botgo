@@ -1,0 +1,7 @@
+{
+  "version": "1.18.35",
+  "commit": "53d1eabb61e21162157817bf677da0a4ad3332e3",
+  "source": "artifacts/opencode-1.18.35",
+  "original": "artifacts/verification/opencode-1.18.35-upgrade/original",
+  "models": "artifacts/verification/opencode-1.18.35-upgrade/models.json"
+}

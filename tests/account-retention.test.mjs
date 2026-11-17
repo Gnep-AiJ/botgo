@@ -24,8 +24,16 @@ db.prepare("INSERT INTO web_chat_turns(request_id,conversation_id,content,answer
 db.prepare("INSERT INTO web_chat_turns(request_id,conversation_id,content,answer,model,state) VALUES(?,?,'新消息','新回答','test','completed')").run(crypto.randomUUID(),id);
 const list=await conversationRoute(new Request('https://local/conversations'),env,user.id,'/conversations');assert.equal((await list.json()).conversations[0].title,'新消息');
 const detail=await conversationRoute(new Request('https://local/conversations/'+id),env,user.id,'/conversations/'+id);assert.equal((await detail.json()).messages.length,2);
-const turn=await startConversationTurn(env,user.id,{conversationId:id,requestId:crypto.randomUUID(),content:'继续',model:'test'});assert.equal(turn.body.messages.length,3);assert(!JSON.stringify(turn.body).includes('旧秘密'));await turn.history.finish('failed');
+const turn=await startConversationTurn(env,user.id,{conversationId:id,requestId:crypto.randomUUID(),content:'继续',model:'test'});assert.equal(turn.body.messages.length,4);assert.equal(turn.body.messages[0].role,'system');assert(!JSON.stringify(turn.body).includes('旧秘密'));await turn.history.finish('failed');
 assert.equal((await purgeExpiredConversations(env)).removed,1);assert.equal(db.prepare('SELECT title FROM web_conversations WHERE id=?').get(id).title,'新消息');assert.equal((await purgeExpiredConversations(env)).removed,0);
+db.prepare("UPDATE web_conversations SET title='新的手动标题',renamed_at=CURRENT_TIMESTAMP WHERE id=?").run(id);
+assert.equal((await purgeExpiredConversations(env)).removed,0);
+assert.equal(db.prepare('SELECT title FROM web_conversations WHERE id=?').get(id).title,'新的手动标题','recent manual title survives retention maintenance');
+db.prepare("UPDATE web_conversations SET title='过期手动秘密',renamed_at=datetime('now','-31 days') WHERE id=?").run(id);
+const staleDetail=await conversationRoute(new Request('https://local/conversations/'+id),env,user.id,'/conversations/'+id);
+assert.equal((await staleDetail.json()).title,'新消息','expired manual title is never displayed');
+await purgeExpiredConversations(env);
+assert.deepEqual({...db.prepare('SELECT title,renamed_at FROM web_conversations WHERE id=?').get(id)},{title:'新消息',renamed_at:null});
 assert.equal(db.prepare('SELECT COUNT(*) n FROM account_grants').get().n,1);
 const removeModel=id=>handleMeteringAdmin(new Request('https://local',{method:'DELETE'}),env,'/admin/metering/models/'+id,{id:'admin'},async()=>{});
 db.prepare("INSERT OR IGNORE INTO model_catalog(id,name,upstream_id,price_json) VALUES('gpt-5.6-sol','Sol','gpt-5.6-sol','{}')").run();

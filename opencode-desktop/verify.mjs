@@ -3,10 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import paths from './paths.cjs';
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const evidence=path.join(root,'artifacts/verification/opencode-native',String(Date.now()));
 fs.mkdirSync(evidence,{recursive:true});
-const executable=path.join(root,'artifacts/opencode/node_modules/electron/dist/electron.exe');
+const executable=path.join(paths.source,'node_modules/electron/dist/electron.exe');
 const log=fs.createWriteStream(path.join(evidence,'process.log'));
 const child=spawn(executable,[path.join(root,'opencode-desktop/smoke.cjs')],{cwd:root,
   env:{...process.env,BOTGO_SMOKE_OUTPUT:evidence},stdio:['ignore','pipe','pipe']});

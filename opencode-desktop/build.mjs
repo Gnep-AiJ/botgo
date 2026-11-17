@@ -2,12 +2,13 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
+import paths from './paths.cjs';
 const root=path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const source=path.join(root,'artifacts/opencode');
+const {source,upstream,models}=paths;
 const bun=path.join(root,'artifacts/verification/opencode-bootstrap/build-tools/node_modules/@oven/bun-windows-x64/bin/bun.exe');
 const output=path.join(root,'artifacts/verification/opencode-build',String(Date.now()));
 fs.mkdirSync(output,{recursive:true});
-const env={...process.env,OPENCODE_CHANNEL:'dev',OPENCODE_VERSION:'1.18.30',MODELS_DEV_API_JSON:path.join(root,'opencode-desktop/models-empty.json')};
+const env={...process.env,OPENCODE_CHANNEL:'dev',OPENCODE_VERSION:upstream.version,MODELS_DEV_API_JSON:models};
 async function run(name,command,args,cwd){
   const log=fs.createWriteStream(path.join(output,`${name}.log`));
   const child=spawn(command,args,{cwd,env,windowsHide:true,stdio:['ignore','pipe','pipe']});

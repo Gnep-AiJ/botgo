@@ -13,7 +13,8 @@
     $('#account-auth').hidden = section !== 'auth';
     $('#account-signed-in').hidden = section !== 'account';
     $('#account-recharge').hidden = section !== 'recharge';
-    $('#account-title').textContent = section === 'recharge' || account ? '账户 / 充值' : '登录 / 注册';
+    $('#account-title').textContent = section === 'recharge' ? '充值' : account ? '账户 / 充值' : '登录 / 注册';
+    if (section === 'recharge') window.dispatchEvent(new Event('botgo:recharge-open'));
   }
   function open(panel = 'account', options = {}) {
     if (options.next === 'download') nextDownload = true;
@@ -24,12 +25,32 @@
     if (section === 'auth') loginForm.elements.email.focus();
   }
   window.botgoAccount = { open };
+  const contactDialog=$('#contact-dialog');
+  if(contactDialog){
+    let returnPanel=null,returnEpoch=0,returnFocus=null;
+    const contactStatus=$('[data-contact-status]');
+    document.querySelectorAll('[data-open-contact]').forEach(button=>button.addEventListener('click',()=>{
+      returnFocus=button;returnEpoch=epoch;returnPanel=dialog.open?($('#account-recharge').hidden?'account':'recharge'):null;
+      if(dialog.open)dialog.close();contactStatus.textContent='';contactStatus.classList.remove('is-error');contactDialog.showModal();
+    }));
+    $('[data-close-contact]').addEventListener('click',()=>contactDialog.close());
+    contactDialog.addEventListener('click',event=>{if(event.target===contactDialog)contactDialog.close();});
+    contactDialog.addEventListener('close',()=>{
+      if(returnPanel){if(returnEpoch===epoch)dialog.showModal();else open(returnPanel);returnPanel=null;}
+      if(returnFocus?.isConnected)returnFocus.focus();
+    });
+    document.querySelectorAll('[data-copy-contact]').forEach(button=>button.addEventListener('click',async()=>{
+      try{await navigator.clipboard.writeText(button.dataset.copyContact);contactStatus.classList.remove('is-error');contactStatus.textContent=button.dataset.copyContact.includes('@')?'邮箱已复制':'微信号已复制';
+        const original=button.dataset.copyLabel||(button.dataset.copyLabel=button.textContent);clearTimeout(button._copyTimer);button.textContent='已复制';button._copyTimer=setTimeout(()=>{button.textContent=original;},1800);}
+      catch{contactStatus.classList.add('is-error');contactStatus.textContent='复制未完成，请手动选择联系方式复制。';}
+    }));
+  }
   function render() {
     const signedIn = !!account;
     $('#account-trigger').textContent = signedIn ? '账户 / 充值' : '登录 / 注册';
     $('[data-billing-balance]').textContent = signedIn ? money(account.balanceCents ?? Math.round(Number(account.credits || 0) * 100)) : '—';
     $('[data-account-email]').textContent = signedIn ? account.email : '—';
-    if (dialog.open) show(signedIn ? 'account' : 'auth');
+    if (dialog.open && (!signedIn || $('#account-recharge').hidden)) show(signedIn ? 'account' : 'auth');
   }
   function status(id, message, error = false) {
     const node = $('#' + id);
@@ -59,7 +80,7 @@
     const requestEpoch = epoch;
     try {
       const order = params.get('out_trade_no');
-      if (order) await api('/billing/query', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ outTradeNo: order }) });
+      if (order) await api('/billing/query', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ outTradeNo: order }) }).catch(() => {});
       const result = await api('/account');
       if (requestEpoch === epoch) { account = result.account; render(); }
     } catch (error) {

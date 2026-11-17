@@ -12,7 +12,7 @@
   }
   function render(){
     const ids=models.map(item=>item.id);
-    root.innerHTML=`<div class="view-actions"><div><h2>模型服务</h2><p class="view-lead">从上游选择 GPT、Claude 或 Grok 模型，测试通过后自动加入客户端</p></div><div><button class="button secondary" data-test-all>测试全部</button><button class="button primary" data-import>从上游添加</button></div></div><section class="panel"><div class="data-table"><table class="service-table"><thead><tr><th>模型</th><th>官方价 输入 / 输出</th><th>状态</th><th>可用上游</th><th>操作</th></tr></thead><tbody>${ids.map(id=>{const model=savedModel(id),route=routes.find(item=>item.model_id===id),price=model?.price;const count=(route?.members||[]).filter(item=>item.enabled&&item.verified_at&&!item.retired_at).length;return `<tr><td><strong>${esc(model?.name||id)}</strong><small>${esc(id)}</small></td><td>${price?`$${Number(price.input).toFixed(2)} / $${Number(price.output).toFixed(2)}`:'—'}</td><td><span class="status-pill ${model?.enabled&&route?.enabled?'success':'neutral'}">${model?.enabled&&route?.enabled?'已发布':'未上架'}</span></td><td>${count}</td><td><button type="button" class="table-button danger" data-delete-model="${esc(id)}">删除</button></td></tr>`}).join('')}</tbody></table>${ids.length?'':'<p class="empty-state">暂无模型。先添加上游，再从上游选择模型。</p>'}</div></section><section class="panel"><div class="view-actions"><div><h3>生图模型</h3></div></div><div class="data-table"><table class="service-table"><thead><tr><th>模型</th><th>计价型号</th><th>上游</th><th>状态</th><th>操作</th></tr></thead><tbody>${imageModels.map(item=>`<tr><td><strong>${esc(item.name)}${item.model_id===defaultImageModel?' <span class="status-pill success">默认</span>':''}</strong><small>${esc(item.model_id)}</small></td><td>${esc(item.billing_model_id)}</td><td>${esc(item.upstream_name||item.profile_id)}</td><td><span class="status-pill ${item.enabled&&item.verified_at?'success':'neutral'}">${item.enabled&&item.verified_at?'已验证':'未验证'}</span></td><td><span class="table-actions">${item.model_id!==defaultImageModel&&item.enabled&&item.verified_at?`<button type="button" class="table-button" data-default-image="${esc(item.model_id)}">设为默认</button>`:''}<button type="button" class="table-button danger" data-delete-image="${esc(item.model_id)}">删除</button></span></td></tr>`).join('')}</tbody></table>${imageModels.length?'':'<p class="empty-state">暂无生图模型。可从上游模型列表中勾选并添加。</p>'}</div></section><p class="action-status" data-status role="status"></p><dialog class="model-editor service-drawer" data-drawer></dialog>`;
+    root.innerHTML=`<div class="view-actions"><div><h2>模型服务</h2><p class="view-lead">从上游选择 GPT、Claude 或 Grok 模型，测试通过后自动加入客户端</p></div><div><button class="button secondary" data-test-all>测试全部</button><button class="button primary" data-import>更新模型/价格</button></div></div><section class="panel"><div class="data-table"><table class="service-table"><thead><tr><th>模型</th><th>官方价 输入 / 输出</th><th>状态</th><th>可用上游</th><th>操作</th></tr></thead><tbody>${ids.map(id=>{const model=savedModel(id),route=routes.find(item=>item.model_id===id),price=model?.price;const count=(route?.members||[]).filter(item=>item.enabled&&item.verified_at&&!item.retired_at).length;return `<tr><td><strong>${esc(model?.name||id)}</strong><small>${esc(id)}</small></td><td>${price?`$${Number(price.input).toFixed(2)} / $${Number(price.output).toFixed(2)}`:'—'}</td><td><span class="status-pill ${model?.enabled&&route?.enabled?'success':'neutral'}">${model?.enabled&&route?.enabled?'已发布':'未上架'}</span></td><td>${count}</td><td><button type="button" class="table-button danger" data-delete-model="${esc(id)}">删除</button></td></tr>`}).join('')}</tbody></table>${ids.length?'':'<p class="empty-state">暂无模型。先添加上游，再从上游选择模型。</p>'}</div></section><section class="panel"><div class="view-actions"><div><h3>生图模型</h3></div></div><div class="data-table"><table class="service-table"><thead><tr><th>模型</th><th>计价型号</th><th>上游</th><th>状态</th><th>操作</th></tr></thead><tbody>${imageModels.map(item=>`<tr><td><strong>${esc(item.name)}${item.model_id===defaultImageModel?' <span class="status-pill success">默认</span>':''}</strong><small>${esc(item.model_id)}</small></td><td>${esc(item.billing_model_id)}</td><td>${esc(item.upstream_name||item.profile_id)}</td><td><span class="status-pill ${item.enabled&&item.verified_at?'success':'neutral'}">${item.enabled&&item.verified_at?'已验证':'未验证'}</span></td><td><span class="table-actions">${item.model_id!==defaultImageModel&&item.enabled&&item.verified_at?`<button type="button" class="table-button" data-default-image="${esc(item.model_id)}">设为默认</button>`:''}<button type="button" class="table-button danger" data-delete-image="${esc(item.model_id)}">删除</button></span></td></tr>`).join('')}</tbody></table>${imageModels.length?'':'<p class="empty-state">暂无生图模型。可从上游模型列表中勾选并添加。</p>'}</div></section><p class="action-status" data-status role="status"></p><dialog class="model-editor service-drawer" data-drawer></dialog>`;
     root.querySelector('[data-import]').onclick=importDialog;
     root.querySelector('[data-test-all]').onclick=()=>testAll();
     root.querySelectorAll('[data-delete-model]').forEach(button=>button.onclick=()=>deleteModel(button.dataset.deleteModel));
@@ -27,22 +27,98 @@
     try{await api(`/admin/model-services/${encodeURIComponent(id)}`,{method:'DELETE'});await load();root.querySelector('[data-status]').textContent='模型已删除。';}
     catch(error){status.textContent=`删除失败：${error.message}`;}
   }
+  const pickerCache=new Map(),groupNames={all:'全部',gpt:'GPT 对话',claude:'Claude',grok:'Grok',image:'图片'};
+  const groupOf=item=>item.imageEligible||item.reference?.imagePrice?'image':item.id.startsWith('claude-')?'claude':item.id.startsWith('grok-')?'grok':'gpt';
+  const cacheKey=id=>'botgo-admin-model-list-v2:'+id;
+  const profileStamp=profile=>JSON.stringify([profile?.baseUrl,profile?.updatedAt]);
+  function readPickerCache(profile){
+    try{
+      const saved=pickerCache.get(profile.id)||JSON.parse(localStorage.getItem(cacheKey(profile.id))||'null');
+      if(saved?.stamp!==profileStamp(profile)||!Array.isArray(saved.models)||saved.models.length>1000||saved.models.some(item=>typeof item?.id!=='string'||!/^(gpt-|claude-|grok-)[A-Za-z0-9._-]{1,123}$/.test(item.id)))return null;
+      return saved;
+    }catch{return null;}
+  }
+  function savePickerCache(profile,items,listedAt){
+    const saved={stamp:profileStamp(profile),models:items,listedAt};pickerCache.set(profile.id,saved);
+    try{localStorage.setItem(cacheKey(profile.id),JSON.stringify(saved));}catch{/* The current page still retains its list if browser storage is unavailable. */}
+  }
+  function rememberPickerSelection(dialog){
+    try{localStorage.setItem('botgo-admin-model-selection',JSON.stringify({profileId:dialog.querySelector('[data-profile]').value,group:dialog.querySelector('[data-model-group]').value}));}catch{}
+  }
+  function rememberModelChecks(dialog){
+    const state=dialog._picker;
+    for(const input of dialog.querySelectorAll('[data-available] input[type="checkbox"]')){if(input.checked)state.selected.add(input.value);else state.selected.delete(input.value);}
+    for(const select of dialog.querySelectorAll('[data-billing-for]'))state.billing.set(select.dataset.billingFor,select.value);
+  }
+  function visibleModels(dialog){const group=dialog.querySelector('[data-model-group]').value;return dialog._picker.items.filter(item=>group==='all'||groupOf(item)===group);}
+  function renderAvailable(dialog){
+    const target=dialog.querySelector('[data-available]'),items=visibleModels(dialog),state=dialog._picker;
+    if(!dialog.querySelector('[data-profile]').value){target.textContent='先选择上游连接和模型分组，再更新。';return;}
+    target.innerHTML=items.length?'<div class="model-choice-list">'+items.map(item=>{
+      const image=item.reference?.imagePrice,supported=Boolean(item.official||item.imageEligible),isNew=supported&&!savedModel(item.id)&&!imageModels.some(model=>model.model_id===item.id);
+      const note=item.official?esc(item.official.provider)+' · Standard $'+Number(item.official.price?.input)+' / $'+Number(item.official.price?.output):image?'官方生图价 · 文本输入 $'+Number(image.textInput)+' · 图像输入 / 输出 $'+Number(image.imageInput)+' / $'+Number(image.imageOutput):item.imageEligible?'上游生图别名，需选择对应的官方计价型号':'未能取得该精确型号的完整官方价格，暂不能添加';
+      const status=item.verification?.status,label=status==='verified'?' · 官网核对成功':status==='retained'?' · 本次核对失败，保留已核价':status==='pinned'?' · 内置已核价':status==='cached'?' · 已保存核价':'';
+      const billing=officialImageChoices(item),choice=state.billing.get(item.id)|| (image?item.id:'');
+      return '<div class="model-choice-row check-field '+(supported?'':'is-disabled')+'"><label><input type="checkbox" value="'+esc(item.id)+'" data-kind="'+(item.imageEligible?'image':'text')+'" '+(supported?'':'disabled')+' '+(state.selected.has(item.id)&&supported?'checked':'')+'><span><strong>'+esc(item.id)+(isNew?' <span class="status-pill success">可新增</span>':'')+'</strong><small>'+note+label+'</small></span></label>'+(item.imageEligible?'<select data-billing-for="'+esc(item.id)+'" aria-label="'+esc(item.id)+' 生图计价型号">'+(image?'':'<option value="">选择官方计价型号</option>')+billing.map(model=>'<option value="'+esc(model.id)+'" '+(choice===model.id?'selected':'')+'>按 '+esc(model.name)+' 计价</option>').join('')+'</select>':'')+'</div>';
+    }).join('')+'</div><p class="form-help">当前分组 '+items.length+' 个型号；<span data-selected-count>已选 '+state.selected.size+' 个模型</span>。单价单位为美元 / 百万 Token。新模型仍需通过测试后加入客户端。</p>':'<p class="empty-state">当前分组暂无型号，可点击“更新当前分组”读取最新列表。</p>';
+    target.onchange=()=>{rememberModelChecks(dialog);const count=target.querySelector('[data-selected-count]');if(count)count.textContent='已选 '+state.selected.size+' 个模型';};
+  }
   function importDialog(){
-    const dialog=root.querySelector('[data-drawer]');
-    dialog.innerHTML=`<div class="dialog-shell service-form"><div class="dialog-heading"><h2>从上游添加模型</h2><button type="button" class="icon-control" data-close aria-label="关闭">×</button></div><label>上游连接<select data-profile>${profiles.filter(profile=>!profile.retired).map(profile=>`<option value="${esc(profile.id)}">${esc(profile.name)} · ${esc(profile.baseUrl)}</option>`).join('')}</select></label><details><summary>高级设置</summary><label>接口协议<select data-protocol><option value="responses">Responses</option><option value="chat">Chat Completions</option></select></label></details><div data-available class="data-table"><p class="empty-state">选择上游后读取模型列表</p></div><p class="action-status" data-progress role="status"></p><div class="form-actions"><button type="button" class="button secondary" data-retry>重新读取</button><button type="button" class="button primary" data-add>测试并添加</button></div></div>`;
-    dialog.querySelector('[data-close]').onclick=()=>dialog.close();dialog.querySelector('[data-profile]').onchange=()=>loadAvailable(dialog);dialog.querySelector('[data-retry]').onclick=()=>loadAvailable(dialog,true);dialog.querySelector('[data-add]').onclick=()=>importSelected(dialog);dialog.showModal();loadAvailable(dialog);
+    const dialog=root.querySelector('[data-drawer]');let last={};try{last=JSON.parse(localStorage.getItem('botgo-admin-model-selection')||'{}')||{};}catch{}
+    const active=profiles.filter(profile=>!profile.retired);
+    dialog._picker={items:[],selected:new Set(),billing:new Map()};dialog._request=0;
+    dialog.innerHTML=`<div class="dialog-shell service-form"><div class="dialog-heading"><h2>更新模型与官方价格</h2><button type="button" class="icon-control" data-close aria-label="关闭">×</button></div><p class="form-help">先选上游和分组。已有列表直接读取；点击更新时才核对当前分组的官方价格。</p><div class="field-row"><label>上游连接<select data-profile><option value="">选择上游连接</option>${active.map(profile=>`<option value="${esc(profile.id)}">${esc(profile.name)} · ${esc(profile.baseUrl)}</option>`).join('')}</select></label><label>模型分组<select data-model-group>${Object.entries(groupNames).map(([key,name])=>`<option value="${key}">${name}</option>`).join('')}</select></label></div><details><summary>高级设置</summary><label>接口协议<select data-protocol><option value="responses">Responses</option><option value="chat">Chat Completions</option></select></label></details><div data-available class="data-table"></div><p class="action-status" data-progress role="status"></p><div class="form-actions"><button type="button" class="button secondary" data-retry disabled>更新当前分组</button><button type="button" class="button primary" data-add disabled>测试并添加</button></div></div>`;
+    const profile=dialog.querySelector('[data-profile]'),group=dialog.querySelector('[data-model-group]');
+    if(active.some(item=>item.id===last.profileId))profile.value=last.profileId;if(Object.hasOwn(groupNames,last.group))group.value=last.group;
+    dialog.querySelector('[data-close]').onclick=()=>dialog.close();
+    profile.onchange=()=>{dialog._picker={items:[],selected:new Set(),billing:new Map()};rememberPickerSelection(dialog);loadAvailable(dialog);};
+    group.onchange=()=>{rememberModelChecks(dialog);rememberPickerSelection(dialog);renderAvailable(dialog);if(!dialog.dataset.loading)dialog.querySelector('[data-progress]').textContent='显示 '+groupNames[group.value]+' 分组的已有列表；需要最新价格时点击更新当前分组。';};
+    dialog.querySelector('[data-retry]').onclick=()=>loadAvailable(dialog,true);dialog.querySelector('[data-add]').onclick=()=>importSelected(dialog);
+    dialog.addEventListener('close',()=>{dialog._request++;load();},{once:true});dialog.showModal();loadAvailable(dialog);
   }
   async function loadAvailable(dialog,refresh=false){
-    const profileId=dialog.querySelector('[data-profile]').value,target=dialog.querySelector('[data-available]');if(!profileId){target.textContent='请先添加上游连接。';return;}
-    target.textContent='正在读取模型列表并核对价格…';try{const result=await api(`/admin/model-services/available?profileId=${encodeURIComponent(profileId)}${refresh?'&refresh=1':''}`);target.innerHTML=(result.models||[]).length?`<div class="model-choice-list">${result.models.map(item=>{const image=item.reference?.imagePrice;const note=item.official?`${esc(item.official.provider)} · Standard $${item.official.price.input} / $${item.official.price.output}`:image?`官方生图价 · 文本输入 $${image.textInput} · 图像输入 / 输出 $${image.imageInput} / $${image.imageOutput}`:item.imageEligible?'上游生图别名，需选择对应的官方计价型号':'官网尚未核价，暂不能添加';const billing=officialImageChoices(item);const supported=Boolean(item.official||item.imageEligible);return `<div class="model-choice-row check-field ${supported?'':'is-disabled'}"><label><input type="checkbox" value="${esc(item.id)}" data-kind="${item.imageEligible?'image':'text'}" ${supported?'':'disabled'}><span><strong>${esc(item.id)}</strong><small>${note}</small></span></label>${item.imageEligible?`<select data-billing-for="${esc(item.id)}" aria-label="${esc(item.id)} 生图计价型号" ${item.official?'disabled':''}>${item.official?'':`<option value="" selected>选择官方计价型号</option>`}${billing.map(choice=>`<option value="${esc(choice.id)}" ${choice.id===item.id?'selected':''}>按 ${esc(choice.name)} 计价</option>`).join('')}</select>`:''}</div>`;}).join('')}</div><p class="form-help">对话模型按官网核对的 Standard 价计费；生图别名需明确选择对应的官方型号。</p>`:'<p class="empty-state">上游未返回可识别的 GPT、Claude 或 Grok 模型。</p>';}
-    catch(error){target.textContent=`读取失败：${error.message}`;}
+    const requestId=++dialog._request,profileControl=dialog.querySelector('[data-profile]'),groupControl=dialog.querySelector('[data-model-group]'),profile=profiles.find(item=>item.id===profileControl.value),target=dialog.querySelector('[data-available]'),progress=dialog.querySelector('[data-progress]');
+    const current=()=>dialog.open&&dialog._request===requestId;
+    const add=dialog.querySelector('[data-add]'),retry=dialog.querySelector('[data-retry]');
+    if(!profile){delete dialog.dataset.loading;target.removeAttribute('aria-busy');renderAvailable(dialog);progress.textContent='';add.disabled=true;retry.disabled=true;return;}
+    rememberModelChecks(dialog);rememberPickerSelection(dialog);
+    const cached=readPickerCache(profile);
+    if(!refresh&&cached){
+      delete dialog.dataset.loading;target.removeAttribute('aria-busy');dialog._picker.items=cached.models;renderAvailable(dialog);
+      progress.textContent='显示已保存列表（'+new Date(cached.listedAt).toLocaleString('zh-CN')+'），未重新核价。需要新型号时更新当前分组。';add.disabled=false;retry.disabled=false;
+      try{
+        const prices=await api('/admin/model-services/prices');if(!current())return;
+        for(const updated of prices.models||[]){const item=dialog._picker.items.find(item=>item.id===updated.id);if(item)Object.assign(item,updated);}
+        savePickerCache(profile,dialog._picker.items,cached.listedAt);rememberModelChecks(dialog);renderAvailable(dialog);
+        progress.textContent='显示已保存列表，已读取后台最新核价。未重新抓取官网；新型号请更新当前分组。';
+      }catch{/* Saved list remains usable; explicit import still verifies price on the server. */}
+      return;
+    }
+    const controls=refresh?[profileControl,groupControl,add,retry]:[add,retry];controls.forEach(control=>control.disabled=true);dialog.dataset.loading='1';target.setAttribute('aria-busy','true');
+    if(!dialog._picker.items.length)target.textContent='正在读取上游模型列表…';progress.textContent=refresh?'正在读取最新上游列表…':'正在读取模型列表和已保存价格，不重新核价…';
+    try{
+      const result=await api('/admin/model-services/available?prices=cached&profileId='+encodeURIComponent(profile.id));if(!current())return;
+      const items=result.models||[],listedAt=Date.now();dialog._picker.items=items;savePickerCache(profile,items,listedAt);renderAvailable(dialog);
+      const updating=visibleModels(dialog);let checked=0,verified=0,retained=0,unverified=0,pinned=0;
+      if(refresh)for(let index=0;index<updating.length;index+=5){
+        progress.textContent='正在核对 '+groupNames[groupControl.value]+' 官方价格 '+Math.min(index+5,updating.length)+'/'+updating.length+'…';
+        const batch=await api('/admin/model-services/refresh-prices',jsonOptions('POST',{modelIds:updating.slice(index,index+5).map(item=>item.id)}));if(!current())return;
+        for(const updated of batch.models||[]){const item=items.find(item=>item.id===updated.id);if(item)Object.assign(item,updated);checked++;if(updated.verification.status==='verified')verified++;else if(updated.verification.status==='retained')retained++;else if(updated.verification.status==='pinned')pinned++;else unverified++;}
+        savePickerCache(profile,items,listedAt);renderAvailable(dialog);
+      }
+      progress.textContent=refresh?'当前分组更新完成：官网核对 '+verified+'/'+checked+'；保留旧价 '+retained+'；内置已核价 '+pinned+'；未核价 '+unverified+'。':'已读取列表与保存价格，未重新核价。可先选择分组，再按需更新。';
+    }catch(error){if(current()){renderAvailable(dialog);progress.textContent='更新未完成：'+error.message+'。已保存列表仍可使用，可重试当前分组。';}}
+    finally{if(current()){delete dialog.dataset.loading;target.removeAttribute('aria-busy');controls.forEach(control=>control.disabled=false);}}
   }
+
   async function importSelected(dialog){
-    const selected=[...dialog.querySelectorAll('[data-available] input[type="checkbox"]:checked')].map(input=>({id:input.value,kind:input.dataset.kind,billingModelId:dialog.querySelector(`[data-billing-for="${CSS.escape(input.value)}"]`)?.value})),profileId=dialog.querySelector('[data-profile]').value,protocol=dialog.querySelector('[data-protocol]').value,progress=dialog.querySelector('[data-progress]'),button=dialog.querySelector('[data-add]');if(!selected.length){progress.textContent='先勾选模型。';return;}
+    rememberModelChecks(dialog);
+    const selected=dialog._picker.items.filter(item=>dialog._picker.selected.has(item.id)&&(item.official||item.imageEligible)).map(item=>({id:item.id,kind:item.imageEligible?'image':'text',billingModelId:dialog._picker.billing.get(item.id)|| (item.reference?.imagePrice?item.id:'')})),profileId=dialog.querySelector('[data-profile]').value,protocol=dialog.querySelector('[data-protocol]').value,progress=dialog.querySelector('[data-progress]'),button=dialog.querySelector('[data-add]');if(!selected.length){progress.textContent='先勾选模型。';return;}
+    if(selected.some(item=>item.kind==='image'&&!item.billingModelId)){progress.textContent='请先为勾选的生图别名选择官方计价型号。';return;}
     button.disabled=true;let passed=0;const failed=[];for(let index=0;index<selected.length;index++){const item=selected[index];progress.textContent=`正在测试 ${index+1}/${selected.length}：${item.id}`;try{const image=item.kind==='image',result=await api(image?'/admin/model-services/image-import':'/admin/model-services/import',jsonOptions('POST',image?{profileId,modelId:item.id,billingModelId:item.billingModelId}:{profileId,modelId:item.id,protocol}));if(result.ok)passed++;else failed.push(`${item.id}：${result.code||'IMPORT_FAILED'}${result.upstreamStatus?' HTTP '+result.upstreamStatus:''}`);}catch(error){failed.push(`${item.id}：${error.message}`);}}
     button.disabled=false;const summary=`已添加 ${passed}/${selected.length}${failed.length?'；失败：'+failed.join('；'):''}`;progress.textContent=summary;if(passed){dialog.close();await load();root.querySelector('[data-status]').textContent=summary;}
   }
-  function officialImageChoices(item){return item.billingModels||[];}
+  function officialImageChoices(item){return Array.isArray(item.billingModels)?item.billingModels:[];}
   async function testAll(retry=false){
     const bindings=retry?failedBindings:routes.flatMap(route=>(route.members||[]).filter(member=>member.enabled).map(member=>({modelId:route.model_id,profileId:member.profile_id}))),status=root.querySelector('[data-status]'),button=root.querySelector('[data-test-all]');if(!bindings.length){status.textContent='暂无可测试的模型绑定。';return;}
     button.disabled=true;const failures=[],next=[];for(let index=0;index<bindings.length;index++){const item=bindings[index];status.textContent=`测试中 ${index+1}/${bindings.length}：${item.modelId}`;try{const result=await api('/admin/model-services/probe-binding',jsonOptions('POST',item));if(!result.ok){next.push(item);failures.push(`${item.modelId}：${result.code}${result.upstreamStatus?' HTTP '+result.upstreamStatus:''}${result.upstreamCode?' / '+result.upstreamCode:''}`);}}catch(error){next.push(item);failures.push(`${item.modelId}：${error.message}`);}}

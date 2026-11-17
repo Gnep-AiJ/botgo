@@ -3,7 +3,9 @@
   "name": "botgo-api",
   "main": "src/index.js",
   "compatibility_date": "2026-08-25",
+  "compatibility_flags": ["nodejs_compat", "nodejs_compat_do_not_populate_process_env"],
   "workers_dev": false,
+  "ai": { "binding": "AI" },
   "triggers": { "crons": ["17 * * * *", "23 3 * * *"] },
   "d1_databases": [
     {
@@ -21,6 +23,7 @@
   ],
   "vars": {
     "AUTO_REVIEW_ENABLED": "0",
+    "ADMIN_AI_ENABLED": "0",
     // Placeholder only. Replace with your 16-digit Alipay App ID locally or in CI. Do not commit the real App ID.
     "ALIPAY_APP_ID": "YOUR_ALIPAY_APP_ID",
     "ALIPAY_SIGN_TYPE": "RSA2",

@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {pathToFileURL}=require('node:url');
 const root=path.resolve(__dirname,'..');
-const desktop=path.join(root,'artifacts/opencode/packages/desktop');
+const desktop=path.join(require('./paths.cjs').source,'packages/desktop');
 const profile=path.join(root,'artifacts/verification/opencode-preview/profile');
 fs.mkdirSync(profile,{recursive:true});
 app.setAppPath(desktop);
@@ -12,7 +12,6 @@ app.setVersion(JSON.parse(fs.readFileSync(path.join(desktop,'package.json'),'utf
 app.setPath('userData',profile);
 app.setPath('sessionData',path.join(profile,'chromium'));
 process.env.BOTGO_PROFILE_ROOT=profile;
-process.env.OPENCODE_DISABLE_MODELS_FETCH='true';
 process.env.OPENCODE_DISABLE_AUTOUPDATE='true';
 process.env.OPENCODE_SIDECAR_V2='0';
 import(pathToFileURL(path.join(desktop,'out/main/index.js')).href).catch(error=>{

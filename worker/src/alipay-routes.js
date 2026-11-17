@@ -2,20 +2,12 @@ import {
   alipayPaymentConfiguration,
   amountMatchesCents,
   closeTrade,
-  createPaymentForm,
-  createPaymentUrl,
   paidTradeNotification,
-  publicPaymentConfiguration,
-  publicPaymentDiagnostics,
   queryTrade,
   refundQuery,
   refundTrade,
-  RECHARGE_MAX_CENTS,
-  RECHARGE_MIN_CENTS,
-  validateCheckoutRequest,
   verifyNotify
 } from "./alipay-payment.js";
-import { cryptoErrorCode } from "./alipay-crypto.js";
 
 function json(body, status = 200, headers = {}) {
   return new Response(JSON.stringify(body), {
@@ -78,12 +70,6 @@ function orderPublic(row) {
   };
 }
 
-function newOutTradeNo() {
-  // Alipay accepts a merchant order number up to 64 characters. Keep it
-  // deterministic-looking but free of email/account data.
-  return `BGO${Date.now().toString(36).toUpperCase()}${crypto.randomUUID().replaceAll("-", "").slice(0, 20).toUpperCase()}`.slice(0, 64);
-}
-
 function newRefundRequestNo(orderId) {
   return `BGOR${orderId.replaceAll("-", "").slice(0, 18).toUpperCase()}${Date.now().toString(36).toUpperCase()}`.slice(0, 64);
 }
@@ -98,22 +84,6 @@ function paymentError(configuration) {
   if (configuration.reason === "invalid_public_key_role") return "支付宝公钥配置错误：ALIPAY_PUBLIC_KEY 必须填写支付宝公钥，不能填写应用公钥。";
   if (configuration.reason === "invalid_key_material") return "支付宝密钥无法完成验签，请重新核对应用私钥和支付宝公钥。";
   return "支付宝支付配置不可用。";
-}
-
-function diagnosticPaymentBlockReason(diagnostics) {
-  if (!diagnostics) return null;
-  if (diagnostics.keyPair === "matches") return "invalid_public_key_role";
-  if (diagnostics.privateKey !== "valid" || diagnostics.publicKey !== "valid") return "invalid_key_material";
-  return null;
-}
-
-function paymentGenerationError(reason) {
-  if (reason === "invalid_base64") return "支付宝应用私钥不是有效的 Base64/PEM 内容，请重新上传密钥值。";
-  if (reason === "invalid_der") return "支付宝应用私钥不是可识别的 RSA PKCS#1/PKCS#8 密钥。";
-  if (reason === "public_key_material") return "ALIPAY_PRIVATE_KEY 当前上传的是公钥，请改为上传支付宝开放平台生成的应用私钥。";
-  if (reason === "encrypted_private") return "ALIPAY_PRIVATE_KEY 是加密私钥，当前 Worker 只接受未加密的 RSA2 PKCS#1/PKCS#8 私钥。";
-  if (reason === "crypto_import_failed") return "支付宝应用私钥无法由 Worker 导入，请确认使用 RSA2 私钥。";
-  return "当前 Worker 无法执行 RSA2 签名，请稍后重试。";
 }
 
 async function accountFor(request, env, helpers) {
@@ -161,72 +131,6 @@ async function recordTradeStatus(env, order, providerResult) {
   await env.DB.prepare("UPDATE billing_orders SET trade_status = ?, provider_trade_no = COALESCE(?, provider_trade_no), updated_at = CURRENT_TIMESTAMP WHERE id = ? AND status = 'pending'")
     .bind(status, providerResult.trade_no || null, order.id).run();
   return env.DB.prepare("SELECT * FROM billing_orders WHERE id = ?").bind(order.id).first();
-}
-
-async function checkout(request, env, helpers) {
-  const account = await accountFor(request, env, helpers);
-  if (!account) return json({ error: "请先登录。" }, 401);
-  const body = await bodyOf(request);
-  const checkoutRequest = validateCheckoutRequest(body);
-  if (!checkoutRequest) return json({ error: "支付请求标识不正确。" }, 400);
-
-  const configuration = alipayPaymentConfiguration(env);
-  if (!configuration.available) return json({ error: paymentError(configuration), reason: configuration.reason }, 503);
-  const diagnostics = await publicPaymentDiagnostics(env);
-  const diagnosticReason = diagnosticPaymentBlockReason(diagnostics);
-  if (diagnosticReason) return json({ error: paymentError({ reason: diagnosticReason }), reason: diagnosticReason }, 503);
-  const amountCents = checkoutRequest.amountCents;
-  if (amountCents < RECHARGE_MIN_CENTS || amountCents > RECHARGE_MAX_CENTS) return json({ error: "充值金额必须在 ￥10 至 ￥9999 之间。" }, 400);
-
-  let order = await env.DB.prepare("SELECT * FROM billing_orders WHERE account_id = ? AND idempotency_key = ? LIMIT 1")
-    .bind(account.id, checkoutRequest.idempotencyKey).first();
-  if (order && Number(order.amount_cents) !== amountCents) return json({ error: "该支付请求已绑定其他金额，请重新选择充值金额。" }, 409);
-  if (!order) {
-    order = {
-      id: crypto.randomUUID(),
-      account_id: account.id,
-      amount_cents: amountCents,
-      included_credits: amountCents,
-      status: "pending",
-      out_trade_no: newOutTradeNo(),
-      subject: `BotGo 额度充值 ￥${(amountCents / 100).toFixed(2)}`,
-      idempotency_key: checkoutRequest.idempotencyKey
-    };
-    try {
-      await env.DB.prepare("INSERT INTO billing_orders (id, account_id, plan_id, amount_cents, included_credits, status, provider, out_trade_no, subject, idempotency_key) VALUES (?, ?, 'credit', ?, ?, 'pending', 'alipay', ?, ?, ?)")
-        .bind(order.id, order.account_id, order.amount_cents, order.included_credits, order.out_trade_no, order.subject, order.idempotency_key).run();
-    } catch (error) {
-      // A concurrent request may have won the idempotency race.
-      order = await env.DB.prepare("SELECT * FROM billing_orders WHERE account_id = ? AND idempotency_key = ? LIMIT 1")
-        .bind(account.id, checkoutRequest.idempotencyKey).first();
-      if (!order) throw error;
-    }
-  }
-
-  if (order.status !== "pending") return json({ order: orderPublic(order), paymentUrl: null, paymentHtml: null });
-  let paymentUrl;
-  let paymentHtml;
-  try {
-    paymentUrl = await createPaymentUrl(env, request, {
-      outTradeNo: order.out_trade_no,
-      amountCents: order.amount_cents,
-      subject: order.subject || `BotGo 额度充值 ￥${(order.amount_cents / 100).toFixed(2)}`
-    });
-    paymentHtml = await createPaymentForm(env, request, {
-      outTradeNo: order.out_trade_no,
-      amountCents: order.amount_cents,
-      subject: order.subject || `BotGo 额度充值 ￥${(order.amount_cents / 100).toFixed(2)}`
-    });
-  } catch (error) {
-    let reason = cryptoErrorCode(error);
-    if (reason === "invalid_der") {
-      const diagnostics = await publicPaymentDiagnostics(env);
-      if (diagnostics.privateKey === "public_key_material" || diagnostics.privateKey === "encrypted_private") reason = diagnostics.privateKey;
-    }
-    console.error("alipay_form_generation_failed", reason);
-    return json({ error: paymentGenerationError(reason), code: "alipay_form_generation_failed", reason }, 503);
-  }
-  return json({ order: orderPublic(order), paymentUrl, paymentHtml });
 }
 
 function tradeState(result) {
@@ -423,33 +327,25 @@ async function adminOrders(request, env, helpers) {
   const rows = status
     ? await env.DB.prepare("SELECT o.*, a.email FROM billing_orders o JOIN accounts a ON a.id = o.account_id WHERE o.status = ? ORDER BY o.created_at DESC LIMIT 100").bind(status).all()
     : await env.DB.prepare("SELECT o.*, a.email FROM billing_orders o JOIN accounts a ON a.id = o.account_id ORDER BY o.created_at DESC LIMIT 100").all();
-  return json({ orders: (rows.results || []).map((row) => ({ ...orderPublic(row), email: row.email })) });
+  const orders = (rows.results || []).map(row => ({ ...orderPublic(row), email: row.email, provider: 'alipay' }));
+  if (!status) {
+    const current = await env.DB.prepare(`SELECT r.id, r.amount_cents, r.payment_status, r.credited_at, r.created_at, a.email
+      FROM opcpay_recharges r JOIN accounts a ON a.id = r.account_id ORDER BY r.created_at DESC LIMIT 100`).all();
+    orders.push(...current.results.map(row => ({
+      id: row.id, email: row.email, provider: 'opcpay', amountCents: row.amount_cents, createdAt: row.created_at,
+      status: row.payment_status === 'REFUNDED' ? 'refunded' : row.credited_at ? 'paid' : row.payment_status === 'PAID' ? 'paid_uncredited' : 'pending',
+    })));
+  }
+  orders.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return json({ orders: orders.slice(0, 100) });
 }
 
 export async function handleAlipayRoute(request, env, path, helpers) {
-  if (path === "/billing/plan" && request.method === "GET") {
-    const payment = publicPaymentConfiguration(env);
-    const keyDiagnostics = payment.paymentAvailable ? await publicPaymentDiagnostics(env) : null;
-    const diagnosticReason = diagnosticPaymentBlockReason(keyDiagnostics);
-    return json({
-      recharge: payment.recharge,
-      ...payment,
-      ...(diagnosticReason ? { paymentAvailable: false, reason: diagnosticReason } : {}),
-      keyDiagnostics
-    });
-  }
-  if (path === "/billing/checkout" && request.method === "POST") return checkout(request, env, helpers);
+  if (path === "/billing/checkout" && request.method === "POST") return json({ error: "旧版充值已停止接单，请刷新页面使用一人付。" }, 410);
   if (path === "/billing/query" && request.method === "POST") return query(request, env, helpers);
   if (path === "/billing/notify") return notify(request, env, helpers);
   if (path === "/billing/return" && request.method === "GET") return returnPage(request, env, helpers);
 
-  if (path === "/admin/billing/plan" && request.method === "GET") {
-    const plan = await env.DB.prepare("SELECT id, name, price_cents, included_credits, period_days, updated_at FROM billing_settings WHERE id = 'pro'").first();
-    const payment = publicPaymentConfiguration(env);
-    const keyDiagnostics = payment.paymentAvailable ? await publicPaymentDiagnostics(env) : null;
-    const diagnosticReason = diagnosticPaymentBlockReason(keyDiagnostics);
-    return json({ plan, ...payment, ...(diagnosticReason ? { paymentAvailable: false, reason: diagnosticReason } : {}), keyDiagnostics, paymentConfigurationDetected: payment.paymentAvailable && !diagnosticReason });
-  }
   if (path === "/admin/billing/orders" && request.method === "GET") return adminOrders(request, env, helpers);
   const orderQuery = path.match(/^\/admin\/billing\/orders\/([^/]+)\/query$/);
   if (orderQuery && request.method === "POST") return query(request, env, helpers, true, decodePathValue(orderQuery[1]));

@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const source=fs.readFileSync(new URL('../../download.js',import.meta.url),'utf8');
+let assigned,options,body={engine:'hermes',release:{engine:'hermes',downloadUrl:'/api/desktop/releases/fixture/download'}};
+const status={textContent:''},location={origin:'https://botgo.win',assign:value=>assigned=value};
+const context={URL,location,document:{querySelectorAll:()=>[],getElementById:()=>status},window:{},fetch:async(_url,init)=>{options=init;return {ok:true,status:200,json:async()=>body};}};
+vm.runInNewContext(source,context);
+await context.window.botgoDownload(null);assert.equal(options.headers['x-botgo-client-engine'],'hermes');assert.equal(assigned,'https://botgo.win/api/desktop/releases/fixture/download');
+assigned=null;body={release:{engine:'opencode',downloadUrl:'/legacy'}};await context.window.botgoDownload(null);assert.equal(assigned,null);assert.match(status.textContent,/新版本暂不可用/);
+console.log('Website download selects Hermes and refuses legacy engine metadata');
