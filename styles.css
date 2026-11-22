@@ -220,7 +220,23 @@ footer{border-color:var(--line)}
  .header-auth{grid-column:2;grid-row:1;margin:0}
  .header-cta{min-height:44px;padding:8px 12px;font-size:.8rem}
  .site-header .brand{font-size:1.35rem;gap:8px}
+ .hero{min-height:100svh;margin-top:-112px;padding:146px 20px 116px}
+ .hero-art .robot{width:min(60vw,286px);max-height:42%;right:2%;bottom:84px}
+ .scroll-cue{bottom:max(14px,env(safe-area-inset-bottom))}
  footer{flex-wrap:wrap;gap:12px 20px;padding-bottom:max(28px,env(safe-area-inset-bottom))}
+}
+@media(max-width:480px){
+ .conversation-intro h2 span{white-space:normal}
+ .conversation-intro h2 span+span{margin-left:16px}
+ .conversation-intro>p:not(.eyebrow),.conversation-intro .button-primary{margin-left:0}
+}
+@media(max-width:600px) and (max-height:700px){
+ .hero{padding:134px 20px 104px}
+ .hero-art .robot{width:min(52vw,220px);max-height:36%;bottom:74px}
+}
+@media(min-width:601px) and (max-width:1024px){
+ .site-header nav a,.site-header nav button{min-width:44px;min-height:44px;padding:0 6px}
+ footer button{min-height:44px;display:inline-flex;align-items:center}
 }
 @media(prefers-reduced-motion:reduce){.client-preview-tabs button{transition:none}}
 

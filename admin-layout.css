@@ -70,9 +70,9 @@ html[data-theme="dark"] { --bg:#161e25; --surface:#1d2830; --surface-2:#26343d; 
 .review-card { padding:18px; border:1px solid var(--line); border-radius:12px; background:var(--surface-2); }
 .review-card .button { justify-self:start; }
 .admin-gate { margin-top:10vh; padding:36px; }
-@media(max-width:720px) { .admin-sidebar { box-shadow:none; }body.nav-open .admin-sidebar { box-shadow:20px 0 60px rgb(0 0 0 / 25%); } }
+@media(max-width:720px) { .admin-sidebar { box-shadow:none; visibility:hidden; padding-top:max(24px,env(safe-area-inset-top)); padding-bottom:max(18px,env(safe-area-inset-bottom)); }body.nav-open .admin-sidebar { box-shadow:20px 0 60px rgb(0 0 0 / 25%); visibility:visible; } }
 dialog { max-height:calc(100dvh - 32px); overflow:auto; }
-@media(min-width:721px) and (max-width:1024px) { :root { --sidebar:204px; }.admin-brand>span:last-child { display:block; }.admin-nav a { font-size:13px; justify-content:flex-start; padding:0 10px; }.admin-brand { justify-content:flex-start; }.sidebar-foot { display:grid; } }
+@media(min-width:721px) and (max-width:1024px) { :root { --sidebar:204px; }.admin-brand>span:last-child { display:block; font-size:17px; }.admin-nav a { font-size:13px; justify-content:flex-start; padding:0 10px; }.admin-brand { justify-content:flex-start; }.sidebar-foot { display:grid; } }
 @media(max-width:720px) { .admin-main { padding-inline:14px; }.panel { padding:18px; }.metric-grid { grid-template-columns:repeat(2,minmax(0,1fr));gap:10px; }.metric-grid article { padding:16px; }.metric-grid strong { font-size:28px; }.data-table .numeric { text-align:left; }.model-name { min-width:0; overflow-wrap:anywhere; }.model-card>summary { padding:12px; gap:8px; }.model-card .settings-form { padding:16px; }.meter-settings>.button { width:100%; }.nav-group-label { margin-top:10px; }.admin-sidebar { overflow-y:auto; }.admin-brand { flex-shrink:0; } }
 .route-grid { display:block; margin:0; }
 .route-summary { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); border-block:1px solid var(--line); background:var(--surface); }
@@ -145,8 +145,20 @@ dialog { max-height:calc(100dvh - 32px); overflow:auto; }
 @media(max-width:720px) { .route-summary { grid-template-columns:repeat(2,minmax(0,1fr)); }.route-summary>div:nth-child(2) { border-right:0; }.route-summary>div:nth-child(-n+2) { border-bottom:1px solid var(--line); }.route-registry-panel>.panel-heading { padding-inline:16px; }.route-member-option { grid-template-columns:minmax(0,1fr) auto; }.route-member-option>label:nth-child(2) { grid-column:1 / -1; }.route-member-option>.status-pill { display:none; }.route-chain-summary { grid-template-columns:1fr; }.route-chain-summary b { display:none; }.model-route-note { align-items:flex-start; flex-direction:column; } }
 
 /* Model management: compact lists and a single editing surface. */
-.admin-app { background:#f4f6f9; }
-.admin-dashboard .panel { background:#fff; box-shadow:none; }
+.admin-app { background:var(--bg); }
+.admin-dashboard .panel { background:var(--surface); box-shadow:none; }
+.sidebar-foot a { display:inline-flex; align-items:center; min-height:44px; }
+.view-actions>div:last-child { display:flex; flex-wrap:wrap; gap:8px; }
+.view-actions .button { white-space:nowrap; }
+.cell-stack { display:grid; gap:2px; min-width:0; }
+.cell-stack small { margin-top:2px; overflow-wrap:anywhere; }
+.ai-advice { margin-top:14px; font-size:13px; line-height:1.65; color:var(--text); }
+.ai-advice ul { margin:6px 0 12px; padding-left:18px; color:var(--muted); }
+.status-pill,.table-button { white-space:nowrap; }
+.data-table { -webkit-overflow-scrolling:touch; }
+@media(min-width:721px) and (max-width:1024px) { .data-table table { min-width:0; }.data-table th,.data-table td { padding:12px 6px; } }
+@media(max-width:1024px) { .view-actions { flex-wrap:wrap; align-items:flex-start; }.view-actions>div:last-child { width:100%; }.view-actions .button { flex:0 1 auto; }.table-button { min-height:40px; padding:0 12px; } }
+@media(max-width:720px) { .data-table td { align-items:start; }.data-table td::before { padding-top:2px; }.service-table .status-pill { width:fit-content; }.view-actions .button { flex:1 1 auto; } }
 .admin-view[data-admin-view="metering"]>.view-actions,.admin-view[data-admin-view="upstreams"]>.view-actions { align-items:center; margin-bottom:18px; }
 .admin-view[data-admin-view="metering"]>.view-actions h2,.admin-view[data-admin-view="upstreams"]>.view-actions h2 { margin:0 0 3px; font-size:21px; }
 .admin-view[data-admin-view="metering"]>.view-actions .view-lead,.admin-view[data-admin-view="upstreams"]>.view-actions .view-lead { margin:0; }
