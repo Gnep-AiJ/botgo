@@ -1,4 +1,4 @@
-import { supportsWebSearch, searchUsage, searchWasUsed } from './web-search.js';
+import { supportsWebSearch, searchUsage, searchWasUsed, isAllowedDesktopTool, hasDesktopSearchTool } from './web-search.js';
 import { officialModel } from './official-pricing.js';
 import { NATIVE_REQUEST_MAX_BYTES } from './native-capabilities.js';
 // Standard OpenAI API rate snapshot, USD per million tokens, 2026-09-12.
@@ -175,14 +175,17 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
   }
   if(body.service_tier && !['auto','default'].includes(body.service_tier)) return reply({error:'当前仅支持 Standard 计费。'},400);
   if(body.background || body.previous_response_id) return reply({error:'请发送完整上下文；暂不支持后台任务或上游会话引用。'},400);
-  if(body.tools!==undefined&&(!Array.isArray(body.tools)||body.tools.some(t=>!t||!['function','custom','local_shell','shell','apply_patch'].includes(t.type)||(t.type==='shell'&&t.environment?.type!=='local')))) return reply({error:'暂不支持另行计费的托管工具。'},400);
+  const effectiveProtocol=agentRoute?agentRoute.protocol:(pool[0]?.protocol||(channel==='web_chat'?'chat':'responses'));
+  if(body.tools!==undefined&&(!Array.isArray(body.tools)||channel==='web_chat'||body.tools.some(t=>!isAllowedDesktopTool(t,effectiveProtocol)))) return reply({error:'暂不支持该工具类型。'},400);
   if(nativeWebSearch&&(channel!=='web_chat'||body.tools!==undefined||!pool.every(c=>supportsWebSearch(c,agentRoute))))return reply({error:'联网路由未通过验证。'},400);
   if(imageTool&&(channel!=='web_chat'||body.tools!==undefined))return reply({error:'生图工具来源无效。'},400);
   if(body.n!==undefined&&body.n!==1) return reply({error:'每次请求只支持一个结果。'},400);
+  const desktopSearchTool=channel!=='web_chat'&&hasDesktopSearchTool(body.tools);
+  const desktopAutoWebSearch=channel==='desktop_opencode'&&typeof taskId==='string'&&taskId.startsWith('hermes_')&&effectiveProtocol==='responses'&&Array.isArray(body.tools)&&body.tools.length>0&&!desktopSearchTool&&!body.tools.some(t=>t?.type==='function'&&t?.name==='web_search')&&(body.tool_choice===undefined||body.tool_choice==='auto')&&pool.some(c=>supportsWebSearch(c,agentRoute));
   const price=model.price;
   const upstreamModel=model.upstream_id;
   const snapshot={requestedModel,billingModel:model.id,selectedModel:billingModel||model.id,requestPurpose:autoReview?'auto_review':'task',upstreamModel,profileId:null,attempts:[],price,revision:model.revision,multiplierPpm:model.multiplier_ppm??data.settings.multiplier_ppm,usdCnyPpm:data.settings.usd_cny_ppm,settingsRevision:data.settings.revision,
-    ...(nativeWebSearch?{webSearch:{provider:'kedaya',protocol:'responses',toolFee:'not_in_token_estimate'}}:{}),
+    ...(nativeWebSearch||desktopSearchTool||desktopAutoWebSearch?{webSearch:{provider:'native',protocol:'responses',toolFee:'not_in_token_estimate'}}:{}),
     ...(channel==='web_chat'&&webTurnId?{webTurnId}:{}),
     ...(agentRoute?{agentProtocol:agentRoute.protocol,routeRevision:agentRoute.revision,taskId,costPrice:agentRoute.cost_price_json?JSON.parse(agentRoute.cost_price_json):null}: {})};
   const requested=body.max_output_tokens??body.max_completion_tokens??body.max_tokens??8192;
@@ -220,6 +223,7 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
     if(chat){delete payload.max_output_tokens;delete payload.input;}
     else {delete payload.max_completion_tokens;if(channel==='web_chat'){payload.input=payload.messages;delete payload.messages;}}
     if(nativeWebSearch){payload.tools=[{type:'web_search',search_context_size:'low'}];payload.tool_choice='auto';payload.include=['web_search_call.action.sources'];}
+    else if(desktopAutoWebSearch&&supportsWebSearch(candidate,agentRoute)){payload.tools=[...(payload.tools||[]),{type:'web_search',search_context_size:'low'}];}
     if(imageTool){payload.tools=[...(payload.tools||[]),chat?{type:'function',function:imageTool}:{type:'function',...imageTool}];payload.tool_choice='auto';payload.parallel_tool_calls=false;}
     return {chat,payload};
   };

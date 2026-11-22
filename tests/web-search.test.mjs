@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {createWebChatRuntime} from './fixtures/web-chat-runtime.mjs';
 import {handleWebChat} from '../worker/src/web-chat.js';
-import {supportsWebSearch,citedAnswer} from '../worker/src/web-search.js';
+import {supportsWebSearch,citedAnswer,isAllowedDesktopTool} from '../worker/src/web-search.js';
 const runtime=await createWebChatRuntime({searchFixture:true}),{db,env}=runtime,jobs=[];
 const call=(path,method='GET',body)=>handleWebChat(new Request('https://botgo.test'+path,{method,headers:{origin:'https://botgo.test','content-type':'application/json'},...(body?{body:JSON.stringify(body)}:{})}),env,{waitUntil(p){jobs.push(p);}},path,{sub:'fixture-a'});
 const drain=async()=>{while(jobs.length)await Promise.all(jobs.splice(0));};
@@ -9,8 +9,14 @@ const balance=()=>db.prepare("SELECT credit_balance*10000+credit_remainder_micro
 try{
  const supported={baseUrl:'https://kedaya.ai/v1',upstreamModelId:'gpt-6.1-sol'},route={protocol:'responses'};
  assert.ok(supportsWebSearch(supported,route));
- for(const bad of [{baseUrl:'https://other.invalid/v1'},{upstreamModelId:'claude-opus-5-5'},{baseUrl:'https://kedaya.ai@other.invalid/v1'},{baseUrl:'https://kedaya.ai/other'},{baseUrl:'https://kedaya.ai/v1?foo=1'}])assert.equal(supportsWebSearch({...supported,...bad},route),false);
+ for(const ok of [{upstreamModelId:'gpt-6.2-sol'},{upstreamModelId:'gpt-6.2-astra'},{upstreamModelId:'grok-4.7'},{baseUrl:'https://api.openai.com/v1',upstreamModelId:'gpt-6.2-sol'}])assert.equal(supportsWebSearch({...supported,...ok},route),true);
+ for(const bad of [{baseUrl:'http://kedaya.ai/v1'},{upstreamModelId:'claude-opus-5-5'},{upstreamModelId:'gpt-image-2.6-sunburst'},{baseUrl:'https://kedaya.ai@other.invalid/v1'},{baseUrl:'https://kedaya.ai/other'},{baseUrl:'https://kedaya.ai/v1?foo=1'}])assert.equal(supportsWebSearch({...supported,...bad},route),false);
  assert.equal(supportsWebSearch(supported,{protocol:'chat'}),false);
+ assert.equal(isAllowedDesktopTool({type:'web_search'},'responses'),true);
+ assert.equal(isAllowedDesktopTool({type:'code_interpreter'},'responses'),true);
+ assert.equal(isAllowedDesktopTool({type:'web_search'},'chat'),false);
+ assert.equal(isAllowedDesktopTool({type:'unknown_hosted'},'responses'),false);
+ assert.equal(isAllowedDesktopTool({type:'shell',environment:{type:'container'}},'responses'),false);
  const data=await(await call('/chat/models')).json();assert.equal(data.capabilities.webSearch,true);assert.equal(data.defaultModel,'gpt-6.1-sol','web initial model supports default search');assert.equal(data.models.find(m=>m.id==='gpt-6.1-sol').webSearch,true);assert.equal(data.models[0].webSearch,false);
  const convo=await(await call('/conversations','POST',{title:'搜索官方资料',topic:'general'})).json();
  const payload={conversationId:convo.id,requestId:crypto.randomUUID(),model:'gpt-6.1-sol',content:'查询官方兼容日期文档',web_search:true,tools:undefined};

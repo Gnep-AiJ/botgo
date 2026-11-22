@@ -88,4 +88,4 @@ function makeUpdater(directory, currentRelease, options = {}) {
   assert.equal(changed.stopped.length, 0, 'the running client stays open when revalidation fails');
 
   console.log('BotGo updater: version, origin, hash, size, signature, explicit install and metadata revalidation passed');
-})().catch((error) => { console.error(error); process.exitCode = 1; });
+})().catch((error) => { console.error(error); process.exitCode = 1; }).finally(() => { fs.rmSync(root, { recursive: true, force: true }); });

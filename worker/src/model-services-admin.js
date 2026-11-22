@@ -1,7 +1,7 @@
 import { probeAgentRoute } from './opencode-gateway.js';
 import { resolveProfileConfig } from './platform-admin.js';
 import { officialCatalogModel,officialImageModel,officialModel,officialModelIds } from './official-pricing.js';
-import { verifiedOfficialModel, supportsOfficialSync } from './official-price-sync.js';
+import { verifiedOfficialModel, supportsOfficialSync, syncActiveOfficialPrices } from './official-price-sync.js';
 import { imageCostMicros } from './metering.js';
 
 const reply=(data,status=200)=>Response.json(data,{status,headers:{'cache-control':'no-store'}});
@@ -9,9 +9,9 @@ const modelIdPattern=/^[a-z0-9][a-z0-9._-]{0,127}$/;
 const upstreamModelPattern=/^[A-Za-z0-9._:/-]{1,128}$/;
 const priceKeys=['input','cached','write','output','longThreshold','longInput','longOutput'];
 
-function validConfig(value,id){
+function validConfig(value,id,cachedOfficial=null){
   if(!value||!modelIdPattern.test(id)||id==='codex-auto-review'||typeof value.name!=='string'||!value.name.trim()||value.name.length>128||!upstreamModelPattern.test(value.upstreamId||''))return false;
-  const locked=officialModel(id)?.price;
+  const locked=(cachedOfficial||officialModel(id))?.price;
   if(!locked||!value.price||!priceKeys.every(key=>value.price[key]===locked[key])||value.price.source!==locked.source||value.price.date!==locked.date||value.price.tier!==locked.tier)return false;
   const price=value.price;let source;try{source=new URL(price?.source||'');}catch{return false;}
   if(price?.tier!=='default'||priceKeys.some(key=>!Number.isFinite(price[key])||price[key]<0||price[key]>10000000)||price.longThreshold<1||price.longInput<1||price.longOutput<1||source.protocol!=='https:'||source.username||source.password||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(price.date||''))return false;
@@ -64,6 +64,11 @@ export async function handleModelServicesAdmin(request,env,path,admin,audit){
     }
     await audit(env,admin.id,'official_prices_refreshed',{models:models.map(item=>({id:item.id,status:item.verification.status}))});
     return reply({models});
+  }
+  if(path==='/admin/model-services/sync-active'&&request.method==='POST'){
+    const result=await syncActiveOfficialPrices(env);
+    await audit(env,admin.id,'official_prices_synced_active',{checked:result.checked,updated:result.updated,models:result.models});
+    return reply({ok:true,...result});
   }
   if(path==='/admin/model-services/images'&&request.method==='GET'){
     const rows=(await env.DB.prepare(`SELECT r.*,p.name AS upstream_name,p.base_url FROM image_model_routes r
@@ -210,7 +215,9 @@ export async function handleModelServicesAdmin(request,env,path,admin,audit){
   const id=match[1],operation=match[2];
   if(!operation&&request.method==='PUT'){
     const config=await request.json().catch(()=>null);
-    if(!validConfig(config,id))return reply({error:'模型、价格或上游绑定无效。'},400);
+    const cachedRow=await env.DB.prepare('SELECT model_json FROM official_model_cache WHERE model_id=?').bind(id).first();
+    const cachedOfficial=cachedRow?JSON.parse(cachedRow.model_json):null;
+    if(!validConfig(config,id,cachedOfficial))return reply({error:'模型、价格或上游绑定无效。'},400);
     for(const member of config.members){const profile=await env.DB.prepare('SELECT id FROM upstream_profiles WHERE id=? AND retired_at IS NULL').bind(member.profileId).first();if(!profile)return reply({error:`上游 ${member.profileId} 不存在或已退役。`},409);}
     await env.DB.prepare("INSERT INTO model_service_drafts(model_id,config_json,tested_json) VALUES(?,?,'{}') ON CONFLICT(model_id) DO UPDATE SET config_json=excluded.config_json,tested_json='{}',updated_at=CURRENT_TIMESTAMP").bind(id,JSON.stringify(config)).run();
     await audit(env,admin.id,'model_service_draft_saved',{model:id});return reply({ok:true});
@@ -231,7 +238,9 @@ export async function handleModelServicesAdmin(request,env,path,admin,audit){
     return reply({ok:results.length>0&&results.every(result=>result.ok),results});
   }
   if(operation==='publish'&&request.method==='POST'){
-    if(!validConfig(config,id))return reply({error:'草稿价格已失效，请从上游重新添加官方模型。'},409);
+    const cachedRow=await env.DB.prepare('SELECT model_json FROM official_model_cache WHERE model_id=?').bind(id).first();
+    const cachedOfficial=cachedRow?JSON.parse(cachedRow.model_json):null;
+    if(!validConfig(config,id,cachedOfficial))return reply({error:'草稿价格已失效，请从上游重新添加官方模型。'},409);
     if(!config.members.length)return reply({error:'请先绑定至少一个上游。'},409);
     const protocols=new Set(config.members.map(member=>member.protocol));
     if(protocols.size!==1)return reply({error:'同一模型的上游必须使用相同协议。'},409);

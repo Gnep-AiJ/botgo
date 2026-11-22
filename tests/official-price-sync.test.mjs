@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
-import { parseOpenAIModelMarkdown, parseClaudeModelMarkdown, parseGrokModelMarkdown, fetchClaudeModel, fetchGrokModel, supportsOfficialSync, verifiedOfficialModel, refreshCachedOfficialPrices } from '../worker/src/official-price-sync.js';
+import { parseOpenAIModelMarkdown, parseClaudeModelMarkdown, parseGrokModelMarkdown, fetchClaudeModel, fetchGrokModel, supportsOfficialSync, verifiedOfficialModel, refreshCachedOfficialPrices, syncActiveOfficialPrices, PRICE_AI_MODEL } from '../worker/src/official-price-sync.js';
 import { costMicros } from '../worker/src/metering.js';
 
 const textDoc = `# GPT-6 Test
@@ -161,4 +161,42 @@ assert.equal((await refreshCachedOfficialPrices(env,{now:0,fetcher:async()=>new 
 const reached=[];
 await refreshCachedOfficialPrices(env,{now:3600000,fetcher:async url=>{reached.push(url);return rotationFetch(url);}});
 assert.ok(reached.some(url=>url.endsWith('/gpt-rotation-7.md')),'failed early pages cannot starve later cached models');
-console.log('Official price sync: exact-ID parsing, fail-closed rules, cache and published-price refresh passed');
+// Workers AI fallback parses redesigned official docs with literal dollar grounding, and rejects hallucinated prices.
+const redesignedDoc = `# GPT-6.3 Nova\nModel ID: \`gpt-6.3-nova\`\nContext: 1,050,000 tokens, max output 128,000 tokens, supports text & image.\nStandard rates per 1M tokens: Input $3, Cached input $0.15, Cache write $3.75, Output $15.\n`;
+let aiCalls = 0;
+const aiEnv = {
+  ...env,
+  PRICE_AI_SYNC_ENABLED: '1',
+  AI: {
+    async run(model, body) {
+      aiCalls++;
+      assert.equal(model, PRICE_AI_MODEL);
+      assert.ok(JSON.stringify(body).includes('gpt-6.3-nova'));
+      return { response: JSON.stringify({ kind: 'text', id: 'gpt-6.3-nova', name: 'GPT-6.3 Nova', reasoning: true, inputModalities: ['text', 'image'], context: 1050000, maxOutput: 128000, input: 3, cached: 0.15, write: 3.75, output: 15, longThreshold: 10000000, longInput: 1, longOutput: 1 }) };
+    }
+  }
+};
+const aiParsed = await verifiedOfficialModel(aiEnv, 'gpt-6.3-nova', { force: true, fetcher: async () => new Response(redesignedDoc) });
+assert.equal(aiCalls, 1);
+assert.equal(aiParsed.price.input, 3);
+assert.equal(aiParsed.price.output, 15);
+assert.equal(aiParsed.price.parser, 'workers_ai');
+const hallucinatingEnv = {
+  ...env,
+  PRICE_AI_SYNC_ENABLED: '1',
+  AI: { async run() { return { response: JSON.stringify({ kind: 'text', id: 'gpt-6.3-bad', name: 'Bad', reasoning: true, inputModalities: ['text'], context: 1050000, maxOutput: 128000, input: 999, cached: 0.15, write: 0, output: 15, longThreshold: 10000000, longInput: 1, longOutput: 1 }) }; } }
+};
+assert.equal(await verifiedOfficialModel(hallucinatingEnv, 'gpt-6.3-bad', { force: true, fetcher: async () => new Response(redesignedDoc.replaceAll('gpt-6.3-nova', 'gpt-6.3-bad')) }), null, 'hallucinated prices absent from official doc must fail closed');
+// Active published models refresh on a 6-hour priority window and support on-demand syncActiveOfficialPrices.
+db.exec("DELETE FROM official_model_cache; UPDATE model_catalog SET enabled=0; UPDATE image_model_routes SET enabled=0");
+db.prepare("UPDATE model_catalog SET enabled=1 WHERE id='gpt-6-test'").run();
+db.prepare("INSERT INTO official_model_cache(model_id,model_json,fetched_at) VALUES('gpt-6-test',?,datetime('now','-7 hours'))").run(JSON.stringify(text));
+const prioritySync = await refreshCachedOfficialPrices(env, { now: 0, fetcher: async () => new Response(textDoc.replace('| Output | $10 |', '| Output | $12 |')) });
+assert.equal(prioritySync.checked, 1);
+assert.equal(prioritySync.updated, 1);
+assert.equal(JSON.parse(db.prepare("SELECT price_json FROM model_catalog WHERE id='gpt-6-test'").get().price_json).output, 12);
+const activeManual = await syncActiveOfficialPrices(env, { fetcher: async () => new Response(textDoc.replace('| Output | $10 |', '| Output | $11 |')) });
+assert.equal(activeManual.checked, 1);
+assert.equal(activeManual.updated, 1);
+assert.equal(JSON.parse(db.prepare("SELECT price_json FROM model_catalog WHERE id='gpt-6-test'").get().price_json).output, 11);
+console.log('Official price sync: exact-ID parsing, fail-closed rules, Workers AI fallback, priority refresh and published-price sync passed');

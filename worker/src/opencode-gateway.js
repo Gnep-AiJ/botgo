@@ -3,6 +3,7 @@ import { catalog, imageCostMicros, meteredProxy, normalizedUsage, usageObserver,
 import { resolveProfileConfig } from './platform-admin.js';
 import { officialModel } from './official-pricing.js';
 import { nativeCapabilities, NATIVE_REQUEST_MAX_BYTES } from './native-capabilities.js';
+import { supportsWebSearch } from './web-search.js';
 
 const reply = (data, status=200) => Response.json(data.error?{code:'REQUEST_REJECTED',retryable:false,requestId:crypto.randomUUID(),...data}:data, {status, headers:{'cache-control':'no-store'}});
 const bearer = request => request.headers.get('authorization')?.replace(/^Bearer\s+/i,'') || '';
@@ -129,10 +130,11 @@ export async function handleOpenCode(request, env, ctx, path) {
       const {settings}=await catalog(env);
       const cached=(await env.DB.prepare('SELECT model_id,model_json FROM official_model_cache').all()).results||[];
       const cachedModels=new Map(cached.map(row=>[row.model_id,JSON.parse(row.model_json)]));
-      const models=rows.map(r=>{const official=cachedModels.get(r.model_id)||officialModel(r.model_id);return {id:r.model_id,name:r.name,protocol:r.protocol,price:JSON.parse(r.price_json),
+      const models=await Promise.all(rows.map(async r=>{const official=cachedModels.get(r.model_id)||officialModel(r.model_id);const candidates=await resolveAgentCandidates(env,r);return {id:r.model_id,name:r.name,protocol:r.protocol,price:JSON.parse(r.price_json),
         multiplier:(r.multiplier_ppm??settings.multiplier_ppm)/1e6,usdCny:settings.usd_cny_ppm/1e6,
+        webSearch:candidates.some(c=>supportsWebSearch(c,r)),
         ...nativeCapabilities(official,(request.headers.get('x-botgo-native-modalities')||'text,image').split(',').map(kind=>kind.trim())),
-        ...(official?.reasoning?{reasoning:true}:{}),...(official?.limit?{limit:official.limit}:{})};});
+        ...(official?.reasoning?{reasoning:true}:{}),...(official?.limit?{limit:official.limit}:{})};}));
       const imageModels=imageRows.map(row=>({id:row.model_id,name:row.name,billingModelId:row.billing_model_id}));
       return reply({key:issued.key,models,imageModels,defaultModel:models.some(m=>m.id===settings.default_model)?settings.default_model:models[0].id,
         account:{email:identity.account.email,balanceMicros:identity.account.credit_balance*10000+identity.account.credit_remainder_micros}},201);

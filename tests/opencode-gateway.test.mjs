@@ -141,6 +141,25 @@ try{
   sql.exec("UPDATE metering_settings SET default_image_model='gpt-image-2.5-sunburst'");
   const visibleModels=await handleOpenCode(new Request('https://botgo.test/opencode/v1/models',{headers:{authorization:'Bearer '+session.key}}),env,ctx,'/opencode/v1/models');
   assert.equal(visibleModels.status,200);assert.equal((await visibleModels.json()).data.some(model=>model.id==='gpt-5.6-sol'),true,'verified enabled Sol is listed by the native models endpoint');
+  assert.equal(session.models.find(m=>m.id==='gpt-5.6-terra')?.webSearch,true,'Responses GPT models report native webSearch capability to desktop');
+  assert.equal(session.models.find(m=>m.id==='gpt-5.6-sol')?.webSearch,false,'Chat protocol models report webSearch=false');
+  // Desktop clients can invoke native Responses hosted tools (web_search, code_interpreter) directly;
+  // BotGo Agent (hermes_*) also auto-receives native web_search when no web_search tool is declared.
+  let capturedResponsesBody=null;
+  globalThis.fetch=async(url,init)=>{
+    assert.equal(url,'https://upstream.invalid/v1/responses');
+    capturedResponsesBody=JSON.parse(init.body);
+    return new Response('data: {"type":"response.web_search_call.completed"}\n\ndata: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":5},"tool_usage":{"web_search":{"num_requests":1}}}}\n\n',{headers:{'content-type':'text/event-stream'}});
+  };
+  const explicitSearch=await handleOpenCode(new Request('https://botgo.test/opencode/v1/responses',{method:'POST',headers:{authorization:'Bearer '+session.key,'x-botgo-task-id':'desktop-search-1'},body:JSON.stringify({model:'gpt-5.6-terra',input:'latest news',tools:[{type:'web_search'},{type:'code_interpreter'}]})}),env,ctx,'/opencode/v1/responses');
+  assert.equal(explicitSearch.status,200);await explicitSearch.text();await Promise.all(jobs);
+  assert.ok(capturedResponsesBody.tools.some(t=>t.type==='web_search')&&capturedResponsesBody.tools.some(t=>t.type==='code_interpreter'));
+  capturedResponsesBody=null;
+  const hermesAutoSearch=await handleOpenCode(new Request('https://botgo.test/opencode/v1/responses',{method:'POST',headers:{authorization:'Bearer '+session.key,'x-botgo-task-id':'hermes_auto_search_test'},body:JSON.stringify({model:'gpt-5.6-terra',input:'search today weather',tools:[{type:'function',name:'read_file',parameters:{type:'object',properties:{}}}]})}),env,ctx,'/opencode/v1/responses');
+  assert.equal(hermesAutoSearch.status,200);await hermesAutoSearch.text();await Promise.all(jobs);
+  assert.ok(capturedResponsesBody.tools.some(t=>t.type==='web_search'),'Hermes Responses requests auto-gain native web_search when no search tool is declared');
+  const blockedChatHosted=await handleOpenCode(new Request('https://botgo.test/opencode/v1/chat/completions',{method:'POST',headers:{authorization:'Bearer '+session.key,'x-botgo-task-id':'desktop-chat-bad-tool'},body:JSON.stringify({model:'gpt-5.6-sol',messages:[{role:'user',content:'hi'}],tools:[{type:'web_search'}]})}),env,ctx,'/opencode/v1/chat/completions');
+  assert.equal(blockedChatHosted.status,400,'Responses-only hosted tools are rejected on chat protocol');
   assert.equal(JSON.stringify(session).includes('fixture-upstream-secret'),false,'upstream key never reaches client');
   globalThis.fetch=async(url,init)=>{
     assert.equal(url,'https://upstream.invalid/v1/chat/completions');assert.equal(init.headers.authorization,'Bearer fixture-upstream-secret');

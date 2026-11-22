@@ -6,6 +6,8 @@ const CLAUDE_ID = /^claude-([a-z]+-\d+(?:-\d+)?)(?:-\d{8})?$/;
 const GROK_ID = /^grok-[a-z0-9][a-z0-9._-]{0,122}$/;
 export function supportsOfficialSync(id) { return MODEL_ID.test(id) || CLAUDE_ID.test(id) || GROK_ID.test(id); }
 const DAY_MS = 24 * 60 * 60 * 1000;
+const ACTIVE_TTL_MS = 6 * 60 * 60 * 1000;
+export const PRICE_AI_MODEL = '@cf/meta/llama-3.1-8b-instruct-fast';
 
 function linesBetween(markdown, heading, nextLevel) {
   const start = markdown.indexOf(heading);
@@ -208,10 +210,96 @@ function recent(timestamp, maximumAgeMs) {
   return Number.isFinite(time) && time <= Date.now() && Date.now() - time < maximumAgeMs;
 }
 
+function dollarAppearsInDoc(markdown, value) {
+  if (!Number.isFinite(value) || value < 0) return false;
+  if (value === 0) return true;
+  const matches = markdown.match(/\$\d+(?:\.\d+)?/g) || [];
+  return matches.some(token => Math.abs(Number(token.slice(1)) - value) <= 1e-9);
+}
+
+function nonNegative(value) { return Number.isFinite(value) && value >= 0 && value <= 100000; }
+
+export async function extractOfficialModelWithAI(env, markdown, expectedId, { source, provider, date = new Date().toISOString().slice(0, 10) }) {
+  if (!env?.AI || env.PRICE_AI_SYNC_ENABLED === '0' || typeof markdown !== 'string' || !markdown.includes(`\`${expectedId}\``)) return null;
+  const excerpt = markdown.slice(0, 24000);
+  let timer;
+  try {
+    const inference = env.AI.run(PRICE_AI_MODEL, {
+      messages: [
+        { role: 'system', content: 'Extract official API pricing and limits for the exact requested model ID from the provided vendor markdown document. Return ONLY a JSON object. For text/chat models: {"kind":"text","id":"<exact_id>","name":"<display_name>","reasoning":true|false,"inputModalities":["text"],"context":<int>,"maxOutput":<int|null>,"input":<num>,"cached":<num>,"write":<num>,"output":<num>,"longThreshold":<int>,"longInput":<num>,"longOutput":<num>}. For image-only models: {"kind":"image","id":"<exact_id>","name":"<display_name>","textInput":<num>,"textCached":<num>,"imageInput":<num>,"imageCached":<num>,"imageOutput":<num>}. All prices are standard USD per 1M tokens. Use longThreshold=10000000, longInput=1, longOutput=1 when there is no long-context surcharge. If the exact model ID or required standard prices are missing or ambiguous, return {"kind":"none"}.' },
+        { role: 'user', content: `Exact Model ID: ${expectedId}\nProvider: ${provider}\n\n${excerpt}` }
+      ],
+      max_tokens: 512,
+      temperature: 0,
+      response_format: { type: 'json_object' }
+    });
+    const raw = await Promise.race([inference, new Promise((_, reject) => { timer = setTimeout(() => reject(Error('PRICE_AI_TIMEOUT')), 20000); })]);
+    const text = raw?.choices?.[0]?.message?.content ?? raw?.response;
+    const data = typeof text === 'string' ? JSON.parse(text) : (text && typeof text === 'object' ? text : null);
+    if (!data || data.id !== expectedId) return null;
+    const name = typeof data.name === 'string' && data.name.trim() ? data.name.trim().slice(0, 128) : expectedId;
+    if (data.kind === 'image') {
+      const nums = [data.textInput, data.textCached, data.imageInput, data.imageCached, data.imageOutput].map(Number);
+      if (!nums.every(positive) || !nums.every(n => dollarAppearsInDoc(markdown, n))) return null;
+      return { id: expectedId, name, provider, agent: false, modalities: { input: ['text', 'image'], output: ['image'] },
+        imagePrice: { textInput: nums[0], textCached: nums[1], imageInput: nums[2], imageCached: nums[3], imageOutput: nums[4], source, date, tier: 'default', parser: 'workers_ai' } };
+    }
+    if (data.kind !== 'text') return null;
+    const input = Number(data.input), output = Number(data.output), cached = Number(data.cached ?? 0), write = Number(data.write ?? 0);
+    if (!positive(input) || !positive(output) || !nonNegative(cached) || !nonNegative(write)) return null;
+    if (![input, output, cached, write].every(n => dollarAppearsInDoc(markdown, n))) return null;
+    const longThreshold = Number(data.longThreshold ?? 10000000);
+    const longInput = Number(data.longInput ?? 1), longOutput = Number(data.longOutput ?? 1);
+    if (!Number.isSafeInteger(longThreshold) || longThreshold < 1000 || longThreshold > 10000000 || !positive(longInput) || !positive(longOutput) || longInput < 1 || longOutput < 1 || longInput > 100 || longOutput > 100) return null;
+    const context = Number(data.context);
+    const maxOutput = data.maxOutput === null || data.maxOutput === undefined ? null : Number(data.maxOutput);
+    if (!Number.isSafeInteger(context) || context < 1000 || context > 10000000) return null;
+    if (maxOutput !== null && (!Number.isSafeInteger(maxOutput) || maxOutput < 1 || maxOutput > context)) return null;
+    const allowedIn = ['text', 'image', 'audio', 'video', 'pdf'];
+    const rawIn = Array.isArray(data.inputModalities) ? data.inputModalities.filter(x => allowedIn.includes(x)) : ['text'];
+    const inputModalities = rawIn.includes('text') ? [...new Set(rawIn)] : ['text', ...new Set(rawIn)];
+    const knownLimit = officialCatalogModel(expectedId)?.limit;
+    const limit = maxOutput ? { context, output: maxOutput } : knownLimit?.context === context ? knownLimit : undefined;
+    return { id: expectedId, name, provider, agent: true, reasoning: data.reasoning === true,
+      modalities: { input: inputModalities, output: ['text'] }, ...(limit ? { limit } : {}),
+      price: { tier: 'default', input, cached, write, output, longThreshold, longInput, longOutput, source, date, parser: 'workers_ai' } };
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchOfficialWithFallback(env, id, fetcher = fetch) {
+  if (CLAUDE_ID.test(id)) {
+    const match = CLAUDE_ID.exec(id);
+    const source = `https://platform.claude.com/docs/en/models/${match[1]}/overview`;
+    const response = await fetcher(`${source}.md`, { redirect: 'manual', signal: AbortSignal.timeout(12000), headers: { accept: 'text/markdown, text/plain' } });
+    if (response.status !== 200) { await response.body?.cancel(); return null; }
+    const markdown = await boundedText(response, 131072);
+    return parseClaudeModelMarkdown(markdown, id) || await extractOfficialModelWithAI(env, markdown, id, { source, provider: 'Anthropic' });
+  }
+  if (GROK_ID.test(id)) {
+    const source = `https://docs.x.ai/developers/models/${id}`;
+    const response = await fetcher(`${source}.md`, { redirect: 'manual', signal: AbortSignal.timeout(12000), headers: { accept: 'text/plain' } });
+    if (response.status !== 200) { await response.body?.cancel(); return null; }
+    const markdown = await boundedText(response, 65536);
+    return parseGrokModelMarkdown(markdown, id) || await extractOfficialModelWithAI(env, markdown, id, { source, provider: 'xAI' });
+  }
+  if (MODEL_ID.test(id)) {
+    const source = `${DOC_ORIGIN}/api/docs/models/${id}`;
+    const response = await fetcher(`${source}.md`, { redirect: 'manual', signal: AbortSignal.timeout(12000), headers: { accept: 'text/markdown, text/plain' } });
+    if (response.status !== 200) { await response.body?.cancel(); return null; }
+    const markdown = await boundedText(response, 131072);
+    return parseOpenAIModelMarkdown(markdown, id) || await extractOfficialModelWithAI(env, markdown, id, { source, provider: 'OpenAI' });
+  }
+  return null;
+}
+
 function priceFields(model) {
   const price = model.agent ? model.price : model.imagePrice;
   if (!price) return null;
-  const { date, source, ...rates } = price;
+  const { date, source, parser, ...rates } = price;
   return JSON.stringify(rates);
 }
 
@@ -221,12 +309,14 @@ async function updatePublishedPrices(env, model) {
     const current = await env.DB.prepare('SELECT price_json FROM model_catalog WHERE id=? AND archived=0').bind(model.id).first();
     if (current && priceFields({ agent: true, price: JSON.parse(current.price_json) }) !== priceFields(model)) {
       await env.DB.prepare('UPDATE model_catalog SET price_json=?,revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE id=? AND archived=0').bind(JSON.stringify(price), model.id).run();
+      try { await env.DB.prepare('INSERT INTO security_audit(id,account_id,event,metadata) VALUES(?,NULL,?,?)').bind(crypto.randomUUID(), 'official_price_auto_updated', JSON.stringify({ model: model.id, price })).run(); } catch {}
     }
   } else {
     const routes = (await env.DB.prepare('SELECT model_id,price_json FROM image_model_routes WHERE billing_model_id=?').bind(model.id).all()).results || [];
     for (const route of routes) {
       if (priceFields({ agent: false, imagePrice: JSON.parse(route.price_json) }) !== priceFields(model)) {
         await env.DB.prepare('UPDATE image_model_routes SET price_json=?,revision=revision+1,updated_at=CURRENT_TIMESTAMP WHERE model_id=?').bind(JSON.stringify(price), route.model_id).run();
+        try { await env.DB.prepare('INSERT INTO security_audit(id,account_id,event,metadata) VALUES(?,NULL,?,?)').bind(crypto.randomUUID(), 'official_price_auto_updated', JSON.stringify({ model: route.model_id, billingModel: model.id, price })).run(); } catch {}
       }
     }
   }
@@ -240,7 +330,7 @@ export async function verifiedOfficialModel(env, id, { force = false, fetcher = 
   if (!force && recent(cached?.fetched_at, DAY_MS)) { state('cached', cached.fetched_at); return JSON.parse(cached.model_json); }
   if (!force && known && !cached) { state('pinned'); return known; }
   let verified = null;
-  try { verified = await (CLAUDE_ID.test(id) ? fetchClaudeModel(id, fetcher) : GROK_ID.test(id) ? fetchGrokModel(id, fetcher) : fetchOpenAIModel(id, fetcher)); } catch { /* Retain the last verified price. */ }
+  try { verified = await fetchOfficialWithFallback(env, id, fetcher); } catch { /* Retain the last verified price. */ }
   if (!verified) {
     const fallback = cached && recent(cached.fetched_at, 7 * DAY_MS) ? JSON.parse(cached.model_json) : known;
     state(fallback ? 'retained' : 'unverified', cached?.fetched_at || null);
@@ -254,23 +344,49 @@ export async function verifiedOfficialModel(env, id, { force = false, fetcher = 
 }
 
 export async function refreshCachedOfficialPrices(env, { now = Date.now(), fetcher = fetch } = {}) {
-  // Rotate bounded batches on the existing hourly schedule. Failed pages cannot
-  // starve other IDs, and recent successful verifications need no new fetch.
+  // Prioritize active published models (6h freshness) so live prices never wait behind
+  // inactive cached models; rotate remaining cached IDs in bounded batches of 5 (24h).
   const cached = (await env.DB.prepare('SELECT model_id,model_json,fetched_at FROM official_model_cache ORDER BY model_id LIMIT 100').all()).results || [];
-  const published = (await env.DB.prepare(`SELECT id AS model_id FROM model_catalog WHERE archived=0 AND enabled=1
+  const cachedById = new Map(cached.map(row => [row.model_id, row]));
+  const publishedRows = (await env.DB.prepare(`SELECT id AS model_id FROM model_catalog WHERE archived=0 AND enabled=1
     UNION SELECT billing_model_id AS model_id FROM image_model_routes WHERE enabled=1 ORDER BY model_id LIMIT 100`).all()).results || [];
-  const candidates = [...new Map([...published,...cached].map(row=>[row.model_id,row])).values()]
-    .filter(row=>supportsOfficialSync(row.model_id)).sort((a,b)=>a.model_id.localeCompare(b.model_id));
-  if (!candidates.length) return { checked: 0, updated: 0 };
-  const offset = Math.floor(now / 3600000) * 5 % candidates.length;
-  const rows = Array.from({length: Math.min(5, candidates.length)}, (_, i) => candidates[(offset + i) % candidates.length])
-    .filter(row => !recent(row.fetched_at, DAY_MS));
+  const activeIds = new Set(publishedRows.map(row => row.model_id).filter(supportsOfficialSync));
+  const activeDue = [...activeIds].sort().map(id => cachedById.get(id) || { model_id: id, model_json: null, fetched_at: null })
+    .filter(row => !recent(row.fetched_at, ACTIVE_TTL_MS)).slice(0, 5);
+  const inactiveCandidates = cached.filter(row => !activeIds.has(row.model_id) && supportsOfficialSync(row.model_id))
+    .sort((a, b) => a.model_id.localeCompare(b.model_id));
+  let inactiveDue = [];
+  if (inactiveCandidates.length) {
+    const offset = Math.floor(now / 3600000) * 5 % inactiveCandidates.length;
+    inactiveDue = Array.from({ length: Math.min(5, inactiveCandidates.length) }, (_, i) => inactiveCandidates[(offset + i) % inactiveCandidates.length])
+      .filter(row => !recent(row.fetched_at, DAY_MS));
+  }
+  const rows = [...activeDue, ...inactiveDue].slice(0, 8);
+  if (!rows.length) return { checked: 0, updated: 0 };
   let updated = 0;
   for (const row of rows) {
     let after;
     try { after = await verifiedOfficialModel(env, row.model_id, { force: true, fetcher }); } catch { continue; }
-    const before=row.model_json?JSON.parse(row.model_json):officialCatalogModel(row.model_id);
+    const before = row.model_json ? JSON.parse(row.model_json) : officialCatalogModel(row.model_id);
     if (after && (!before || priceFields(after) !== priceFields(before))) updated++;
   }
   return { checked: rows.length, updated };
+}
+
+export async function syncActiveOfficialPrices(env, { fetcher = fetch } = {}) {
+  const publishedRows = (await env.DB.prepare(`SELECT id AS model_id FROM model_catalog WHERE archived=0 AND enabled=1
+    UNION SELECT billing_model_id AS model_id FROM image_model_routes WHERE enabled=1 ORDER BY model_id LIMIT 20`).all()).results || [];
+  const ids = [...new Set(publishedRows.map(r => r.model_id).filter(supportsOfficialSync))];
+  const models = [];
+  let updated = 0;
+  for (const id of ids) {
+    const beforeRow = await env.DB.prepare('SELECT model_json FROM official_model_cache WHERE model_id=?').bind(id).first();
+    const before = beforeRow ? JSON.parse(beforeRow.model_json) : officialCatalogModel(id);
+    const verification = {};
+    const after = await verifiedOfficialModel(env, id, { force: true, fetcher, verification });
+    const changed = Boolean(after && (!before || priceFields(after) !== priceFields(before)));
+    if (changed) updated++;
+    models.push({ id, status: verification.status, changed, parser: (after?.price || after?.imagePrice)?.parser || 'deterministic', date: (after?.price || after?.imagePrice)?.date || null });
+  }
+  return { checked: ids.length, updated, models };
 }

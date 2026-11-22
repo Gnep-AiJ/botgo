@@ -27,6 +27,7 @@ function validateSession(data){
     if(!Number.isFinite(model.multiplier)||model.multiplier<0)throw Error('Invalid price multiplier');
     if(model.modalities!==undefined&&(!Array.isArray(model.modalities.input)||!Array.isArray(model.modalities.output)||model.modalities.input.some(x=>!nativeModalities.has(x))||model.modalities.output.some(x=>!nativeModalities.has(x))))throw Error('Invalid model modalities');
     if(model.reasoning!==undefined&&typeof model.reasoning!=='boolean')throw Error('Invalid model reasoning capability');
+    if(model.webSearch!==undefined&&typeof model.webSearch!=='boolean')throw Error('Invalid model webSearch capability');
     if(model.limit!==undefined&&(!Number.isSafeInteger(model.limit.context)||model.limit.context<1||!Number.isSafeInteger(model.limit.output)||model.limit.output<1||model.limit.output>model.limit.context))throw Error('Invalid model limits');
   }
   const imageModels=data.imageModels??[];
@@ -66,7 +67,8 @@ async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=u
   origin=originFor(origin);
   if(!/^bgdt_[A-Za-z0-9_-]+$/.test(deviceToken))throw Error('Invalid device credential');
   let session=initialSession?validateSession(initialSession):undefined;
-  let expiresAt=session?now()+23*60*60*1000:0;
+  const SESSION_TTL_MS=30*60*1000;
+  let expiresAt=session?now()+SESSION_TTL_MS:0;
   let pending;
   let closed=false;
   const lifetime=new AbortController();
@@ -85,7 +87,7 @@ async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=u
         headers:{authorization:`Bearer ${deviceToken}`,'x-botgo-native-modalities':[...nativeModalities].join(',')}},{session:true,signal:AbortSignal.any([lifetime.signal,flight.controller.signal]),delays:retryDelays});
       if(!response.ok)throw Object.assign(Error(`BotGo session HTTP ${response.status}`),{status:response.status});
       session=validateSession(await response.json());
-      expiresAt=now()+23*60*60*1000;
+      expiresAt=now()+SESSION_TTL_MS;
       return session;
     })().finally(()=>{if(pending===flight)pending=undefined;});
     }
@@ -170,6 +172,7 @@ async function createBridge({origin,deviceToken,fetchImpl=fetch,initialSession=u
         let data={};
         if(result.body){const reader=result.body.getReader();let size=0,text='';try{for(;;){const chunk=await reader.read();if(chunk.done)break;size+=chunk.value.length;if(size>16384)break;text+=new TextDecoder().decode(chunk.value);}data=JSON.parse(text);}catch{}finally{await reader.cancel().catch(()=>{});}}
         const code=typeof data.code==='string'&&/^[A-Z_]{1,64}$/.test(data.code)?data.code:'HTTP_ERROR';
+        if(code==='ROUTE_UNAVAILABLE')expiresAt=0;
         const retryable=data.retryable===true&&retryCodes.has(code)&&[429,502,503,504].includes(result.status);
         const message=retryable?'服务暂时繁忙，正在重试。':result.status===401?'登录已失效，请重新连接。':result.status===402?'余额不足，请充值后继续。':code==='REQUEST_EXISTS'?'请求已受理，请勿重复提交。':code==='UPSTREAM_REJECTED'?'上游拒绝了请求，请检查模型配置。':result.status===403?'当前账户或模型没有访问权限。':'请求未完成，请稍后手动继续。';
         const seconds=Number(result.headers.get('retry-after'));

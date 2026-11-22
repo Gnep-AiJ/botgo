@@ -23,7 +23,8 @@
   ],
   "vars": {
     "AUTO_REVIEW_ENABLED": "0",
-    "ADMIN_AI_ENABLED": "0",
+    "ADMIN_AI_ENABLED": "1",
+    "PRICE_AI_SYNC_ENABLED": "1",
     // Placeholder only. Replace with your 16-digit Alipay App ID locally or in CI. Do not commit the real App ID.
     "ALIPAY_APP_ID": "YOUR_ALIPAY_APP_ID",
     "ALIPAY_SIGN_TYPE": "RSA2",

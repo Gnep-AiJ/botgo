@@ -219,9 +219,36 @@
   $("#release-form").addEventListener("submit", async (event) => { event.preventDefault(); try { await api("/admin/desktop/releases", jsonOptions("POST", Object.fromEntries(new FormData(event.currentTarget)))); $("#release-dialog").close(); setStatus("release-status", "版本草稿已登记。"); await loadReleases(); } catch (error) { setStatus("release-status", error.message, true); } });
   $("#refresh-orders").addEventListener("click", () => loadPlan().catch((error) => setStatus("billing-status", error.message, true)));
 
+  function renderAiDiagnostics(data) {
+    const meta = $("#ai-diagnostics-meta"), out = $("#ai-diagnostics-output"), btn = $("#run-ai-diagnostics");
+    if (!meta || !out) return;
+    const reqs = (data.snapshot?.requests || []).reduce((n, r) => n + Number(r.count || 0), 0);
+    meta.textContent = `近 24 小时请求 ${reqs} 次 · 模型 ${data.snapshot?.models?.enabled || 0}/${data.snapshot?.models?.total || 0} 已启用 · 今日免费诊断 ${data.used || 0}/${data.dailyLimit || 20}${data.enabled ? "" : "（未启用）"}`;
+    if (btn) btn.disabled = !data.enabled;
+    if (!data.advice) { out.innerHTML = data.error ? `<p class="action-status" role="alert">${escapeHtml(data.error)}</p>` : ""; return; }
+    const section = (label, items) => items?.length ? `<p><strong>${label}</strong></p><ul>${items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : "";
+    out.innerHTML = `<div class="ai-advice"><p><strong>摘要：</strong>${escapeHtml(data.advice.summary)}${data.cached ? "（1 小时缓存）" : ""}</p>${section("观察", data.advice.observations)}${section("可能原因", data.advice.possibleCauses)}${section("缺少证据", data.advice.missingEvidence)}${section("下一步排查", data.advice.nextChecks)}</div>`;
+  }
+  async function loadAiDiagnostics() {
+    if (!$("#ai-diagnostics-meta")) return;
+    renderAiDiagnostics(await api("/admin/ai-diagnostics"));
+  }
+  async function runAiDiagnostics() {
+    const btn = $("#run-ai-diagnostics"), out = $("#ai-diagnostics-output");
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    if (out) out.innerHTML = '<p class="form-help">正在调用 Workers AI 分析最近 24 小时统计…</p>';
+    try { renderAiDiagnostics(await api("/admin/ai-diagnostics", { method: "POST" })); }
+    catch (error) { if (out) out.innerHTML = `<p class="action-status" role="alert">${escapeHtml(error.message)}</p>`; }
+    finally { btn.disabled = false; }
+  }
+  $("#run-ai-diagnostics")?.addEventListener("click", runAiDiagnostics);
+
   function reportLoadError(target, error) { const node = $(target); if (node) node.innerHTML = `<p class="action-status" role="status">${escapeHtml(error.message || "加载失败，请刷新重试。")}</p>`; }
   window.addEventListener("botgo:admin-ready", () => Promise.allSettled([
     loadRouting().catch((error) => { reportLoadError("#route-grid", error); reportLoadError("#route-overview", error); reportLoadError("#overview-alerts", error); $("#metric-routes").textContent = "—"; }),
-    loadPlan().catch((error) => setStatus("billing-status", error.message, true)), loadReleases().catch((error) => reportLoadError("#release-list", error))
+    loadPlan().catch((error) => setStatus("billing-status", error.message, true)),
+    loadAiDiagnostics().catch((error) => { const m = $("#ai-diagnostics-meta"); if (m) m.textContent = `诊断统计加载失败：${error.message}`; }),
+    loadReleases().catch((error) => reportLoadError("#release-list", error))
   ]));
 })();
