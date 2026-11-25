@@ -221,4 +221,3 @@ dialog::backdrop { background: #0006; }
 
 /* One compact wordmark across homepage and conversation. */
 .sidebar-head .brand{display:inline-flex;align-items:center;gap:9px;letter-spacing:-.65px;font-weight:750;text-decoration:none;color:var(--accent)}
-.sidebar-head .brand-mark{width:30px;height:30px;flex:none;--brand-face:var(--side)}

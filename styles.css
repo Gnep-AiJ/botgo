@@ -172,7 +172,6 @@ footer{border-color:var(--line)}
 
 /* Consistent brand, paired entry actions and compact specialty navigation. */
 .site-header .brand{gap:10px;letter-spacing:-.045em;font-size:1.5rem;font-weight:750;color:#145b88}
-.site-header .brand-mark{width:36px;height:36px;flex:none}
 .hero h1>em{font-size:clamp(2.35rem,4.4vw,3.5rem);letter-spacing:-.055em;line-height:1.3}
 .hero-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));width:min(100%,472px);gap:14px;align-items:stretch}
 .hero-actions>.button{width:100%;min-width:0;min-height:58px;padding:14px 16px;border-radius:16px;font-size:1rem;line-height:1.25;gap:10px;white-space:nowrap;border:1px solid transparent;transition:background 160ms,border-color 160ms,box-shadow 160ms}
@@ -189,9 +188,6 @@ footer{border-color:var(--line)}
 .conversation-links a:hover,.conversation-links a:focus-visible{background:#deeffa;color:#164f78}
 @media(max-width:420px){.hero-actions{gap:10px}.hero-actions>.button{min-height:54px;padding:12px 8px;font-size:.88rem;gap:7px}.hero h1>em{font-size:clamp(2rem,7.5vw,2.8rem)}.conversation-links a{gap:6px;padding:10px 5px;font-size:.86rem}.conversation-links a>svg{width:17px;height:17px}}
 @media(prefers-reduced-motion:reduce){.hero-actions>.button{transition:none}}
-/* Bot mark reuses the product mascot; no separate icon family. */
-.brand-bot-mark{position:relative;display:inline-block;width:40px;height:40px;flex:none;overflow:hidden;border-radius:12px;background:#e6f4ff}
-.brand-bot-mark img{position:absolute;display:block;max-width:none!important;width:82px!important;height:auto!important;left:-22px;top:-9px}
 /* Real client screenshots replace the rotating startup frames. */
 .client-summary>p{max-width:340px;margin:0 0 24px;color:#496a80;font-size:1.08rem;line-height:1.8}
 .client-features{list-style:none;padding:0;margin:0 0 30px;display:grid;grid-template-columns:1fr 1fr;gap:18px 22px;color:#174361;font-size:.94rem;font-weight:600}
@@ -244,5 +240,3 @@ footer{border-color:var(--line)}
 @media(max-width:600px){.header-auth{max-width:112px;min-width:0}.header-cta{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.site-header nav a,.site-header nav button{min-width:44px}}
 
 .product-flow .flow-grid{grid-template-columns:1fr;position:relative}.client-summary{margin:0 0 4px}.client-summary .button{min-height:46px}.product-flow .flow-gallery{max-width:1060px;width:100%;margin-inline:auto}.flow-heading{margin-bottom:18px}@media(min-width:761px){.client-summary{position:absolute;right:0;top:-76px}.flow-heading h2{font-size:2.6rem}}
-
-.site-header nav a[data-shop-link][hidden]{display:none}

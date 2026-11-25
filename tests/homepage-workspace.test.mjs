@@ -16,6 +16,8 @@ assert.match(home, /botgo-client-account\.png/);
 assert.match(home, /class="scroll-cue"/);
 assert.match(home, /查看对话与客户端/);
 assert.match(home, /brand-bot-mark/);
+assert.match(read('dist/index.html'), /<a href="\.\/shop\.html">GPT 商城<\/a>/);
+assert.doesNotMatch(accountScript, /\/api\/shop\/config/);
 assert.match(home, /class="product-flow"/);
 assert.match(home, /client-preview-tabs/);
 assert.match(home, /id="login-form"/);

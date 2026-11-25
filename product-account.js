@@ -3,13 +3,6 @@
   const $ = selector => document.querySelector(selector);
   const dialog = $('#account-dialog');
   if (!dialog) return;
-  const shopLink = $('[data-shop-link]');
-  if (shopLink) {
-    fetch('/api/shop/config', { signal: AbortSignal.timeout(5000) })
-      .then(response => response.ok ? response.json() : null)
-      .then(config => { shopLink.hidden = config?.enabled !== true; })
-      .catch(() => {});
-  }
   const params = new URLSearchParams(location.search);
   const preview = ['localhost', '127.0.0.1', '::1'].includes(location.hostname) && params.get('preview') === 'account';
   const channel = typeof BroadcastChannel === 'function' ? new BroadcastChannel('botgo-web-auth') : null;

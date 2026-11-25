@@ -12,6 +12,7 @@ const files = [
   "index.html",
   "404.html",
   "styles.css",
+  "brand.css",
   "app.js",
   "download.js", "client-preview.js",
   "workspace.html",
@@ -157,7 +158,7 @@ async function main() {
   ]);
   const versionedScript = withBuildVersion(script, buildVersion);
   let homeVersioned = createProductionHome(html, css, versionedScript);
-  for (const asset of ['product-account.css', 'product-account.js', 'workspace-billing.js', 'download.js', 'client-preview.js']) homeVersioned = withContentVersion(homeVersioned, asset, await readFile(path.join(root, asset), 'utf8'));
+  for (const asset of ['brand.css', 'product-account.css', 'product-account.js', 'workspace-billing.js', 'download.js', 'client-preview.js']) homeVersioned = withContentVersion(homeVersioned, asset, await readFile(path.join(root, asset), 'utf8'));
   for (const asset of ['assets/botgo-chat-light-preview.png', 'assets/botgo-chat-dark-preview.png', 'assets/botgo-client-workspace.png', 'assets/botgo-client-wechat.png', 'assets/botgo-client-account.png']) homeVersioned = withContentVersion(homeVersioned, asset, await readFile(path.join(root, asset)));
   const qrContent = hasContactQr ? await readFile(qrTarget) : null;
   const productionHome = renderContactDetails(homeVersioned, qrContent);
@@ -167,10 +168,10 @@ async function main() {
   for(const asset of ['admin.css','admin-layout.css','admin.js','admin-platform.js','admin-metering.js'])adminVersioned=withContentVersion(adminVersioned,asset,await readFile(path.join(root,asset),'utf8'));
   await writeFile(path.join(dist,"admin.html"),adminVersioned);
   let chatVersioned=await readFile(path.join(root,'chat.html'),'utf8');
-  for(const asset of ['chat.css','chat.js','ui-kit.js','ui-kit.css'])chatVersioned=withContentVersion(chatVersioned,asset,await readFile(path.join(root,asset),'utf8'));
+  for(const asset of ['brand.css','chat.css','chat.js','ui-kit.js','ui-kit.css'])chatVersioned=withContentVersion(chatVersioned,asset,await readFile(path.join(root,asset),'utf8'));
   await writeFile(path.join(dist,'chat.html'),chatVersioned);
   let shopVersioned = await readFile(path.join(root, 'shop.html'), 'utf8');
-  for (const asset of ['styles.css', 'shop.css', 'shop.js']) shopVersioned = withContentVersion(shopVersioned, asset, await readFile(path.join(root, asset), 'utf8'));
+  for (const asset of ['brand.css', 'styles.css', 'shop.css', 'shop.js']) shopVersioned = withContentVersion(shopVersioned, asset, await readFile(path.join(root, asset), 'utf8'));
   await writeFile(path.join(dist, 'shop.html'), renderContactDetails(shopVersioned, qrContent));
   await writeFile(path.join(dist, "_headers"), createProductionHeaders(headers, versionedScript));
   console.log(`Built ${files.length} production files in dist/`);

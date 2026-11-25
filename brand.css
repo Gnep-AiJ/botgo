@@ -1,0 +1,22 @@
+.brand-bot-mark {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: 40px;
+  height: 40px;
+  overflow: hidden;
+  border-radius: 12px;
+  background: #e6f4ff;
+}
+
+.brand-bot-mark img {
+  position: absolute;
+  display: block;
+  top: 1px;
+  left: -14px;
+  width: 64px;
+  max-width: none;
+  height: auto;
+  /* Follow the mascot's chin so its waving hand stays out of the wordmark. */
+  clip-path: polygon(0 0, 100% 0, 100% 48%, 72% 48%, 62% 51.5%, 55% 53%, 43% 53%, 37% 51%, 33% 48%, 0 48%);
+}

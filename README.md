@@ -32,7 +32,7 @@ npm run dev
 
 | 变量 | 用途 |
 | --- | --- |
-| `BOTGO_SHOP_ENABLED=1` | 开启商城接口和首页入口 |
+| `BOTGO_SHOP_ENABLED=1` | 开启商城接口。首页入口始终可见。 |
 | `YUNSHU_SHOP_API_KEY` | 云枢商城密钥，用于只读商品、库存、报价及兼容卡密核验 |
 | `YUNSHU_REDEEM_API_KEY` | 可选。申请独立兑换密钥后用于核验新卡密 |
 | `AUTH_SECRET` / `UPSTREAM_CONFIG_KEY` | 沿用 Worker 的会话签名与加密配置。加密密钥更换前须迁移已有密文 |
