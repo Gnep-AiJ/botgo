@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="referrer" content="same-origin">
+  <title>GPT 订阅商城 · BotGo</title>
+  <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./shop.css">
+  <script src="./shop.js" defer></script>
+</head>
+<body class="shop-page">
+  <a class="skip-link" href="#shop-main">跳到商城</a>
+  <header class="site-header">
+    <a class="brand" href="./index.html" aria-label="BotGo 首页"><span class="brand-bot-mark" aria-hidden="true"><img src="./assets/botgo-robot-dynamic-mobile.webp" width="600" height="611" alt=""></span><span>BotGo</span></a>
+    <div class="header-auth"><a class="header-cta" id="shop-account" href="./index.html?panel=account" target="_blank" rel="noopener">登录 / 注册</a></div>
+  </header>
+  <main class="shop-main" id="shop-main">
+    <section class="shop-hero" aria-labelledby="shop-title">
+      <div>
+        <div class="shop-hero-title">
+          <span class="shop-brand-mark" aria-hidden="true"><img src="./assets/shop-chatgpt-logo.png" width="554" height="554" alt=""></span>
+          <h1 id="shop-title">GPT 订阅商城</h1>
+        </div>
+        <p>购买 ChatGPT 卡密，自助兑换。</p>
+        <div class="shop-actions shop-hero-actions">
+          <button class="shop-button shop-button--secondary" type="button" data-shop-policy aria-haspopup="dialog">购买须知</button>
+          <button class="shop-button shop-button--secondary" type="button" id="open-orders" aria-haspopup="dialog">我的订单</button>
+        </div>
+      </div>
+      <img src="./assets/botgo-robot-dynamic-mobile.webp" width="600" height="611" alt="" fetchpriority="high">
+    </section>
+
+    <div class="shop-columns">
+      <section id="products" aria-labelledby="products-title">
+        <div class="shop-section-head">
+          <h2 id="products-title">订阅商品</h2>
+        </div>
+        <p class="shop-status" id="catalog-status" role="status">正在加载商品…</p>
+        <button class="shop-button shop-button--secondary" id="catalog-retry" type="button" hidden>重试</button>
+        <div class="shop-products" id="product-list"></div>
+      </section>
+
+      <aside class="shop-side" aria-labelledby="card-title">
+        <section id="card-check" class="shop-panel shop-redeem">
+          <div class="shop-panel-head"><span class="shop-icon shop-icon--card" aria-hidden="true"></span><h2 id="card-title">卡密兑换</h2></div>
+          <form id="card-form" method="post" action="/api/shop/cards/check">
+            <label for="card-code">卡密</label>
+            <input id="card-code" type="text" placeholder="粘贴购买后收到的卡密" maxlength="126" spellcheck="false" autocomplete="off" autocapitalize="off" required>
+            <button class="shop-button shop-button--secondary" type="submit">核验卡密</button>
+          </form>
+          <p class="shop-status" id="card-status" role="status" hidden></p>
+          <a class="shop-button shop-button--primary shop-portal" href="https://redeem.yunpaycard.com/" target="_blank" rel="noopener noreferrer">前往兑换页 <span aria-hidden="true">↗</span></a>
+        </section>
+        <section class="shop-panel shop-guide" aria-labelledby="guide-title">
+          <h2 id="guide-title">兑换流程</h2>
+          <ol>
+            <li><strong>打开兑换页</strong><span>在上游兑换页粘贴卡密。</span></li>
+            <li><strong>核对信息</strong><span>核对目标邮箱、套餐和订阅状态后确认。</span></li>
+            <li><strong>查看结果</strong><span>等待兑换页更新进度，随后可回本站核验卡密状态。</span></li>
+          </ol>
+        </section>
+      </aside>
+    </div>
+
+  </main>
+  <footer class="shop-footer">
+    <span>BotGo</span>
+    <a href="./index.html">返回官网</a>
+    <button type="button" data-shop-policy>购买须知</button>
+  </footer>
+
+  <dialog class="shop-dialog shop-dialog--wide" id="orders-dialog" aria-labelledby="orders-title">
+    <div class="shop-dialog-head">
+      <h2 id="orders-title">我的订单</h2>
+      <button class="shop-close" data-close type="button" aria-label="关闭我的订单">×</button>
+    </div>
+    <div class="shop-dialog-body">
+      <ul class="shop-order-rows" id="order-rows" aria-label="订单列表" hidden></ul>
+      <p class="shop-status" id="orders-status" role="status">正在读取订单…</p>
+      <div class="shop-actions shop-dialog-actions">
+        <a class="shop-button shop-button--primary" id="order-login" href="./index.html?panel=account" target="_blank" rel="noopener" hidden>登录查看订单</a>
+        <button class="shop-button shop-button--secondary" id="refresh-orders" type="button" hidden>刷新订单</button>
+        <button class="shop-button shop-button--secondary" id="manage-orders" type="button" aria-haspopup="dialog" hidden>管理发货</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="shop-dialog" id="policy-dialog" aria-labelledby="policy-title">
+    <div class="shop-dialog-head">
+      <h2 id="policy-title">购买须知</h2>
+      <button class="shop-close" data-close type="button" aria-label="关闭购买须知">×</button>
+    </div>
+    <dl class="shop-policy">
+      <div><dt>资格限制</dt><dd>仅限<strong>未订阅过 $0 试用且非 Outlook 邮箱</strong>的账号，不符不予质保。</dd></div>
+      <div><dt>不可叠加</dt><dd>已有<strong>未到期 Plus / Pro 订阅</strong>的账号暂无法充值，请到期后再购。</dd></div>
+      <div><dt>关于风控</dt><dd>登录 Codex 若触发手机验证，属官方风控，与订阅无关，需买家自行完成验证。</dd></div>
+      <div><dt>质保范围</dt><dd>仅保订阅。有效期内（<strong>1 个月</strong>）如出现官方订阅掉落，按实际剩余天数比例退还差价。</dd></div>
+      <div><dt>不予质保</dt><dd>封号不保。账号自身原因导致封禁、限制登录或使用异常，以及曾订阅 $0 试用或使用 Outlook 邮箱的账号，均不提供质保。</dd></div>
+    </dl>
+    <div class="shop-policy-actions">
+      <div class="shop-actions" id="policy-read">
+        <button class="shop-button shop-button--secondary" data-close type="button">知道了</button>
+      </div>
+      <div id="policy-review" hidden>
+        <p class="shop-status" id="policy-status" role="status" hidden></p>
+        <div class="shop-actions">
+          <button class="shop-button shop-button--secondary" id="policy-back" data-close type="button">返回</button>
+          <button class="shop-button shop-button--primary" id="policy-pay" type="button">同意并支付</button>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="shop-dialog" id="checkout-dialog" aria-labelledby="checkout-title">
+    <div class="shop-dialog-head">
+      <h2 id="checkout-title">确认购买</h2>
+      <button class="shop-close" data-close type="button" aria-label="关闭购买窗口">×</button>
+    </div>
+    <form class="shop-dialog-body" id="checkout-form">
+      <div class="shop-checkout-summary">
+        <strong id="checkout-product"></strong><strong id="checkout-price"></strong>
+        <span>订阅时长 · 1 个月</span><span id="checkout-balance"></span>
+      </div>
+      <p class="shop-inline-note">付款后进入待发货。卡密可在「我的订单」查看。</p>
+      <p class="shop-status" id="checkout-status" role="status" hidden></p>
+      <div class="shop-actions shop-dialog-actions">
+        <button class="shop-button shop-button--primary" id="checkout-continue" type="submit" aria-haspopup="dialog" disabled>确认购买</button>
+        <a class="shop-button shop-button--primary" id="checkout-recharge" href="./index.html?panel=recharge" target="_blank" rel="noopener" hidden>去充值 ↗</a>
+        <a class="shop-button shop-button--primary" id="checkout-login" href="./index.html?panel=account" target="_blank" rel="noopener" hidden>去登录 ↗</a>
+        <button class="shop-button shop-button--primary" id="checkout-orders" type="button" aria-haspopup="dialog" hidden>查看我的订单</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog class="shop-dialog" id="delivery-dialog" aria-labelledby="delivery-title">
+    <div class="shop-dialog-head">
+      <h2 id="delivery-title">订阅卡密</h2>
+      <button class="shop-close" data-close type="button" aria-label="关闭卡密窗口">×</button>
+    </div>
+    <div class="shop-dialog-body">
+      <p class="shop-card-code" id="delivery-code"></p>
+      <p class="shop-status" id="delivery-status" role="status" hidden></p>
+      <div class="shop-actions shop-dialog-actions">
+        <button class="shop-button shop-button--secondary" id="copy-code" type="button">复制卡密</button>
+        <button class="shop-button shop-button--primary" id="use-code" type="button">去核验</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog class="shop-dialog shop-dialog--wide" id="manage-dialog" aria-labelledby="manage-title">
+    <div class="shop-dialog-head">
+      <h2 id="manage-title">发货管理</h2>
+      <button class="shop-close" data-close type="button" aria-label="关闭发货管理">×</button>
+    </div>
+    <div class="shop-dialog-body">
+      <div class="shop-admin-links">
+        <a class="shop-button shop-button--secondary" href="https://yunshutoken.com/" target="_blank" rel="noopener noreferrer">打开上游商城 ↗</a>
+        <button class="shop-button shop-button--secondary" id="manage-refresh" type="button">刷新</button>
+      </div>
+      <p class="shop-status" id="manage-status" role="status">正在读取待发货订单…</p>
+      <ul class="shop-order-rows" id="manage-rows" aria-label="待发货订单"></ul>
+      <form class="shop-admin-form" id="manage-form" hidden>
+        <strong id="manage-form-title"></strong>
+        <div id="manage-fields">
+          <div>
+            <label for="supplier-order">上游订单号</label>
+            <input id="supplier-order" maxlength="128" autocomplete="off">
+          </div>
+          <div>
+            <label for="supplier-card">卡密</label>
+            <input id="supplier-card" maxlength="126" autocomplete="off" spellcheck="false">
+          </div>
+        </div>
+        <div class="shop-actions shop-dialog-actions">
+          <button class="shop-button shop-button--secondary" type="button" id="manage-cancel">取消</button>
+          <button class="shop-button shop-button--primary" type="submit" id="manage-submit"></button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+</body>
+</html>

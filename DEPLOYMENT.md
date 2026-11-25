@@ -35,6 +35,8 @@ The committed Worker config and contact addresses are placeholders. `scripts/ren
 
 `main` is the only deployment branch. `.github/workflows/verify.yml` runs `npm ci`, `npm run check` and `npm test`; when it succeeds, `.github/workflows/deploy.yml` builds with the deployment values, applies pending D1 migrations, deploys `botgo-api`, deploys Pages project `botgo`, and smoke-checks `/api/health` and `/`.
 
+The GPT store uses D1 migration `0034_shop_orders.sql`. Add `YUNSHU_SHOP_API_KEY` as a Worker Secret on `botgo-api` to enable the home page entry and store routes. `YUNSHU_REDEEM_API_KEY` is optional for new card verification. After publishing, check `/api/shop/config` and `/api/shop/catalog`. Until the required secret is set, the store stays unavailable.
+
 Configure these once under GitHub → Settings → Secrets and variables → Actions:
 
 | Kind | Name | Value |

@@ -17,6 +17,7 @@ const files = [
   "workspace-redirect.js",
   "workspace-billing.js",
   "chat.html", "chat.css", "chat.js", "ui-kit.js", "ui-kit.css",
+  "shop.html", "shop.css", "shop.js", "assets/shop-chatgpt-logo.png",
   "assets/botgo-chat-light-preview.png", "assets/botgo-chat-dark-preview.png",
   "desktop-authorize.html",
   "desktop-authorize.css",
@@ -42,13 +43,14 @@ const files = [
 
 async function assertSourceFiles() {
   await Promise.all(files.map((file) => stat(path.join(root, file))));
-  const [home, homeScript, workspace, desktopAuthorize] = await Promise.all([
+  const [home, homeScript, workspace, desktopAuthorize, shop] = await Promise.all([
     readFile(path.join(root, "index.html"), "utf8"),
     readFile(path.join(root, "app.js"), "utf8"),
     readFile(path.join(root, "workspace.html"), "utf8"),
-    readFile(path.join(root, "desktop-authorize.html"), "utf8")
+    readFile(path.join(root, "desktop-authorize.html"), "utf8"),
+    readFile(path.join(root, "shop.html"), "utf8")
   ]);
-  const referenced = [home, homeScript, workspace, desktopAuthorize]
+  const referenced = [home, homeScript, workspace, desktopAuthorize, shop]
     .flatMap((source) => [...source.matchAll(/(?:src|srcset|href)="\.\/([^"?#]+)/g)].map((match) => match[1]));
   const missing = [];
   for (const file of new Set(referenced)) {
@@ -160,6 +162,9 @@ async function main() {
   let chatVersioned=await readFile(path.join(root,'chat.html'),'utf8');
   for(const asset of ['chat.css','chat.js','ui-kit.js','ui-kit.css'])chatVersioned=withContentVersion(chatVersioned,asset,await readFile(path.join(root,asset),'utf8'));
   await writeFile(path.join(dist,'chat.html'),chatVersioned);
+  let shopVersioned = await readFile(path.join(root, 'shop.html'), 'utf8');
+  for (const asset of ['styles.css', 'shop.css', 'shop.js']) shopVersioned = withContentVersion(shopVersioned, asset, await readFile(path.join(root, asset), 'utf8'));
+  await writeFile(path.join(dist, 'shop.html'), shopVersioned);
   await writeFile(path.join(dist, "_headers"), createProductionHeaders(headers, versionedScript));
   console.log(`Built ${files.length} production files in dist/`);
 }

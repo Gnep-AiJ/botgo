@@ -16,11 +16,12 @@ const backend = async req => {
   assert.equal(req.headers.get('origin'), 'http://127.0.0.1:8787');
   assert.equal(req.headers.get('cookie'), 'botgo_session=fixture');
   assert.equal(req.headers.get('x-hop'), null);
+  assert.equal(req.headers.get('accept-encoding'), 'identity');
   assert.deepEqual(await req.json(), { topic: 'doctor' });
   return Response.json({ ok: true }, { status: 201, headers: { 'set-cookie': 'botgo_session=fixture; HttpOnly; Secure; SameSite=Lax', connection: 'keep-alive' } });
 };
 const reply = await forwardDevApi(request('/api/conversations?topic=doctor', {
-  method: 'POST', headers: { origin, cookie: 'botgo_session=fixture', 'content-type': 'application/json', connection: 'x-hop', 'x-hop': 'drop' }, body: JSON.stringify({ topic: 'doctor' })
+  method: 'POST', headers: { origin, cookie: 'botgo_session=fixture', 'content-type': 'application/json', connection: 'x-hop', 'x-hop': 'drop', 'accept-encoding': 'gzip, br' }, body: JSON.stringify({ topic: 'doctor' })
 }), 'http://127.0.0.1:8787', backend);
 assert.equal(reply.status, 201);
 assert.match(reply.headers.get('set-cookie'), /HttpOnly; Secure/);

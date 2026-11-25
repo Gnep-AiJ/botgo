@@ -2,7 +2,7 @@
 type: moc
 project: BotGo
 status: active
-updated: 2026-10-10
+updated: 2026-11-25
 ---
 
 # BotGo project map
@@ -12,6 +12,7 @@ Inspect the working tree before edits. Generated content under `dist/` and `arti
 | Area | Source of truth | Verification |
 | --- | --- | --- |
 | Website, download and account UI | Root HTML/CSS/JS, `functions/`, `worker/src/` | `npm run build`, browser checks |
+| GPT subscription store (local candidate) | `shop.html`, `shop.css`, `shop.js`, `worker/src/shop-routes.js`, `worker/src/shop-yunshu.js`, migration `0034_shop_orders.sql` | `tests/shop.test.mjs`, [local setup](../README.md#gpt-商城本地联调), `artifacts/verification/gpt-shop-20261125/` |
 | Web specialty chat (published 2026-10-08) | `chat.html`, `chat.css`, `chat.js`, `worker/src/web-chat.js`, `worker/src/web-chat-images.js`, `worker/src/web-chat-tools.js`, `worker/src/web-specialties.js`, `worker/src/specialty-rules.js`, `worker/src/web-search.js`, `worker/src/conversations.js`; local API bridge: `scripts/dev-api.mjs`; policies: `docs/WEB_SPECIALTY_RULES.md`, search: `docs/WEB_CHAT_SEARCH_PLAN.md`, images/cancel: `docs/WEB_CHAT_IMAGES.md` | `tests/web-chat.test.mjs`, `tests/web-chat-cancel.test.mjs`, `tests/web-chat-images.test.mjs`, `tests/web-chat-tools.test.mjs`, `tests/web-search.test.mjs`, `tests/web-search-ui.mjs`, `tests/web-chat-entry.test.mjs`, `tests/dev-api.test.mjs`, `npm run test:web-ui`; local setup: `README.md`; latest automatic-image/search/stop release: `artifacts/verification/web-chat/auto-images/`; rollback baseline: `artifacts/verification/web-chat/images/`; native-search probes: `artifacts/verification/web-chat/native-search/`; UI/rules baseline: `artifacts/verification/web-chat/refinement-v3/` |
 | Billing and model routing | `worker/src/metering.js`, `worker/src/opencode-gateway.js`, migrations | SQLite route and metering tests |
 | Native BotGo client | `opencode-desktop/` overlay/runtime/package scripts | `npm run opencode:build`, isolated Electron check |

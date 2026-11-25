@@ -31,6 +31,8 @@ export async function forwardDevApi(request, apiOrigin, fetchBackend = fetch) {
   target.pathname = incoming.pathname.replace(/^\/api/, '') || '/';
   target.search = incoming.search;
   const headers = endToEndHeaders(request.headers);
+  // Node fetch decodes compressed bodies but retains their wire headers.
+  headers.set('accept-encoding', 'identity');
   if (origin) headers.set('origin', targetOrigin);
   const abort = new AbortController();
   const timeout = setTimeout(() => abort.abort(), 15000);

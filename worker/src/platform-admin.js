@@ -71,7 +71,7 @@ export async function encryptSecret(value, env) {
   return { ciphertext: base64url(new Uint8Array(ciphertext)), iv: base64url(iv) };
 }
 
-async function decryptSecret(ciphertext, iv, env) {
+export async function decryptSecret(ciphertext, iv, env) {
   const key = await encryptionKey(env);
   if (!key) throw new Error("missing upstream encryption key");
   const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv: decodeBase64url(iv) }, key, decodeBase64url(ciphertext));

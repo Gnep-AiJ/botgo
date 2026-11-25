@@ -4,6 +4,7 @@ import { DesktopAuthError, approveDesktopWebAuthorization, cancelDesktopWebAutho
 import { handlePlatformRoute, resolveUpstreamCandidates } from "./platform-admin.js";
 import { purgeExpiredConversations } from "./conversations.js";
 import { handleWebChat } from './web-chat.js';
+import { handleShopRoute } from './shop-routes.js';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -591,6 +592,9 @@ export default {
     if (env.BOTGO_MAINTENANCE === "1") return json({ error: "服务更新中，请稍后重试。" }, 503, { "retry-after": "60" });
     if (!env.DB || !env.AUTH_SECRET) return json({ error: "后端绑定尚未配置。" }, 503);
     const path = new URL(request.url).pathname;
+    if (path.startsWith('/shop/') || path.startsWith('/admin/shop/')) {
+      return handleShopRoute(request, env, path, { sessionFor, activeAdminFor });
+    }
     const openCodeResponse=await handleOpenCode(request,env,ctx,path);
     if(openCodeResponse)return openCodeResponse;
     if (request.method === 'GET' && path === '/models') {

@@ -244,3 +244,5 @@ footer{border-color:var(--line)}
 @media(max-width:600px){.header-auth{max-width:112px;min-width:0}.header-cta{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.site-header nav a,.site-header nav button{min-width:44px}}
 
 .product-flow .flow-grid{grid-template-columns:1fr;position:relative}.client-summary{margin:0 0 4px}.client-summary .button{min-height:46px}.product-flow .flow-gallery{max-width:1060px;width:100%;margin-inline:auto}.flow-heading{margin-bottom:18px}@media(min-width:761px){.client-summary{position:absolute;right:0;top:-76px}.flow-heading h2{font-size:2.6rem}}
+
+.site-header nav a[data-shop-link][hidden]{display:none}
