@@ -14,12 +14,14 @@
   const checkoutDialog = $('checkout-dialog');
   const ordersDialog = $('orders-dialog');
   const policyDialog = $('policy-dialog');
+  const supportDialog = $('support-dialog');
   const manageDialog = $('manage-dialog');
   const brandMark = document.querySelector('.shop-hero-title .shop-brand-mark');
   const pendingActions = new Map();
   let checkout = null, wallet = null, walletStatus = 'loading';
   let ordersRead = 0, checkRead = 0, cardRead = 0, manageRead = 0;
   let checkTimer, checkedCode = '', leftForPortal = false, adminAction = null, adminBusy = false;
+  let catalogSupportShown = false;
 
   async function api(path, data) {
     const response = await fetch('/api' + path, {
@@ -35,6 +37,7 @@
     if (!response.ok) {
       const error = new Error(result.error || '请求暂未完成，请稍后重试。');
       error.status = response.status;
+      error.support = result.support === true || response.status >= 500;
       throw error;
     }
     return result;
@@ -59,6 +62,12 @@
     item.type = 'button';
     item.addEventListener('click', handler);
     return item;
+  }
+
+  function openSupport(reason = '', orderId = '') {
+    message('support-reason', reason);
+    message('support-order', orderId ? '订单号 ' + orderId : '');
+    if (!supportDialog.open) supportDialog.showModal();
   }
 
   function productCard(product) {
@@ -92,6 +101,10 @@
     } catch (error) {
       $('catalog-retry').hidden = error.status === 404;
       message('catalog-status', error.status === 404 ? '商城暂未开放。' : '商品暂未加载，请重试。', true);
+      if (error.support && !catalogSupportShown) {
+        catalogSupportShown = true;
+        openSupport('商品暂未加载，可联系管理员。');
+      }
     }
   }
 
@@ -105,6 +118,9 @@
     state.dataset.state = order.state;
     row.append(details, state, element('strong', 'shop-order-amount', money(order.amountCents)));
     if (!admin && order.state === 'delivered') row.append(button('查看卡密', event => revealCard(order.id, event.currentTarget)));
+    if (!admin && (order.state === 'paid' || order.state === 'purchasing')) {
+      row.append(button('联系管理员', () => openSupport('订单已付款，正在等待发货。', order.id), 'quiet'));
+    }
     return row;
   }
 
@@ -229,6 +245,11 @@
         if (error.status === 401 || selection.needsFunds) {
           policyDialog.close();
           message('checkout-status', error.message, true);
+        } else if (error.support) {
+          const issue = error.status < 500 ? error.message : '付款结果待确认，请先查看订单。';
+          policyDialog.close();
+          message('checkout-status', issue, true);
+          openSupport(issue);
         } else {
           message('policy-status', error.status && error.status < 500 ? error.message : '付款结果待确认，请查看订单或重试原操作。', true);
         }
@@ -378,6 +399,7 @@
     trigger.addEventListener('click', () => openPolicy());
   }
   $('catalog-retry').addEventListener('click', loadCatalog);
+  $('open-support').addEventListener('click', () => openSupport());
   $('open-orders').addEventListener('click', openOrders);
   $('refresh-orders').addEventListener('click', loadOrders);
   $('checkout-orders').addEventListener('click', () => {
@@ -428,6 +450,7 @@
     if ($('delivery-dialog').open) $('delivery-dialog').close();
     if (manageDialog.open) manageDialog.close();
     if (ordersDialog.open) ordersDialog.close();
+    if (supportDialog.open) supportDialog.close();
     $('card-form').reset();
     checkedCode = '';
     message('card-status', '');

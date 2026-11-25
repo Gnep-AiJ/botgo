@@ -37,6 +37,8 @@ The committed Worker config and contact addresses are placeholders. `scripts/ren
 
 The GPT store uses D1 migration `0034_shop_orders.sql`. Add `YUNSHU_SHOP_API_KEY` as a Worker Secret on `botgo-api` to enable the home page entry and store routes. `YUNSHU_REDEEM_API_KEY` is optional for new card verification. After publishing, check `/api/shop/config` and `/api/shop/catalog`. Until the required secret is set, the store stays unavailable.
 
+Shop alerts use the existing QQ SMTP credentials and send to `ADMIN_EMAIL` by default. Set the optional `SHOP_ALERT_EMAIL` Worker Secret to route alerts elsewhere. Migration `0035_shop_alerts.sql` limits the same category of alert to once every 30 minutes. The storefront contact dialog uses the same GitHub Actions contact values and QR asset as the homepage.
+
 Configure these once under GitHub → Settings → Secrets and variables → Actions:
 
 | Kind | Name | Value |

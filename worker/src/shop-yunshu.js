@@ -19,9 +19,10 @@ const monthlyUsd = new Map([
 ]);
 
 export class ShopError extends Error {
-  constructor(message, status = 503) {
+  constructor(message, status = 503, code = null) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -38,7 +39,7 @@ async function upstream(url, options) {
   }
   if (response.status === 429) {
     await response.body?.cancel();
-    throw new ShopError('上游正在限流，请稍后再试。', 429);
+    throw new ShopError('上游正在限流，请稍后再试。', 429, 'supplier_busy');
   }
   return { status: response.status, data: await response.json().catch(() => null) };
 }
@@ -98,14 +99,14 @@ export async function ensureAvailable(env, product) {
     partner(env, 'quote', { code: product.id, num: '1' }),
   ]);
   const stock = safeStock(inventory?.stock);
-  if (stock === 0) throw new ShopError('商品已缺货，请刷新商品列表。', 409);
+  if (stock === 0) throw new ShopError('商品刚刚缺货，请刷新商品列表。', 409, 'stock');
   const price = String(quote?.price ?? '');
   if (stock === null || quote?.currency_code !== 'CNY' || !/^\d+(?:\.\d{1,2})?$/.test(price)) {
     throw new ShopError('暂时无法确认上游库存或报价。');
   }
   const cents = Math.round(Number(price) * 100);
   if (!Number.isSafeInteger(cents) || cents <= 0) throw new ShopError('暂时无法确认上游报价。');
-  if (cents > product.priceCents) throw new ShopError('商品价格正在更新，请稍后再试。', 409);
+  if (cents > product.priceCents) throw new ShopError('商品价格正在更新，请稍后再试。', 409, 'quote');
 }
 
 export function cardCode(value) {

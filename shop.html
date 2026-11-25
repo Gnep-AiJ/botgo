@@ -52,6 +52,7 @@
           </form>
           <p class="shop-status" id="card-status" role="status" hidden></p>
           <a class="shop-button shop-button--primary shop-portal" href="https://redeem.yunpaycard.com/" target="_blank" rel="noopener noreferrer">前往兑换页 <span aria-hidden="true">↗</span></a>
+          <button class="shop-button shop-button--quiet shop-support-entry" id="open-support" type="button" aria-haspopup="dialog">联系管理员</button>
         </section>
         <section class="shop-panel shop-guide" aria-labelledby="guide-title">
           <h2 id="guide-title">兑换流程</h2>
@@ -70,6 +71,25 @@
     <a href="./index.html">返回官网</a>
     <button type="button" data-shop-policy>购买须知</button>
   </footer>
+
+  <dialog class="shop-dialog" id="support-dialog" aria-labelledby="support-title">
+    <div class="shop-dialog-head">
+      <h2 id="support-title">联系管理员</h2>
+      <button class="shop-close" data-close type="button" aria-label="关闭联系方式">×</button>
+    </div>
+    <div class="shop-dialog-body shop-support-body">
+      <p id="support-reason" class="shop-inline-note" hidden></p>
+      <p id="support-order" class="shop-status" hidden></p>
+      <figure class="contact-qr">
+        <img src="./assets/botgo-contact-wechat.png" width="718" height="676" alt="管理员微信二维码" loading="lazy">
+        <figcaption>使用微信扫一扫</figcaption>
+      </figure>
+      <div class="shop-support-links">
+        <span>微信号 <strong>YOUR_WECHAT_ID</strong></span>
+        <a href="mailto:support@example.com">邮件联系</a>
+      </div>
+    </div>
+  </dialog>
 
   <dialog class="shop-dialog shop-dialog--wide" id="orders-dialog" aria-labelledby="orders-title">
     <div class="shop-dialog-head">

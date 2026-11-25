@@ -163,6 +163,15 @@
 }
 .shop-page input:focus-visible, .shop-page summary:focus-visible { outline: 2px solid #136493; outline-offset: 2px; }
 .shop-portal { display: flex; margin-top: 13px; }
+.shop-support-entry { display: flex; margin: 3px auto -5px; }
+.shop-support-body { display: grid; gap: 13px; text-align: center; }
+.shop-support-body .shop-inline-note { margin: 0; }
+.shop-support-body .shop-status { overflow-wrap: anywhere; }
+.shop-support-body .contact-qr { width: min(100%, 228px); margin: 0 auto; padding: 10px; background: #f2f8fe; border: 1px solid #d8e9f6; border-radius: 15px; }
+.shop-support-body .contact-qr img { display: block; width: 100%; height: auto; border-radius: 7px; }
+.shop-support-body figcaption { margin-top: 6px; color: var(--muted); font-size: .84rem; }
+.shop-support-links { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 9px 18px; color: var(--muted); font-size: .87rem; }
+.shop-support-links a { min-height: 44px; display: inline-flex; align-items: center; color: #0b6198; }
 .shop-status, .shop-inline-note { margin: 0; font-size: .88rem; color: var(--muted); }
 .shop-status[data-error="true"] { color: #9a352b; }
 .shop-redeem .shop-status { margin-top: 10px; }

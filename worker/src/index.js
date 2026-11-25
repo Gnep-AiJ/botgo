@@ -5,9 +5,10 @@ import { handlePlatformRoute, resolveUpstreamCandidates } from "./platform-admin
 import { purgeExpiredConversations } from "./conversations.js";
 import { handleWebChat } from './web-chat.js';
 import { handleShopRoute } from './shop-routes.js';
+import { verificationMessage } from './mail-templates.js';
+import { notifyShopFailure } from './shop-alerts.js';
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 const SMTP_MAX_REPLY_BYTES = 16 * 1024;
 // Balances are stored as integer fen (cents). One existing quota unit maps to
 // one yuan, so the migration keeps the old visible balance and request cost.
@@ -100,24 +101,32 @@ function smtpBase64(value) {
   return btoa(String.fromCharCode(...encoder.encode(value)));
 }
 
-function smtpMessage(from, to, code) {
-  const subject = `=?UTF-8?B?${smtpBase64("BotGo 验证码")}?=`;
-  const text = `你的 BotGo 验证码：${code}\n10 分钟内有效，请勿转发。`;
-  const body = smtpBase64(text).match(/.{1,76}/g)?.join("\r\n") || "";
+function smtpMessage(from, to, { subject, text, html }) {
+  const boundary = 'botgo-' + crypto.randomUUID();
+  const parts = [['text/plain', text], ['text/html', html]].flatMap(([type, content]) => [
+    '--' + boundary,
+    `Content-Type: ${type}; charset=UTF-8`,
+    'Content-Transfer-Encoding: base64',
+    '',
+    smtpBase64(content.replace(/\r?\n/g, '\r\n')).match(/.{1,76}/g).join('\r\n'),
+  ]);
   return [
     `From: =?UTF-8?B?${smtpBase64("BotGo")}?= <${from}>`,
     `To: <${to}>`,
-    `Subject: ${subject}`,
+    `Subject: =?UTF-8?B?${smtpBase64(subject)}?=`,
+    'Date: ' + new Date().toUTCString(),
+    `Message-ID: <${crypto.randomUUID()}@botgo.win>`,
     "MIME-Version: 1.0",
-    "Content-Type: text/plain; charset=UTF-8",
-    "Content-Transfer-Encoding: base64",
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
     "",
-    body
+    ...parts,
+    '--' + boundary + '--',
   ].join("\r\n");
 }
 
 function smtpReplyReader(socket) {
   const reader = socket.readable.getReader();
+  const decoder = new TextDecoder();
   let buffer = "";
 
   async function readLine() {
@@ -164,14 +173,15 @@ async function smtpCommand(reader, writer, command, expectedCodes) {
   if (!expectedCodes.includes(reply)) throw new Error("SMTP rejected the request");
 }
 
-async function sendVerificationEmail(env, email, code) {
+async function sendEmail(env, email, message) {
   const from = typeof env.QQ_SMTP_USER === "string" ? env.QQ_SMTP_USER.trim().toLowerCase() : "";
   const authCode = typeof env.QQ_SMTP_AUTH_CODE === "string" ? env.QQ_SMTP_AUTH_CODE.trim() : "";
-  if (!emailIsValid(from) || !authCode || !emailIsValid(email) || !/^\d{6}$/.test(code)) {
+  if (!emailIsValid(from) || !authCode || !emailIsValid(email) || /[<>"']/.test(from + email)) {
     throw new Error("Email delivery is not configured");
   }
 
   const socket = connect({ hostname: "smtp.qq.com", port: 465 }, { secureTransport: "on" });
+  const timeout = setTimeout(() => { Promise.resolve(socket.close()).catch(() => {}); }, 12_000);
   const reader = smtpReplyReader(socket);
   const writer = socket.writable.getWriter();
   try {
@@ -183,14 +193,19 @@ async function sendVerificationEmail(env, email, code) {
     await smtpCommand(reader, writer, `MAIL FROM:<${from}>`, [250]);
     await smtpCommand(reader, writer, `RCPT TO:<${email}>`, [250, 251]);
     await smtpCommand(reader, writer, "DATA", [354]);
-    await writer.write(encoder.encode(`${smtpMessage(from, email, code)}\r\n.\r\n`));
+    await writer.write(encoder.encode(`${smtpMessage(from, email, message)}\r\n.\r\n`));
     if ((await reader.readReply()) !== 250) throw new Error("SMTP did not accept the message");
-    await smtpWrite(writer, "QUIT");
+    try { await smtpWrite(writer, "QUIT"); } catch {}
   } finally {
     try { await writer.close(); } catch {}
     reader.release();
-    socket.close();
+    clearTimeout(timeout);
+    try { await socket.close(); } catch {}
   }
+}
+
+function sendVerificationEmail(env, email, code) {
+  return sendEmail(env, email, verificationMessage(code));
 }
 
 async function verificationRequestGuard(request, env, email, table, auditEvent) {
@@ -593,7 +608,10 @@ export default {
     if (!env.DB || !env.AUTH_SECRET) return json({ error: "后端绑定尚未配置。" }, 503);
     const path = new URL(request.url).pathname;
     if (path.startsWith('/shop/') || path.startsWith('/admin/shop/')) {
-      return handleShopRoute(request, env, path, { sessionFor, activeAdminFor });
+      return handleShopRoute(request, env, path, {
+        sessionFor, activeAdminFor,
+        reportFailure: (kind, status) => ctx.waitUntil(notifyShopFailure(env, sendEmail, kind, status)),
+      });
     }
     const openCodeResponse=await handleOpenCode(request,env,ctx,path);
     if(openCodeResponse)return openCodeResponse;

@@ -45,6 +45,7 @@ export async function createShopRuntime() {
       assert.deepEqual([...form.keys()], ['code']);
       return Response.json({ code: 200, data: { status: upstream.cardStatus } });
     }
+    if (path === 'items' && upstream.catalogOffline) return Response.json({ error: 'raw upstream detail' }, { status: 503 });
     if (path === 'items') return Response.json({ code: 200, data: [
       { name: 'GPT', children: products },
       { name: 'Grok', children: [{ ...products[0], code: 'FIXTURE-OTHER' }] },

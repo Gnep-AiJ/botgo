@@ -184,7 +184,15 @@ async function fulfill(request, env, admin, id, action) {
   return reply({ order: publicOrder(current, true) });
 }
 
-export async function handleShopRoute(request, env, path, { sessionFor, activeAdminFor }) {
+function alertKind(path, method, code) {
+  if (code === 'stock' || code === 'quote') return code;
+  if (path === '/shop/catalog') return 'catalog';
+  if (path === '/shop/orders' && method === 'POST') return 'checkout';
+  if (path === '/shop/cards/check') return 'cards';
+  return path.startsWith('/admin/') ? 'fulfillment' : 'orders';
+}
+
+export async function handleShopRoute(request, env, path, { sessionFor, activeAdminFor, reportFailure }) {
   if (env.BOTGO_SHOP_ENABLED !== '1' || !env.YUNSHU_SHOP_API_KEY?.trim()) return missing();
   const method = request.method;
   if (method === 'POST' && request.headers.get('origin') !== new URL(request.url).origin) {
@@ -219,7 +227,11 @@ export async function handleShopRoute(request, env, path, { sessionFor, activeAd
     if (method === 'POST' && path === '/shop/cards/check') return await verifyCard(request, env, session.sub);
     return missing();
   } catch (error) {
-    if (error instanceof ShopError) return reply({ error: error.message }, error.status);
-    return reply({ error: '商城操作暂未完成，请重试原操作。' }, 503);
+    const known = error instanceof ShopError;
+    const status = known ? error.status : 503;
+    const operational = status >= 500 || ['stock', 'quote', 'supplier_busy'].includes(error?.code);
+    if (operational) reportFailure(alertKind(path, method, error?.code), status);
+    const message = known ? error.message : '商城操作暂未完成，请重试原操作。';
+    return reply({ error: message, ...(operational ? { support: true } : {}) }, status);
   }
 }

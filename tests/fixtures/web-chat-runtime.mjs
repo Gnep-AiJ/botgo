@@ -50,7 +50,7 @@ export async function createWebChatRuntime({searchFixture=false,imagesFixture=fa
     db.prepare('INSERT INTO agent_model_routes(model_id,profile_id,protocol,enabled,verified_at) VALUES(?,?,?,1,CURRENT_TIMESTAMP)').run(model.id, 'fixture-p', i ? 'responses' : 'chat');
     db.prepare('INSERT INTO agent_route_members(model_id,profile_id,upstream_model_id,enabled,verified_at) VALUES(?,?,?,1,CURRENT_TIMESTAMP)').run(model.id, 'fixture-p', searchFixture?model.id:'fixture-vendor-' + i);
   }
-  const codes = new Map(), upstreamCalls = [], jobs = [];let upstreamMode='normal';
+  const codes = new Map(), emails = [], upstreamCalls = [], jobs = [];let upstreamMode='normal';
   const originalFetch = globalThis.fetch, originalSocket = globalThis.__botgoTestSocketConnect;
   globalThis.__botgoTestSocketConnect = (address, options) => {
     assert.deepEqual(address, { hostname: 'smtp.qq.com', port: 465 });
@@ -69,8 +69,13 @@ export async function createWebChatRuntime({searchFixture=false,imagesFixture=fa
         else if (command.startsWith('RCPT TO:')) { recipient = command.slice(9, -1); reply('250 fixture'); }
         else if (command === 'DATA') reply('354 fixture');
         else if (command.startsWith('From:')) {
-          const body = Buffer.from(command.split('\r\n\r\n')[1].replace(/\r\n\.\s*$/, '').replaceAll('\r\n', ''), 'base64').toString('utf8');
-          codes.set(recipient, body.match(/验证码：(\d{6})/)[1]); reply('250 fixture');
+          const [text, html] = [...command.matchAll(/Content-Type: text\/(?:plain|html); charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n([A-Za-z0-9+/=\r\n]+)(?=\r\n--)/g)]
+            .map(match => Buffer.from(match[1], 'base64').toString('utf8'));
+          assert.ok(text && html, 'SMTP message has text and HTML alternatives');
+          emails.push({ recipient, text, html });
+          const code = text.match(/验证码：(\d{6})/)?.[1];
+          if (code) codes.set(recipient, code);
+          reply('250 fixture');
         } else if (command === 'QUIT') reply('221 fixture');
         else throw new Error('Unexpected SMTP fixture command');
       } }),
@@ -108,7 +113,7 @@ export async function createWebChatRuntime({searchFixture=false,imagesFixture=fa
   const context = { waitUntil(promise) { jobs.push(promise); } };
   const workerFetch = request => worker.fetch(request, env, context);
   return {
-    db, env, models, codes, upstreamCalls, workerFetch,media,
+    db, env, models, codes, emails, upstreamCalls, workerFetch,media,
     setUpstreamMode(mode){assert.ok(['normal','reject','slow','hold','search-none','search-json','image-invalid','image-no-usage','image-tool-json'].includes(mode));upstreamMode=mode;},
     pagesFetch: request => onRequest({ request, env: { BOTGO_API: { fetch: workerFetch } } }),
     async settle() { while (jobs.length) await Promise.all(jobs.splice(0)); },

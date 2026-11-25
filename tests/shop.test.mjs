@@ -39,19 +39,40 @@ try {
   assert.equal((await call('/shop/cards/check', null, { code: 'NCGPT-FIXTURE-1' })).status, 401);
   const buyer = await login('a@example.invalid');
   const admin = await login('b@example.invalid');
+  assert.match(runtime.emails[0].html, /邮箱验证码/);
+  assert.match(runtime.emails[0].html, new RegExp(runtime.codes.get('a@example.invalid')));
+  runtime.env.ADMIN_EMAIL = 'b@example.invalid';
+  runtime.upstream.catalogOffline = true;
+  const failures = await Promise.all([call('/shop/catalog'), call('/shop/catalog')]);
+  for (const failure of failures) {
+    assert.equal(failure.status, 503);
+    assert.equal((await failure.json()).support, true);
+  }
+  await runtime.settle();
+  assert.equal(runtime.emails.length, 3);
+  assert.equal(runtime.emails[2].recipient, 'b@example.invalid');
+  assert.match(runtime.emails[2].html, /商品目录读取异常/);
+  assert.doesNotMatch(runtime.emails[2].text, /raw upstream|fixture-yunshu|a@example/);
+  runtime.upstream.catalogOffline = false;
   assert.equal((await call('/admin/shop/orders', buyer)).status, 403);
   assert.equal((await call('/shop/orders', buyer, payload(), 'https://outside.invalid')).status, 403);
   assert.equal((await call('/shop/orders', buyer, { ...payload(), accepted: false })).status, 400);
 
   runtime.db.exec("UPDATE accounts SET credit_balance = 14100, credit_remainder_micros = 25, billing_reserved_micros = 1010000 WHERE id = 'fixture-a'");
   assert.equal((await (await call('/shop/orders', buyer)).json()).availableCents, 13999);
-  assert.equal((await call('/shop/orders', buyer, payload())).status, 402);
+  const insufficient = await call('/shop/orders', buyer, payload());
+  assert.equal(insufficient.status, 402);
+  assert.equal((await insufficient.json()).support, undefined);
+  await runtime.settle();
+  assert.equal(runtime.emails.length, 3);
   assert.equal(balance(), 14100);
   runtime.db.exec("UPDATE accounts SET credit_balance = 14000, billing_reserved_micros = 0 WHERE id = 'fixture-a'");
   assert.equal((await call('/shop/orders', buyer, payload('FIXTURE-PLUS', 1))).status, 409);
   assert.equal((await call('/shop/orders', buyer, payload('FIXTURE-PLUS', 11900))).status, 409);
   runtime.upstream.stock['FIXTURE-PLUS'] = '0';
-  assert.equal((await call('/shop/orders', buyer, payload())).status, 409);
+  const stockout = await call('/shop/orders', buyer, payload());
+  assert.equal(stockout.status, 409);
+  assert.equal((await stockout.json()).support, true);
   runtime.upstream.stock['FIXTURE-PLUS'] = '20';
   runtime.upstream.prices['FIXTURE-PLUS'] = '140.01';
   assert.equal((await call('/shop/orders', buyer, payload())).status, 409);
