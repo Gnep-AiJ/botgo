@@ -6,6 +6,7 @@ import { applyContactOverrides, hideContactQr, CONTACT_QR_ASSET, assertNoPlaceho
 const { copyFile, mkdir, readFile, rm, stat, writeFile } = fs.promises;
 const root = process.cwd();
 const dist = path.join(root, "dist");
+const faviconSource = "opencode-desktop/overlay/botgo-desktop.ico";
 const files = [
   'admin-metering.js', 'product-account.css', 'product-account.js',
   "index.html",
@@ -42,7 +43,7 @@ const files = [
 ];
 
 async function assertSourceFiles() {
-  await Promise.all(files.map((file) => stat(path.join(root, file))));
+  await Promise.all([...files, faviconSource].map((file) => stat(path.join(root, file))));
   const [home, homeScript, workspace, desktopAuthorize, shop] = await Promise.all([
     readFile(path.join(root, "index.html"), "utf8"),
     readFile(path.join(root, "app.js"), "utf8"),
@@ -123,6 +124,7 @@ async function main() {
     await mkdir(path.dirname(target), { recursive: true });
     await copyFile(path.join(root, file), target);
   }
+  await copyFile(path.join(root, faviconSource), path.join(dist, "favicon.ico"));
 
   // The contact QR is personal data and stays out of the repository. Prefer the
   // Cloudflare build secret, otherwise use a local copy that git ignores.
