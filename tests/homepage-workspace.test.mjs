@@ -15,7 +15,9 @@ assert.match(home, /botgo-client-wechat\.png/);
 assert.match(home, /botgo-client-account\.png/);
 assert.match(home, /class="scroll-cue"/);
 assert.match(home, /查看对话与客户端/);
-assert.match(home, /brand-bot-mark/);
+for (const page of ['index.html', 'shop.html', 'chat.html']) {
+  assert.match(read(`dist/${page}`), /class="brand-bot-mark" src="\.\/assets\/botgo-header-logo\.png\?v=[\da-f]{12}"/);
+}
 assert.match(read('dist/index.html'), /<a href="\.\/shop\.html">GPT 商城<\/a>/);
 assert.doesNotMatch(accountScript, /\/api\/shop\/config/);
 assert.match(home, /class="product-flow"/);
