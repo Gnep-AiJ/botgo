@@ -19,7 +19,7 @@ const files = [
   "workspace.html",
   "workspace-redirect.js",
   "workspace-billing.js",
-  "chat.html", "chat.css", "chat.js", "ui-kit.js", "ui-kit.css",
+  "chat.html", "chat.css", "chat.js", "chat-attachments.js", "ui-kit.js", "ui-kit.css",
   "shop.html", "shop.css", "shop.js", "assets/shop-chatgpt-logo.png",
   "assets/botgo-chat-light-preview.png", "assets/botgo-chat-dark-preview.png",
   "desktop-authorize.html",

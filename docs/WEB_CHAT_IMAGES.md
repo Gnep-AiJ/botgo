@@ -16,6 +16,6 @@
 
 此前证据分层：限额测试 Key 真实生图返回 HTTP 200、PNG 682100 字节、input_tokens 17 / output_tokens 272；原价格快照与配置读回 `artifacts/verification/web-chat/images/image-routes.json`。SQLite/R2 fixtures 验证真实处理器的计费、加密、归属、保存、下载、取消、失败和清理；Chrome 通过真实 HTTP 流验证交互。正式账号/正式上游 Key 尚需登录后的付费请求验收，未将测试 Key 安装到生产。
 
-本次实现文字对话与文生图。图片上传识别、参考图编辑、语音、视频和 ChatGPT 私有工具未接入，不能宣称完整复制 ChatGPT。
+2026-10-09 发布的是文字对话、按需生图与停止生成。网页附件接入见 [2026-11-26 网页对话附件](notes/Release%202026-09-14.md#2026-11-26-网页对话附件)。
 
 参考：[Open WebUI image usage](https://docs.openwebui.com/features/chat-conversations/image-generation-and-editing/usage/)、[LibreChat image generation](https://www.librechat.ai/docs/features/image_gen)、[OpenAI image generation](https://developers.openai.com/api/docs/guides/tools-image-generation)。

@@ -24,6 +24,8 @@ npm run dev
 
 联网由模型按需选择，输入区无需手动开启。生图同样由聊天模型按需调用，无单独开关或设置；支持私有图片历史、预览下载和失败重试；刷新后仍在运行的回答也可停止。图片与消息均按 30 天保留。后端取消、计费与加密存储说明见 [Web 生图与停止](docs/WEB_CHAT_IMAGES.md)，新增迁移为 `0031`、`0032`。
 
+原对话框支持选取、拖放图片和视频，也可粘贴截图。每条最多 4 个附件，其中视频最多 1 个，时长上限 2 分钟。浏览器会把视频抽成最多 12 张带时间戳的画面，模型据此分析画面。附件跟随对话保留 30 天，模型在追问时带入最近两次含附件的消息。发布时需应用 `0036_web_chat_attachments.sql`。
+
 `npm run test:web-ui` 使用临时 SQLite 和测试邮件/模型传输，验证真实 Pages/Worker 入口、登录 Cookie、模型、历史、牌阵与账本；不会发送邮件或调用付费接口。需要本机 Chrome 和 Playwright，可通过 `BOTGO_CHROME_PATH`、`BOTGO_PLAYWRIGHT_PATH` 指定现有安装位置。证据保存在 `artifacts/verification/web-chat/`。
 
 ## GPT 商城本地联调

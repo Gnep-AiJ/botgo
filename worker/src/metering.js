@@ -1,6 +1,7 @@
 import { supportsWebSearch, searchUsage, searchWasUsed, isAllowedDesktopTool, hasDesktopSearchTool } from './web-search.js';
 import { officialModel } from './official-pricing.js';
 import { NATIVE_REQUEST_MAX_BYTES } from './native-capabilities.js';
+import { WEB_CHAT_VISION_PAYLOAD_LIMIT } from './web-chat-attachments.js';
 // Standard OpenAI API rate snapshot, USD per million tokens, 2026-09-12.
 export const MODEL_SEEDS = [
   ['gpt-5.6-sol','GPT-5.6 Sol',4,.4,5,20],
@@ -197,12 +198,16 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
   if(native&&requested>outputLimit)return reply({error:'输出上限超过当前模型已声明的能力。'},400);
   const maxOutput=Math.min(requested,outputLimit);
   const requestBytes=new TextEncoder().encode(JSON.stringify(body)).length;
-  if(requestBytes>(native?NATIVE_REQUEST_MAX_BYTES:1000000-4096)) return reply({error:native?'附件与上下文合计超过 16 MiB 请求上限。':'上下文过长，请开始新对话。'},413);
+  const webImages=channel==='web_chat'&&agentRoute?(body.messages||[]).flatMap(message=>Array.isArray(message.content)?message.content.filter(part=>part.type==='image_url'):[]):[];
+  const textBytes=requestBytes-webImages.reduce((total,part)=>total+part.image_url.url.length,0);
+  if(textBytes>(native?NATIVE_REQUEST_MAX_BYTES:1000000-4096)) return reply({error:native?'附件与上下文合计超过 16 MiB 请求上限。':'上下文过长，请开始新对话。'},413);
+  if(webImages.length&&requestBytes>WEB_CHAT_VISION_PAYLOAD_LIMIT) return reply({error:'附件与上下文合计过大，请减少附件或新建对话。'},413);
   // Compressed PDF/image bytes do not bound visual tokens. Reserve at the
   // declared native context limit for binary input; charge only actual usage.
   const binaryInput=native&&[...(body.messages||[]),...(Array.isArray(body.input)?body.input:[])].some(message=>Array.isArray(message?.content)&&message.content.some(part=>['file','input_file','image_url','input_image','input_audio','audio','input_video','video'].includes(part?.type)));
   const contextLimit=native?(nativeModel?.limit?.context||128000):Number.MAX_SAFE_INTEGER;
-  const inputBound=binaryInput?contextLimit:Math.min(requestBytes+4096,contextLimit);
+  // The web handler has already bounded the dimensions of each visual frame.
+  const inputBound=binaryInput?contextLimit:Math.min(textBytes+4096+webImages.length*4096,contextLimit);
   const reserved=costMicros({input_tokens:inputBound,output_tokens:maxOutput},{...snapshot,price:{...price,input:Math.max(price.input,price.write)}});
   const retryKey=request.headers.get('idempotency-key');
   if(retryKey&&!/^[a-zA-Z0-9_-]{16,128}$/.test(retryKey))return reply({error:'请求标识无效。'},400);
@@ -221,7 +226,14 @@ export async function meteredProxy(request,env,ctx,{accountId,channel,body,upstr
     delete payload.service_tier;
     delete payload.max_tokens;
     if(chat){delete payload.max_output_tokens;delete payload.input;}
-    else {delete payload.max_completion_tokens;if(channel==='web_chat'){payload.input=payload.messages;delete payload.messages;}}
+    else {
+      delete payload.max_completion_tokens;
+      if(channel==='web_chat'){
+        payload.input=payload.messages.map(message=>Array.isArray(message.content)?{...message,content:message.content.map(part=>part.type==='image_url'
+          ?{type:'input_image',image_url:part.image_url.url,detail:part.image_url.detail}:{type:'input_text',text:part.text})}:message);
+        delete payload.messages;
+      }
+    }
     if(nativeWebSearch){payload.tools=[{type:'web_search',search_context_size:'low'}];payload.tool_choice='auto';payload.include=['web_search_call.action.sources'];}
     else if(desktopAutoWebSearch&&supportsWebSearch(candidate,agentRoute)){payload.tools=[...(payload.tools||[]),{type:'web_search',search_context_size:'low'}];}
     if(imageTool){payload.tools=[...(payload.tools||[]),chat?{type:'function',function:imageTool}:{type:'function',...imageTool}];payload.tool_choice='auto';payload.parallel_tool_calls=false;}

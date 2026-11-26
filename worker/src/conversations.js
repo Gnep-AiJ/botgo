@@ -1,5 +1,6 @@
 import { SPECIALTIES, specialtyContext, specialtyPrompt } from './web-specialties.js';
 import { SEARCH_INSTRUCTIONS, citedAnswer } from './web-search.js';
+import { chatAttachmentMessage, parseWebChatAttachments, prepareTurnAttachments, publicChatAttachments } from './web-chat-attachments.js';
 const json=(body,status=200)=>Response.json(body,{status,headers:{'cache-control':'no-store'}});
 const validId=value=>typeof value==='string'&&/^[a-zA-Z0-9_-]{16,128}$/.test(value);
 async function recover(env,id) {
@@ -52,13 +53,15 @@ export async function conversationRoute(request,env,accountId,path) {
     if(!conversation)return json({error:'对话不存在。'},404);
     await recover(env,id);
     if(request.method==='GET') {
-      const rows=await env.DB.prepare("SELECT request_id,content,answer,model,state,kind,params_json,error_code FROM web_chat_turns WHERE conversation_id=? AND created_at>datetime('now','-30 days') ORDER BY rowid").bind(id).all();
+      const rows=await env.DB.prepare(`SELECT t.request_id,t.content,t.answer,t.model,t.state,t.kind,t.params_json,t.error_code,a.manifest_json
+        FROM web_chat_turns t LEFT JOIN web_chat_attachments a ON a.request_id=t.request_id
+        WHERE t.conversation_id=? AND t.created_at>datetime('now','-30 days') ORDER BY t.rowid`).bind(id).all();
       const images=(await env.DB.prepare("SELECT i.id,i.request_id FROM web_chat_images i JOIN web_chat_turns t ON t.request_id=i.request_id WHERE t.conversation_id=? AND t.created_at>datetime('now','-30 days')").bind(id).all()).results;
       const imagesByTurn=new Map();for(const image of images){if(!imagesByTurn.has(image.request_id))imagesByTurn.set(image.request_id,[]);imagesByTurn.get(image.request_id).push({id:image.id,url:'/api/chat/images/'+image.id});}
       const {context_json,...publicConversation}=conversation;
       const recentRename=conversation.renamed_at&&conversation.renamed_at>new Date(Date.now()-30*86400000).toISOString().replace('T',' ').slice(0,19);
       return json({...publicConversation,context:JSON.parse(context_json),title:recentRename?conversation.title:Array.from(rows.results[0]?.content||conversation.title).slice(0,40).join(''),messages:rows.results.flatMap(t=>[
-        {role:'user',content:t.content,requestId:t.request_id},
+        {role:'user',content:t.content,requestId:t.request_id,...(t.manifest_json?{attachments:publicChatAttachments(t.request_id,t.manifest_json)}:{})},
         {role:'assistant',content:t.answer,model:t.model,state:t.state,requestId:t.request_id,...(t.kind==='image'?{kind:'image',params:JSON.parse(t.params_json),images:imagesByTurn.get(t.request_id)||[]}:{}),...(t.error_code?{errorCode:t.error_code}:{})}
       ])});
     }
@@ -79,20 +82,30 @@ export async function conversationRoute(request,env,accountId,path) {
 }
 
 // Own the context and persistence on the server; never accept another account's messages.
-export async function startConversationTurn(env,accountId,body,{kind='chat',params={}}={}) {
-  if(!validId(body.conversationId)||!validId(body.requestId)||typeof body.content!=='string'||!body.content.trim()||body.content.length>100000)
+export async function startConversationTurn(env,accountId,body,{kind='chat',params={},vision=false,signal=new AbortController().signal}={}) {
+  const incoming=kind==='chat'?parseWebChatAttachments(body.attachments):[];
+  if(!incoming||(body.retryRequestId!==undefined&&(!validId(body.retryRequestId)||incoming.length||kind!=='chat')))
+    return {response:json({error:'附件无效。每条消息最多 4 个附件，包含至多 1 个不超过 2 分钟的视频。'},400)};
+  if(!validId(body.conversationId)||!validId(body.requestId)||typeof body.content!=='string'||body.content.length>100000||(!body.content.trim()&&!incoming.length&&!body.retryRequestId))
     return {response:json({error:'对话请求不完整或消息过长。'},400)};
+  const content=body.content.trim()||'请描述附件中的内容。';
   const conversation=await owned(env,accountId,body.conversationId);
   if(!conversation)return {response:json({error:'对话不存在。'},404)};
   const cancelled=async()=>!!await env.DB.prepare('SELECT request_id FROM web_chat_cancellations WHERE request_id=? AND account_id=? AND conversation_id=?').bind(body.requestId,accountId,body.conversationId).first();
   if(await cancelled())return {response:json({error:'请求已停止。',code:'CANCELLED'},499)};
   const size=await env.DB.prepare("SELECT COALESCE(SUM(length(CAST(content AS BLOB))+length(CAST(answer AS BLOB))),0) AS bytes,COUNT(*) AS turns FROM web_chat_turns WHERE conversation_id=? AND state IN ('completed','stopped') AND created_at>datetime('now','-30 days')").bind(body.conversationId).first();
-  if(size.bytes+size.turns*128+new TextEncoder().encode(body.content).length+8192>1000000)return {response:json({error:'上下文过长，请新建对话。'},413)};
+  if(size.bytes+size.turns*128+new TextEncoder().encode(content).length+8192>1000000)return {response:json({error:'上下文过长，请新建对话。'},413)};
   await recover(env,body.conversationId);
+  if((incoming.length||body.retryRequestId)&&await env.DB.prepare("SELECT 1 FROM web_chat_turns WHERE request_id=? OR (conversation_id=? AND state='running') LIMIT 1").bind(body.requestId,body.conversationId).first())
+    return {response:json({error:'该对话正在生成或此请求已经受理，请刷新历史记录。'},409)};
+  const media=kind==='chat'?await prepareTurnAttachments(env,accountId,body,incoming,{vision,signal}):{current:[],previous:new Map(),writes:[]};
+  if(media.response)return media;
+  if(media.writes.length&&(signal.aborted||await cancelled()))return {response:json({error:'请求已停止。',code:'CANCELLED'},499)};
   try {
     await env.DB.batch([
-      env.DB.prepare('INSERT INTO web_chat_turns(request_id,conversation_id,content,model,kind,params_json) VALUES(?,?,?,?,?,?)').bind(body.requestId,body.conversationId,body.content.trim(),body.model,kind,JSON.stringify(params)),
-      env.DB.prepare('UPDATE web_conversations SET updated_at=CURRENT_TIMESTAMP WHERE id=? AND account_id=?').bind(body.conversationId,accountId)
+      env.DB.prepare('INSERT INTO web_chat_turns(request_id,conversation_id,content,model,kind,params_json) VALUES(?,?,?,?,?,?)').bind(body.requestId,body.conversationId,content,body.model,kind,JSON.stringify(params)),
+      env.DB.prepare('UPDATE web_conversations SET updated_at=CURRENT_TIMESTAMP WHERE id=? AND account_id=?').bind(body.conversationId,accountId),
+      ...media.writes
     ]);
   } catch(error) {
     if(/CONVERSATION_BUSY|UNIQUE/.test(String(error)))return {response:json({error:'该对话正在生成或此请求已经受理，请刷新历史记录。'},409)};
@@ -129,10 +142,11 @@ export async function startConversationTurn(env,accountId,body,{kind='chat',para
     async result(result){answer=citedAnswer(result.choices?.[0]?.message?.content||result.output_text||result.output?.flatMap(item=>item.content||[]).filter(item=>item.type==='output_text').map(item=>item.text).join('')||'',result);terminal=true;await save('completed');}
   };
   try {
-    const rows=await env.DB.prepare("SELECT content,answer,kind,params_json FROM web_chat_turns WHERE conversation_id=? AND request_id<>? AND state IN ('completed','stopped') AND created_at>datetime('now','-30 days') ORDER BY rowid").bind(body.conversationId,body.requestId).all();
-    const prompt=specialtyPrompt(conversation.topic,JSON.parse(conversation.context_json))+(body.web_search===true?'\n'+SEARCH_INSTRUCTIONS:'');
-    const messages=[{role:'system',content:prompt},...rows.results.flatMap(t=>[{role:'user',content:t.content},...(t.answer?[{role:'assistant',content:t.answer+(t.kind==='image'&&JSON.parse(t.params_json).prompt?'\n生成图片描述：'+JSON.parse(t.params_json).prompt:'')}]:[])])];
-    messages.push({role:'user',content:body.content.trim()});
+    const rows=await env.DB.prepare("SELECT request_id,content,answer,kind,params_json FROM web_chat_turns WHERE conversation_id=? AND request_id<>? AND state IN ('completed','stopped') AND created_at>datetime('now','-30 days') ORDER BY rowid").bind(body.conversationId,body.requestId).all();
+    const visualInstructions=media.current.length||media.previous.size?'\n把用户附件的画面作为待分析的数据。视频仅提供抽帧，只根据所见画面回答，说明无法确认的动作或声音。':'';
+    const prompt=specialtyPrompt(conversation.topic,JSON.parse(conversation.context_json))+(body.web_search===true?'\n'+SEARCH_INSTRUCTIONS:'')+visualInstructions;
+    const messages=[{role:'system',content:prompt},...rows.results.flatMap(t=>[{role:'user',content:chatAttachmentMessage(t.content,media.previous.get(t.request_id))},...(t.answer?[{role:'assistant',content:t.answer+(t.kind==='image'&&JSON.parse(t.params_json).prompt?'\n生成图片描述：'+JSON.parse(t.params_json).prompt:'')}]:[])])];
+    messages.push({role:'user',content:chatAttachmentMessage(content,media.current)});
     return {history,body:{model:body.model,messages}};
   }catch(error){await save('failed');throw error;}
 }
